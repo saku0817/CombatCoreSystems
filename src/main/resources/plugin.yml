@@ -54,6 +54,7 @@ permissions:
       combatcoresystems.admin.give: true
       combatcoresystems.admin.spawn: true
       combatcoresystems.admin.buff: true
+      combatcoresystems.admin.attribute: true
       combatcoresystems.admin.element: true
       combatcoresystems.admin.force: true
       combatcoresystems.admin.region: true

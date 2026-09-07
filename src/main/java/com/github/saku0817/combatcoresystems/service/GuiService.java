@@ -47,8 +47,9 @@ public final class GuiService implements Listener {
     }
 
     public void openMain(Player player) {
-        Inventory inventory = inventory(player, Screen.MAIN, "<dark_gray>CombatCoreSystems</dark_gray>", 54, "", 0, "");
-        ConfigurationSection entries = definitions.snapshot().config("gui.yml").getConfigurationSection("main-menu.entries");
+        var config = definitions.snapshot().config("gui.yml");
+        Inventory inventory = inventory(player, Screen.MAIN, config.getString("main-menu.title", "<dark_gray>CombatCoreSystems</dark_gray>"), config.getInt("main-menu.size", 54), "", 0, "");
+        ConfigurationSection entries = config.getConfigurationSection("main-menu.entries");
         if (entries != null) for (String id : entries.getKeys(false)) {
             ConfigurationSection entry = entries.getConfigurationSection(id);
             if (entry != null) inventory.setItem(entry.getInt("slot"), item(entry.getString("icon", "STONE"), entry.getString("name", id), List.of()));

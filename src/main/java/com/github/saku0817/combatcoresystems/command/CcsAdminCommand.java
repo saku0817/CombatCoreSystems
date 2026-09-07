@@ -123,7 +123,8 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         else throw new IllegalArgumentException("コンソールから実行する場合はusernameを指定してください");
 
         if (enable) combat.forceOn(target); else combat.forceOff(target.getUniqueId());
-        message(sender, "<green>" + target.getName() + " の戦闘状態を " + (enable ? "ON" : "OFF") + " にしました。</green>");
+        message(sender, configuredMessage("command.force", "<green><player> の戦闘状態を <state> にしました。</green>",
+                Map.of("<player>", target.getName(), "<state>", enable ? "ON" : "OFF")));
     }
 
     private void encyclopedia(CommandSender sender, String[] args) {
@@ -146,6 +147,11 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private void main(Runnable action) { Bukkit.getScheduler().runTask(plugin, action); }
+    private String configuredMessage(String path, String fallback, Map<String, String> replacements) {
+        String value = definitions.snapshot().config("messages.yml").getString(path, fallback);
+        for (Map.Entry<String, String> replacement : replacements.entrySet()) value = value.replace(replacement.getKey(), replacement.getValue());
+        return value;
+    }
     private void help(CommandSender sender) {
         message(sender, "<gold>/ccsadmin edit|give|spawn|region|backup|encyclopedia|reload|save</gold>");
         message(sender, "<gray>/ccsadmin edit attribute add|remove <player> <attribute></gray>");
