@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.2 - 2026-09-07
+
+- CombatCoreSystemsを `GPL-3.0-or-later` で公開しました。
+- Kyori Adventureおよび利用ライブラリの第三者ライセンス一覧と原文を追加しました。
+- ライセンス文書を配布JARの `META-INF` に同梱するようにしました。
+
 ## 1.1.1 - 2026-09-07
 
 - 属性編集用の個別権限 `combatcoresystems.admin.attribute` を追加しました。

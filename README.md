@@ -2,7 +2,7 @@
 
 Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドRPG基盤プラグインです。
 
-現在のバージョン: **v1.0.1**
+現在のバージョン: **v1.1.2**
 
 ## 主な機能
 
@@ -59,3 +59,9 @@ Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドR
 ## バージョン管理
 
 作業ブランチで変更し、確認後に `main` へ統合します。リリース時は `pom.xml` と `CHANGELOG.md` を更新し、上記スクリプトでJARとバックアップを生成してから `v<version>` タグを付けます。コミットメッセージはConventional Commits形式を推奨します。
+
+## ライセンス
+
+CombatCoreSystemsは **GNU General Public License v3.0 or later**（`GPL-3.0-or-later`）で公開しています。詳細は [LICENSE](LICENSE) を参照してください。
+
+Kyori Adventureを含む外部ソフトウェアには、それぞれのライセンスが引き続き適用されます。著作権表示、利用形態、ライセンス全文は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) と [third-party-licenses](third-party-licenses) を参照してください。
