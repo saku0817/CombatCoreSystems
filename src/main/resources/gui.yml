@@ -21,4 +21,4 @@ hud:
     - ""
     - "<red>HP <hp> / <max_hp></red>"
   combat-actionbar: "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>"
-  element-actionbar: "<elements>"
+  attribute-actionbar: "<attributes>"

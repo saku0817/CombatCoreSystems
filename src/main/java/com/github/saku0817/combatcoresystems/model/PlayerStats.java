@@ -60,14 +60,4 @@ public final class PlayerStats {
         };
     }
 
-    public double resistanceIgnore(Element element) {
-        return switch (element) {
-            case FIRE -> value(StatKey.FIRE_RESISTANCE_IGNORE);
-            case WATER -> value(StatKey.WATER_RESISTANCE_IGNORE);
-            case WIND -> value(StatKey.WIND_RESISTANCE_IGNORE);
-            case THUNDER -> value(StatKey.THUNDER_RESISTANCE_IGNORE);
-            case MOON -> value(StatKey.MOON_RESISTANCE_IGNORE);
-            case PHYSICAL -> 0.0;
-        };
-    }
 }

@@ -2,7 +2,7 @@ data-version: 1
 server-name: "<gold>CombatCoreSystems</gold>"
 pvp-enabled: true
 combat-duration-seconds: 10
-element-attachment-seconds: 5
+attribute-attachment-seconds: 5
 autosave-minutes: 20
 backup-hours: 12
 backup-retention: 7
@@ -18,7 +18,7 @@ region-wand:
   material: WOODEN_AXE
 performance:
   max-operations-per-tick: 250
-element-colors:
+attribute-colors:
   FIRE: "#ff0000"
   WATER: "#0000cd"
   WIND: "#3cb371"

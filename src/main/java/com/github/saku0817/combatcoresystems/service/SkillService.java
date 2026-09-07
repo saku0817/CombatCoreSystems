@@ -77,13 +77,16 @@ public final class SkillService implements Listener {
         double multiplier = override(weapon, limitBreak, (ultimate ? "ultimate" : "skill") + ".multiplier", ability.multiplier());
         double radius = override(weapon, limitBreak, (ultimate ? "ultimate" : "skill") + ".radius", ability.radius());
         Element element = ability.element();
-        Object overrideElement = cumulativeOverride(weapon, limitBreak, (ultimate ? "ultimate" : "skill") + ".element");
+        String attributePath = (ultimate ? "ultimate" : "skill") + ".attribute";
+        Object overrideElement = cumulativeOverride(weapon, limitBreak, attributePath);
+        if (overrideElement == null) overrideElement = cumulativeOverride(weapon, limitBreak, (ultimate ? "ultimate" : "skill") + ".element");
         if (overrideElement != null) element = Element.parse(String.valueOf(overrideElement)).orElse(element);
         ItemInstance heart = data.getEquipment().get(EquipmentSlot.DIVINE_HEART);
         if (heart != null) {
             String path = "divine-hearts." + heart.getDefinitionId() + ".rules." + (ultimate ? "ultimate" : "skill");
             var divine = definitions.snapshot().config("divine_hearts.yml");
-            if (divine.contains(path + ".element")) element = Element.parse(divine.getString(path + ".element")).orElse(element);
+            if (divine.contains(path + ".attribute")) element = Element.parse(divine.getString(path + ".attribute")).orElse(element);
+            else if (divine.contains(path + ".element")) element = Element.parse(divine.getString(path + ".element")).orElse(element);
             multiplier *= divine.getDouble(path + ".multiplier", 1.0);
             radius += divine.getDouble(path + ".radius-add", 0.0);
         }

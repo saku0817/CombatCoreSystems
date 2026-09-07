@@ -2,7 +2,7 @@ package com.github.saku0817.combatcoresystems.service;
 
 import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
 import org.bukkit.Color;
 import org.bukkit.Location;
@@ -21,6 +21,7 @@ public final class DamageDisplayService {
     private final DefinitionRegistry definitions;
     private final Map<UUID, Deque<DisplayEntry>> byOwner = new HashMap<>();
     private final List<DisplayEntry> active = new ArrayList<>();
+    private final MiniMessage mini = MiniMessage.miniMessage();
 
     public DamageDisplayService(JavaPlugin plugin, DefinitionRegistry definitions) {
         this.plugin = plugin;
@@ -31,15 +32,14 @@ public final class DamageDisplayService {
 
     public void damage(UUID owner, LivingEntity target, long amount, boolean critical, String reaction, boolean small) {
         if (!definitions.snapshot().config("config.yml").getBoolean("text-display.enabled", true)) return;
-        Component text;
-        if (reaction != null) text = Component.text(reaction + " " + amount, NamedTextColor.AQUA);
-        else if (critical) text = Component.text("CRIT " + amount, NamedTextColor.GOLD);
-        else text = Component.text(Long.toString(amount), NamedTextColor.WHITE);
+        String path = reaction != null ? "damage-display.reaction" : critical ? "damage-display.critical" : "damage-display.normal";
+        String fallback = reaction != null ? "<aqua><reaction> <damage></aqua>" : critical ? "<gold>CRIT <damage></gold>" : "<white><damage></white>";
+        Component text = mini.deserialize(template(path, fallback).replace("<reaction>", reaction == null ? "" : reaction).replace("<damage>", Long.toString(amount)));
         spawn(owner, target, text, critical ? 1.35f : small ? 0.7f : 1.0f);
     }
 
     public void heal(UUID owner, LivingEntity target, long amount, boolean small) {
-        spawn(owner, target, Component.text("+" + amount, NamedTextColor.GREEN), small ? 0.7f : 1.0f);
+        spawn(owner, target, mini.deserialize(template("damage-display.heal", "<green>+<heal></green>").replace("<heal>", Long.toString(amount))), small ? 0.7f : 1.0f);
     }
 
     private void spawn(UUID owner, LivingEntity target, Component text, float scale) {
@@ -83,6 +83,8 @@ public final class DamageDisplayService {
         active.remove(entry);
         entry.display.remove();
     }
+
+    private String template(String path, String fallback) { return definitions.snapshot().config("messages.yml").getString(path, fallback); }
 
     private record DisplayEntry(UUID owner, TextDisplay display, long removeTick) {}
 }

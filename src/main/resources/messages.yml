@@ -11,3 +11,14 @@ level-up: "<green>Lv.<level>になりました。</green>"
 rebirth-complete: "<light_purple>新生回帰を行いました。回数: <count></light_purple>"
 party-friendly-fire: "<yellow>同じPartyのメンバーには攻撃できません。</yellow>"
 encyclopedia-unlock: "<aqua>図鑑に新しい対象を登録しました: <name></aqua>"
+attribute:
+  attached: "<gray><attribute>属性が付与されています。残り: <seconds>秒</gray>"
+  reaction: "<aqua><reaction> <damage></aqua>"
+damage-display:
+  normal: "<white><damage></white>"
+  critical: "<gold>CRIT <damage></gold>"
+  reaction: "<aqua><reaction> <damage></aqua>"
+  heal: "<green>+<heal></green>"
+command:
+  updated: "<green>設定を更新しました。</green>"
+  force: "<green><player> の戦闘状態を <state> にしました。</green>"

@@ -78,7 +78,8 @@ public final class MobAbilityService implements Listener {
             double range = skill.getDouble("range", 16); Player target = source.getWorld().getNearbyPlayers(source.getLocation(), range).stream().min(Comparator.comparingDouble(p -> p.getLocation().distanceSquared(source.getLocation()))).orElse(null);
             if (target == null) continue;
             ReferenceStat reference; try { reference = ReferenceStat.valueOf(skill.getString("reference", "ATK").toUpperCase(Locale.ROOT)); } catch (IllegalArgumentException ex) { reference = ReferenceStat.ATK; }
-            damage.apply(new DamageRequest(source.getUniqueId(), target.getUniqueId(), reference, skill.getDouble("multiplier", 1), Element.parse(skill.getString("element")).orElse(Element.PHYSICAL), skill.getBoolean("critical", true), skill.getBoolean("fixed", false), skill.getDouble("fixed-amount", 0), "mob_skill:" + id));
+            String attribute = skill.contains("attribute") ? skill.getString("attribute") : skill.getString("element");
+            damage.apply(new DamageRequest(source.getUniqueId(), target.getUniqueId(), reference, skill.getDouble("multiplier", 1), Element.parse(attribute).orElse(Element.PHYSICAL), skill.getBoolean("critical", true), skill.getBoolean("fixed", false), skill.getDouble("fixed-amount", 0), "mob_skill:" + id));
             cooldowns.put(key, now + (long) (skill.getDouble("cooldown", 10) * 1000));
         }
     }

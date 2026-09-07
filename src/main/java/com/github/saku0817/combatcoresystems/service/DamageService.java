@@ -83,7 +83,12 @@ public final class DamageService implements DamageApi, Listener {
         Element element = mobs.definition(attacker).map(MobDefinition::nativeElement).orElse(Element.PHYSICAL);
         if (attacker instanceof Player player) {
             PlayerData data = players.require(player); ItemInstance heart = data.getEquipment().get(EquipmentSlot.DIVINE_HEART);
-            if (heart != null) element = Element.parse(definitions.snapshot().config("divine_hearts.yml").getString("divine-hearts." + heart.getDefinitionId() + ".rules.normal-attack-element")).orElse(element);
+            if (heart != null) {
+                var heartConfig = definitions.snapshot().config("divine_hearts.yml");
+                String path = "divine-hearts." + heart.getDefinitionId() + ".rules.";
+                element = Element.parse(heartConfig.contains(path + "normal-attack-attribute")
+                        ? heartConfig.getString(path + "normal-attack-attribute") : heartConfig.getString(path + "normal-attack-element")).orElse(element);
+            }
         }
         DamageRequest request = new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), ReferenceStat.ATK,
                 multiplier, element, true, false, 0, "normal_attack");
@@ -147,7 +152,10 @@ public final class DamageService implements DamageApi, Listener {
         Bukkit.getPluginManager().callEvent(new AfterDamageEvent(request, result));
 
         if (!request.fixedDamage() && request.element() != Element.PHYSICAL && !mobs.immune(target, request.element()) && attacker != null && !target.isDead()) {
-            double duration = definitions.snapshot().config("config.yml").getDouble("element-attachment-seconds", 5);
+            var config = definitions.snapshot().config("config.yml");
+            double duration = config.contains("attribute-attachment-seconds")
+                    ? config.getDouble("attribute-attachment-seconds", 5)
+                    : config.getDouble("element-attachment-seconds", 5);
             LivingEntity reactionAttacker = attacker;
             elements.attach(target, request.element(), duration).ifPresent(trigger -> applyReaction(reactionAttacker, target, request.referenceStat(), trigger));
         }
@@ -164,7 +172,7 @@ public final class DamageService implements DamageApi, Listener {
         CombatantStats defender = combatant(target);
         double reference = switch (request.referenceStat()) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
         double base = Math.max(0, reference * request.multiplier());
-        double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown, source.defIgnore);
+        double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown);
         double defenseCoefficient = CoreMath.defenseCoefficient(source.level, defender.level, effectiveDef);
         double damage = base * defenseCoefficient;
         double resistance = 0;
@@ -172,8 +180,7 @@ public final class DamageService implements DamageApi, Listener {
             if (mobs.immune(target, request.element())) damage = 0;
             else {
                 resistance = CoreMath.finalResistance(defender.resistance(request.element()),
-                        defender.resistanceDown(request.element()) + elements.resistanceDown(target.getUniqueId(), request.element()),
-                        source.resistanceIgnore(request.element()));
+                        defender.resistanceDown(request.element()) + elements.resistanceDown(target.getUniqueId(), request.element()));
                 damage *= (1 + source.elementDamage(request.element())) * (1 - resistance);
             }
         }
@@ -198,8 +205,7 @@ public final class DamageService implements DamageApi, Listener {
             for (Map.Entry<Element, Double> component : trigger.definition().components().entrySet()) {
                 if (mobs.immune(target, component.getKey())) continue;
                 double resistance = CoreMath.finalResistance(defender.resistance(component.getKey()),
-                        defender.resistanceDown(component.getKey()) + elements.resistanceDown(target.getUniqueId(), component.getKey()),
-                        source.resistanceIgnore(component.getKey()));
+                        defender.resistanceDown(component.getKey()) + elements.resistanceDown(target.getUniqueId(), component.getKey()));
                 int hits = component.getKey() == trigger.definition().multiHitElement() ? trigger.definition().hits() : 1;
                 total += reference * component.getValue() * (1 + source.elementDamage(component.getKey())) * (1 - resistance) * hits;
             }
@@ -221,14 +227,14 @@ public final class DamageService implements DamageApi, Listener {
             PlayerData data = players.require(player);
             PlayerStats value = stats.get(player, data);
             return new CombatantStats(value.level(), value.maxHp(), value.atk(), value.def(), value.value(StatKey.CRIT_RATE),
-                    value.value(StatKey.CRIT_DAMAGE), value.value(StatKey.DEF_DOWN), value.value(StatKey.DEF_IGNORE), value);
+                    value.value(StatKey.CRIT_DAMAGE), value.value(StatKey.DEF_DOWN), value);
         }
         MobDefinition definition = mobs.definition(entity).orElse(null);
         int level = definition == null ? 1 : mobs.level(entity);
         double hp = attribute(entity, Attribute.MAX_HEALTH, entity.getHealth());
         double atk = attribute(entity, Attribute.ATTACK_DAMAGE, 2);
         double def = definition == null ? attribute(entity, Attribute.ARMOR, 0) : mobs.defense(entity, definition, level);
-        return new CombatantStats(level, hp, atk, def, 0.05, 0.5, 0, 0, definition);
+        return new CombatantStats(level, hp, atk, def, 0.05, 0.5, 0, definition);
     }
 
     private double attribute(LivingEntity entity, Attribute attribute, double fallback) {
@@ -250,7 +256,7 @@ public final class DamageService implements DamageApi, Listener {
     }
 
     private record CombatantStats(int level, double hp, double atk, double def, double critRate, double critDamage,
-                                  double defDown, double defIgnore, Object details) {
+                                  double defDown, Object details) {
         double elementDamage(Element element) {
             if (details instanceof PlayerStats player) return player.elementDamage(element);
             return 0;
@@ -261,6 +267,5 @@ public final class DamageService implements DamageApi, Listener {
             return 0;
         }
         double resistanceDown(Element element) { return details instanceof PlayerStats player ? player.resistanceDown(element) : 0; }
-        double resistanceIgnore(Element element) { return details instanceof PlayerStats player ? player.resistanceIgnore(element) : 0; }
     }
 }

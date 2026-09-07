@@ -98,24 +98,24 @@ public final class DefinitionRegistry {
         for (String id : root.getKeys(false)) {
             ConfigurationSection section = root.getConfigurationSection(id);
             if (section == null) continue;
-            List<String> rawElements = section.getStringList("elements");
-            if (rawElements.size() != 2) { errors.add("reaction " + id + " must have exactly two elements"); continue; }
+            List<String> rawElements = list(section, "attributes", "elements");
+            if (rawElements.size() != 2) { errors.add("reaction " + id + " must have exactly two attributes"); continue; }
             Optional<Element> first = Element.parse(rawElements.get(0));
             Optional<Element> second = Element.parse(rawElements.get(1));
             if (first.isEmpty() || second.isEmpty() || first.get() == Element.PHYSICAL || second.get() == Element.PHYSICAL) {
-                errors.add("reaction " + id + " has an invalid element"); continue;
+                errors.add("reaction " + id + " has an invalid attribute"); continue;
             }
             EnumMap<Element, Double> components = new EnumMap<>(Element.class);
-            ConfigurationSection componentSection = section.getConfigurationSection("components");
+            ConfigurationSection componentSection = section(section, "damage-components", "components");
             if (componentSection != null) {
                 for (String key : componentSection.getKeys(false)) Element.parse(key)
                         .ifPresent(element -> components.put(element, componentSection.getDouble(key)));
             }
             ConfigurationSection down = section.getConfigurationSection("resistance-down");
-            Element downElement = down == null ? null : Element.parse(down.getString("element")).orElse(null);
+            Element downElement = down == null ? null : Element.parse(value(down, "attribute", "element")).orElse(null);
             result.put(id, new ReactionDefinition(id, section.getString("name", id), first.get(), second.get(),
                     Math.max(0, section.getDouble("radius", 0)), Math.max(0, section.getDouble("cooldown", 0)),
-                    Math.max(1, section.getInt("hits", 1)), Element.parse(section.getString("multi-hit-element")).orElse(null),
+                    Math.max(1, section.getInt("hits", 1)), Element.parse(value(section, "multi-hit-attribute", "multi-hit-element")).orElse(null),
                     Math.max(0, section.getDouble("levitation", 0)), components,
                     downElement, down == null ? 0 : down.getDouble("amount"), down == null ? 0 : down.getDouble("duration")));
         }
@@ -136,13 +136,13 @@ public final class DefinitionRegistry {
             catch (IllegalArgumentException ex) { errors.add("weapon " + id + " has invalid category"); continue; }
             int rarity = s.getInt("rarity", 1);
             if (rarity < 1 || rarity > 5) { errors.add("weapon " + id + " rarity must be 1..5"); continue; }
-            Element element = Element.parse(s.getString("element-bonus.type")).orElse(Element.PHYSICAL);
+            Element element = Element.parse(value(s, "attribute-bonus.type", "element-bonus.type")).orElse(Element.PHYSICAL);
             int min = Math.max(1, s.getInt("equip-level.min", 1));
             int max = Math.min(100, s.getInt("equip-level.max", 100));
             if (min > max) { errors.add("weapon " + id + " equip level range is invalid"); continue; }
             result.put(id, new WeaponDefinition(id, s.getString("name", id), material.name(), category, rarity,
                     s.getDouble("base-atk.level-1"), s.getDouble("base-atk.level-100"), element,
-                    s.getDouble("element-bonus.value"), min, max,
+                    decimal(s, "attribute-bonus.value", "element-bonus.value"), min, max,
                     s.contains("custom-model-data") ? s.getInt("custom-model-data") : null, s.getStringList("lore"),
                     parseSkill(id + ":skill", s.getConfigurationSection("skill"), warnings),
                     parseSkill(id + ":ultimate", s.getConfigurationSection("ultimate"), warnings), readLimitBreaks(s.getConfigurationSection("limit-breaks"))));
@@ -156,7 +156,7 @@ public final class DefinitionRegistry {
         try { stat = ReferenceStat.valueOf(s.getString("reference", "ATK").toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException ex) { warnings.add(fallbackId + " uses ATK because reference is invalid"); stat = ReferenceStat.ATK; }
         return new WeaponDefinition.SkillDefinition(s.getString("id", fallbackId), s.getString("name", fallbackId), stat,
-                s.getDouble("multiplier", 1), Element.parse(s.getString("element")).orElse(Element.PHYSICAL),
+                s.getDouble("multiplier", 1), Element.parse(value(s, "attribute", "element")).orElse(Element.PHYSICAL),
                 Math.max(0, s.getDouble("cooldown", 0)), Math.max(1, s.getInt("charges", 1)),
                 Math.max(0, s.getDouble("radius", 0)), s.getString("target", "ENEMY"),
                 s.getConfigurationSection("conditions") == null ? Map.of() : Map.copyOf(s.getConfigurationSection("conditions").getValues(false)));
@@ -240,7 +240,7 @@ public final class DefinitionRegistry {
             result.put(id, new MobDefinition(id, s.getString("name", id), s.getString("entity-type"), boss, min, max,
                     s.getDouble("stats.hp.min", 20), s.getDouble("stats.hp.max", 20), s.getDouble("stats.atk.min", 2),
                     s.getDouble("stats.atk.max", 2), s.getDouble("stats.def.min", 0), s.getDouble("stats.def.max", 0),
-                    Element.parse(s.getString("native-element")).orElse(Element.PHYSICAL), Set.copyOf(immunity), Map.copyOf(resistance),
+                    Element.parse(value(s, "native-attribute", "native-element")).orElse(Element.PHYSICAL), Set.copyOf(immunity), Map.copyOf(resistance),
                     Math.max(0, s.getLong("exp", 0)), s.getBoolean("show-level", true)));
         }
         return Map.copyOf(result);
@@ -282,7 +282,7 @@ public final class DefinitionRegistry {
         try {
             return new BuffDefinition.TickEffect(section.getBoolean("healing"), section.getBoolean("fixed"),
                     ReferenceStat.valueOf(section.getString("reference", "ATK").toUpperCase(Locale.ROOT)),
-                    section.getDouble("multiplier", 1), Element.parse(section.getString("element")).orElse(Element.PHYSICAL),
+                    section.getDouble("multiplier", 1), Element.parse(value(section, "attribute", "element")).orElse(Element.PHYSICAL),
                     Math.max(0.05, section.getDouble("interval", 1)), section.getBoolean("critical"));
         } catch (IllegalArgumentException ex) {
             errors.add("buff " + id + " has invalid tick-effect");
@@ -308,6 +308,20 @@ public final class DefinitionRegistry {
                     Math.max(x1, x2), y2, Math.max(z1, z2), Map.copyOf(flags)));
         }
         return Map.copyOf(result);
+    }
+
+    private List<String> list(ConfigurationSection section, String preferred, String legacy) {
+        return section.contains(preferred) ? section.getStringList(preferred) : section.getStringList(legacy);
+    }
+    private ConfigurationSection section(ConfigurationSection section, String preferred, String legacy) {
+        ConfigurationSection result = section.getConfigurationSection(preferred);
+        return result == null ? section.getConfigurationSection(legacy) : result;
+    }
+    private String value(ConfigurationSection section, String preferred, String legacy) {
+        return section.contains(preferred) ? section.getString(preferred) : section.getString(legacy);
+    }
+    private double decimal(ConfigurationSection section, String preferred, String legacy) {
+        return section.contains(preferred) ? section.getDouble(preferred) : section.getDouble(legacy);
     }
 
     private void logIssues(LoadResult result) {

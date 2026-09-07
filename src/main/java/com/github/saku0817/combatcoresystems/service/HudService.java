@@ -87,13 +87,16 @@ public final class HudService {
         if (combatRemaining > 0) {
             SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
             String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0) + "秒";
-            text.append("<red>⚔ 戦闘中 ").append(remaining).append("</red> <gray>|</gray> <yellow>スキル: ")
-                    .append(skill.ready() ? "発動可能" : "あと" + format(skill.remainingSeconds()) + "秒").append("</yellow> <gray>|</gray> <gold>必殺技: ")
-                    .append(ultimate.ready() ? "発動可能" : "あと" + format(ultimate.remainingSeconds()) + "秒").append("</gold>");
+            String template = definitions.snapshot().config("gui.yml").getString("hud.combat-actionbar", "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>");
+            text.append(template.replace("<combat_remaining>", remaining)
+                    .replace("<skill_status>", skill.ready() ? "発動可能" : "あと" + format(skill.remainingSeconds()) + "秒")
+                    .replace("<ultimate_status>", ultimate.ready() ? "発動可能" : "あと" + format(ultimate.remainingSeconds()) + "秒"));
         }
         if (!attached.isEmpty()) {
             if (!text.isEmpty()) text.append(" <gray>|</gray> ");
-            attached.forEach((element, remaining) -> text.append(element.japaneseName()).append(' ').append(format(remaining / 1000.0)).append("秒 "));
+            String attributes = attached.entrySet().stream().map(entry -> entry.getKey().japaneseName() + " " + format(entry.getValue() / 1000.0) + "秒").collect(java.util.stream.Collectors.joining(" "));
+            String template = definitions.snapshot().config("gui.yml").getString("hud.attribute-actionbar", "<attributes>");
+            text.append(template.replace("<attributes>", attributes));
         }
         player.sendActionBar(mini.deserialize(text.toString()));
     }

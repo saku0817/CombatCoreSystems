@@ -13,15 +13,15 @@ class CoreMathTest {
     }
 
     @Test void defenseFormulaMatchesSpecification() {
-        double effective = CoreMath.effectiveDefense(100, 0.2, 0.25);
-        assertEquals(60.0, effective, 0.0001);
-        assertEquals(200.0 / 460.0, CoreMath.defenseCoefficient(100, 100, effective), 0.0001);
+        double effective = CoreMath.effectiveDefense(100, 0.2);
+        assertEquals(80.0, effective, 0.0001);
+        assertEquals(200.0 / 480.0, CoreMath.defenseCoefficient(100, 100, effective), 0.0001);
     }
 
     @Test void resistanceCanBeNegativeButCapsAtOneHundredPercent() {
-        assertEquals(-0.5, CoreMath.finalResistance(-0.5, 0, 0), 0.0001);
-        assertEquals(1.0, CoreMath.finalResistance(1.5, 0, 0), 0.0001);
-        assertEquals(0.6, CoreMath.finalResistance(1.0, 0.2, 0.25), 0.0001);
+        assertEquals(-0.5, CoreMath.finalResistance(-0.5, 0), 0.0001);
+        assertEquals(1.0, CoreMath.finalResistance(1.5, 0), 0.0001);
+        assertEquals(0.8, CoreMath.finalResistance(1.0, 0.2), 0.0001);
     }
 
     @Test void cooldownCapsAtOneHundredPercent() {

@@ -15,8 +15,8 @@ public final class CoreMath {
         return Math.max(0L, base + growth * offset * offset);
     }
 
-    public static double effectiveDefense(double defense, double defenseDown, double defenseIgnore) {
-        return Math.max(0.0, defense) * (1.0 - defenseDown) * (1.0 - defenseIgnore);
+    public static double effectiveDefense(double defense, double defenseDown) {
+        return Math.max(0.0, defense) * (1.0 - defenseDown);
     }
 
     public static double defenseCoefficient(int attackerLevel, int defenderLevel, double effectiveDefense) {
@@ -25,8 +25,8 @@ public final class CoreMath {
         return denominator <= 0 ? 0 : attacker / denominator;
     }
 
-    public static double finalResistance(double base, double down, double ignore) {
-        return Math.min(1.0, (base - down) * (1.0 - ignore));
+    public static double finalResistance(double base, double down) {
+        return Math.min(1.0, base - down);
     }
 
     public static double cooldownSeconds(double baseSeconds, double cooldownStat) {
