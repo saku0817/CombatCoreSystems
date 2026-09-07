@@ -172,7 +172,12 @@ public final class GuiService implements Listener {
         PlayerData data = players.require(player);
         List<Entry> entries = new ArrayList<>();
         if (category.equals("mobs") || category.equals("bosses")) {
-            Map<String, MobDefinition> source = category.equals("bosses") ? definitions.snapshot().bosses() : definitions.snapshot().mobs();
+            Map<String, MobDefinition> source;
+            if (category.equals("bosses")) source = definitions.snapshot().bosses();
+            else {
+                source = new LinkedHashMap<>(definitions.snapshot().mobs());
+                source.putAll(definitions.snapshot().vanillaMobs());
+            }
             Set<String> discovered = category.equals("bosses") ? data.getDiscoveredBosses() : data.getDiscoveredMobs();
             source.values().forEach(value -> {
                 boolean known = discovered.contains(value.id());

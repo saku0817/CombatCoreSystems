@@ -1,2 +1,3 @@
 data-version: 1
+# スキルツリー追加例: trees.combat.name: "戦闘ツリー"
 trees: {}

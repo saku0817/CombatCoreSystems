@@ -1,4 +1,5 @@
 data-version: 1
+# 基本設定例: combat-duration-seconds: 15 とすると戦闘状態が15秒続きます。
 server-name: "<gold>CombatCoreSystems</gold>"
 pvp-enabled: true
 combat-duration-seconds: 10
@@ -8,6 +9,7 @@ backup-hours: 12
 backup-retention: 7
 text-display:
   enabled: true
+  show-overdamage: true
   duration-seconds: 0.8
   max-per-player: 20
 hud:

@@ -1,2 +1,3 @@
 data-version: 1
+# Boss追加例: bosses.dragon: {name: "<red>Dragon</red>", entity-type: ENDER_DRAGON, level: {min: 100, max: 100}, custom-exp: 10000}
 bosses: {}

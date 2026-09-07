@@ -94,6 +94,9 @@ public final class MobAbilityService implements Listener {
         ConfigurationSection drops = definitionSection(definition).getConfigurationSection("drops"); if (drops == null) return;
         for (String key : drops.getKeys(false)) { ConfigurationSection drop = drops.getConfigurationSection(key); if (drop == null || ThreadLocalRandom.current().nextDouble() > drop.getDouble("chance", 1)) continue; items.create(drop.getString("item"), Math.max(1, drop.getInt("amount", 1))).ifPresent(event.getDrops()::add); }
     }
-    private ConfigurationSection definitionSection(MobDefinition definition) { return definitions.snapshot().config(definition.boss() ? "bosses.yml" : "mobs.yml").getConfigurationSection((definition.boss() ? "bosses." : "mobs.") + definition.id()); }
+    private ConfigurationSection definitionSection(MobDefinition definition) {
+        String root = definition.boss() ? "bosses" : definition.vanilla() ? "vanilla-mobs" : "mobs";
+        return definitions.snapshot().config(definition.boss() ? "bosses.yml" : "mobs.yml").getConfigurationSection(root + "." + definition.id());
+    }
     private record Respawn(String id, Location location, long at) {}
 }

@@ -56,6 +56,9 @@ public final class EncyclopediaService implements Listener {
     }
 
     private java.util.Set<String> mobsDefinitions(boolean boss) {
-        return boss ? definitions.snapshot().bosses().keySet() : definitions.snapshot().mobs().keySet();
+        if (boss) return definitions.snapshot().bosses().keySet();
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>(definitions.snapshot().mobs().keySet());
+        ids.addAll(definitions.snapshot().vanillaMobs().keySet());
+        return ids;
     }
 }

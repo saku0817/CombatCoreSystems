@@ -40,7 +40,7 @@ public final class CombatCoreSystems extends JavaPlugin {
         try { parties.load().get(15, TimeUnit.SECONDS); }
         catch (Exception ex) { getLogger().log(Level.SEVERE, "Could not load party data", ex); Bukkit.getPluginManager().disablePlugin(this); return; }
 
-        StatService stats = new StatService(definitions, combat);
+        StatService stats = new StatService(this, definitions, combat);
         LevelService levels = new LevelService(definitions, stats);
         RegionService regions = new RegionService(this, definitions);
         MobService mobs = new MobService(this, definitions);
@@ -62,7 +62,7 @@ public final class CombatCoreSystems extends JavaPlugin {
         GuiService gui = new GuiService(this, definitions, players, stats, levels, combat, equipment, skillTrees, parties, enhancement, items);
         BackupService backups = new BackupService(this, definitions, storage, players, parties, stats, levels, elements);
 
-        registerListeners(List.of(regions, damage, equipment, skills, encyclopedia, gui, mobAbilities,
+        registerListeners(List.of(regions, mobs, stats, damage, equipment, skills, encyclopedia, gui, mobAbilities,
                 new PlayerLifecycleListener(this, players, levels, combat, elements, buffs, equipment, hud, mobs)));
 
         CcsCommand general = new CcsCommand(players, combat, gui, parties, debug);
@@ -77,8 +77,8 @@ public final class CombatCoreSystems extends JavaPlugin {
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(this, definitions, players, stats, levels, combat, elements, skills, parties).register();
         if (Bukkit.getPluginManager().getPlugin("floodgate") != null) getLogger().info("Floodgate detected; Bedrock players use the common CCS controls and GUI flow.");
 
-        combat.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule();
-        Bukkit.getOnlinePlayers().forEach(player -> players.load(player, data -> { elements.resumePlayer(data); equipment.syncArmor(player); levels.apply(player, data, false); }));
+        combat.start(); mobs.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule();
+        Bukkit.getOnlinePlayers().forEach(player -> players.load(player, data -> { elements.resumePlayer(data); equipment.syncArmor(player); levels.restore(player, data); }));
         getLogger().info("CombatCoreSystems v" + getPluginMeta().getVersion() + " enabled with " + storage.backend() + " storage.");
     }
 

@@ -146,9 +146,10 @@ public final class DamageService implements DamageApi, Listener {
 
         DamageResult result = calculate(request, attacker, target);
         if (!result.applied()) return result;
+        long overdamage = overdamage(target, result.finalDamage());
         subtractHealth(target, result.finalDamage());
         UUID owner = attacker == null ? target.getUniqueId() : attacker.getUniqueId();
-        displays.damage(owner, target, result.finalDamage(), result.critical(), null, false);
+        displays.damage(owner, target, result.finalDamage(), result.critical(), null, false, overdamage);
         Bukkit.getPluginManager().callEvent(new AfterDamageEvent(request, result));
 
         if (!request.fixedDamage() && request.element() != Element.PHYSICAL && !mobs.immune(target, request.element()) && attacker != null && !target.isDead()) {
@@ -212,8 +213,9 @@ public final class DamageService implements DamageApi, Listener {
             boolean critical = ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
             if (critical) total *= 1 + source.critDamage;
             long rounded = CoreMath.roundedDamage(total);
+            long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
-            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false);
+            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage);
             if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
             if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
                     trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());
@@ -233,7 +235,7 @@ public final class DamageService implements DamageApi, Listener {
         int level = definition == null ? 1 : mobs.level(entity);
         double hp = attribute(entity, Attribute.MAX_HEALTH, entity.getHealth());
         double atk = attribute(entity, Attribute.ATTACK_DAMAGE, 2);
-        double def = definition == null ? attribute(entity, Attribute.ARMOR, 0) : mobs.defense(entity, definition, level);
+        double def = definition == null ? 0 : mobs.defense(entity, definition, level);
         return new CombatantStats(level, hp, atk, def, 0.05, 0.5, 0, definition);
     }
 
@@ -247,6 +249,11 @@ public final class DamageService implements DamageApi, Listener {
         target.setLastDamage(damage);
         target.setNoDamageTicks(target.getMaximumNoDamageTicks());
         target.setHealth(Math.max(0, target.getHealth() - damage));
+    }
+
+    private long overdamage(LivingEntity target, long damage) {
+        if (!definitions.snapshot().config("config.yml").getBoolean("text-display.show-overdamage", true)) return 0;
+        return CoreMath.overdamage(damage, target.getHealth());
     }
 
     private void applyStandardKnockback(LivingEntity attacker, LivingEntity target) {

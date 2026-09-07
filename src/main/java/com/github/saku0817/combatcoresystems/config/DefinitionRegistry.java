@@ -76,8 +76,9 @@ public final class DefinitionRegistry {
         Map<String, ReactionDefinition> reactions = parseReactions(yaml.get("reactions.yml"), errors);
         Map<String, WeaponDefinition> weapons = parseWeapons(yaml.get("weapons.yml"), errors, warnings);
         Map<String, EquipmentDefinition> equipment = parseEquipment(yaml.get("equipment.yml"), errors, warnings);
-        Map<String, MobDefinition> mobs = parseMobs(yaml.get("mobs.yml"), false, errors);
-        Map<String, MobDefinition> bosses = parseMobs(yaml.get("bosses.yml"), true, errors);
+        Map<String, MobDefinition> mobs = parseMobs(yaml.get("mobs.yml"), "mobs", false, false, errors);
+        Map<String, MobDefinition> vanillaMobs = parseMobs(yaml.get("mobs.yml"), "vanilla-mobs", false, true, errors);
+        Map<String, MobDefinition> bosses = parseMobs(yaml.get("bosses.yml"), "bosses", true, false, errors);
         Map<String, BuffDefinition> buffs = parseBuffs(yaml.get("buffs.yml"), errors);
         Map<String, RegionDefinition> regions = parseRegions(yaml.get("regions.yml"), errors);
 
@@ -87,7 +88,7 @@ public final class DefinitionRegistry {
             }
         }
 
-        Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, bosses, regions);
+        Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions);
         return new LoadResult(snapshot, warnings, errors, fatal);
     }
 
@@ -221,9 +222,9 @@ public final class DefinitionRegistry {
         };
     }
 
-    private Map<String, MobDefinition> parseMobs(YamlConfiguration yaml, boolean boss, List<String> errors) {
+    private Map<String, MobDefinition> parseMobs(YamlConfiguration yaml, String rootName, boolean boss, boolean vanilla, List<String> errors) {
         Map<String, MobDefinition> result = new LinkedHashMap<>();
-        ConfigurationSection root = yaml.getConfigurationSection(boss ? "bosses" : "mobs");
+        ConfigurationSection root = yaml.getConfigurationSection(rootName);
         if (root == null) return Map.of();
         for (String id : root.getKeys(false)) {
             ConfigurationSection s = root.getConfigurationSection(id);
@@ -241,7 +242,8 @@ public final class DefinitionRegistry {
                     s.getDouble("stats.hp.min", 20), s.getDouble("stats.hp.max", 20), s.getDouble("stats.atk.min", 2),
                     s.getDouble("stats.atk.max", 2), s.getDouble("stats.def.min", 0), s.getDouble("stats.def.max", 0),
                     Element.parse(value(s, "native-attribute", "native-element")).orElse(Element.PHYSICAL), Set.copyOf(immunity), Map.copyOf(resistance),
-                    Math.max(0, s.getLong("exp", 0)), s.getBoolean("show-level", true)));
+                    Math.max(0, s.contains("custom-exp") ? s.getLong("custom-exp") : s.getLong("exp", 0)),
+                    s.getBoolean("drop-custom-exp", true), s.getBoolean("show-level", true), vanilla));
         }
         return Map.copyOf(result);
     }
@@ -332,7 +334,7 @@ public final class DefinitionRegistry {
 
     public record Snapshot(Map<String, YamlConfiguration> yaml, Map<String, ReactionDefinition> reactions,
                            Map<String, WeaponDefinition> weapons, Map<String, EquipmentDefinition> equipment,
-                           Map<String, BuffDefinition> buffs, Map<String, MobDefinition> mobs,
+                           Map<String, BuffDefinition> buffs, Map<String, MobDefinition> mobs, Map<String, MobDefinition> vanillaMobs,
                            Map<String, MobDefinition> bosses, Map<String, RegionDefinition> regions) {
         public YamlConfiguration config(String file) { return yaml.get(file); }
     }

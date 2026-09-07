@@ -20,5 +20,7 @@ public record MobDefinition(
         Set<Element> immunities,
         Map<Element, Double> resistances,
         long exp,
-        boolean showLevel
+        boolean dropCustomExp,
+        boolean showLevel,
+        boolean vanilla
 ) {}

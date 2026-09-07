@@ -3,9 +3,13 @@ package com.github.saku0817.combatcoresystems.service;
 import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
 import com.github.saku0817.combatcoresystems.model.PlayerData;
 import com.github.saku0817.combatcoresystems.model.PlayerStats;
+import com.github.saku0817.combatcoresystems.util.CoreMath;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
+
+import java.util.Locale;
 
 public final class LevelService {
     private final DefinitionRegistry definitions;
@@ -18,22 +22,44 @@ public final class LevelService {
     }
 
     public long requiredExp(int level) {
-        int vanilla = level <= 15 ? 2 * level + 7 : level <= 30 ? 5 * level - 38 : 9 * level - 158;
-        return Math.max(1L, Math.round(vanilla * definitions.snapshot().config("levels.yml").getDouble("player.vanilla-exp-multiplier", 5)));
+        ConfigurationSection config = definitions.snapshot().config("levels.yml").getConfigurationSection("player.required-exp");
+        if (config == null) return CoreMath.quadraticExp(100, 25, level);
+        String mode = config.getString("mode", "QUADRATIC").toUpperCase(Locale.ROOT);
+        long base = Math.max(1, config.getLong("base", 100));
+        long growth = Math.max(0, config.getLong("growth", 25));
+        return switch (mode) {
+            case "FIXED" -> base;
+            case "LINEAR" -> Math.max(1, base + growth * Math.max(0, level - 1L));
+            case "TABLE" -> Math.max(1, config.getLong("values." + level, base));
+            default -> Math.max(1, CoreMath.quadraticExp(base, growth, level));
+        };
     }
 
     public void addExp(Player player, PlayerData data, long amount) {
-        if (amount <= 0 || data.getLevel() >= 100) return;
+        int maxLevel = Math.min(100, Math.max(1, definitions.snapshot().config("levels.yml").getInt("player.max-level", 100)));
+        if (amount <= 0 || data.getLevel() >= maxLevel) return;
+        PlayerStats before = stats.recalculate(player, data);
+        int oldLevel = data.getLevel();
         long exp = data.getExp() + amount;
-        while (data.getLevel() < 100 && exp >= requiredExp(data.getLevel())) {
+        while (data.getLevel() < maxLevel && exp >= requiredExp(data.getLevel())) {
             exp -= requiredExp(data.getLevel());
             data.setLevel(data.getLevel() + 1);
             if (data.getGrantedLevelPoints().add(data.getLevel())) data.setSkillPoints(data.getSkillPoints() + 1);
-            player.sendMessage(miniMessage.deserialize("<green>Lv." + data.getLevel() + "になりました。</green>"));
         }
-        if (data.getLevel() >= 100) exp = 0;
+        if (data.getLevel() >= maxLevel) exp = 0;
         data.setExp(exp);
         apply(player, data, false);
+        PlayerStats after = stats.get(player, data);
+        player.sendMessage(miniMessage.deserialize(message("exp-gained", "<aqua>独自EXP +<amount>（<current>/<required>）</aqua>")
+                .replace("<amount>", Long.toString(amount)).replace("<current>", Long.toString(data.getExp()))
+                .replace("<required>", Long.toString(data.getLevel() >= maxLevel ? 0 : requiredExp(data.getLevel())))));
+        if (data.getLevel() > oldLevel) {
+            player.sendMessage(miniMessage.deserialize(message("level-up", "<green>Lv.<level>になりました。 HP +<hp_gain> / ATK +<atk_gain> / DEF +<def_gain></green>")
+                    .replace("<old_level>", Integer.toString(oldLevel)).replace("<level>", Integer.toString(data.getLevel()))
+                    .replace("<hp_gain>", format(after.maxHp() - before.maxHp()))
+                    .replace("<atk_gain>", format(after.atk() - before.atk()))
+                    .replace("<def_gain>", format(after.def() - before.def()))));
+        }
     }
 
     public boolean rebirth(Player player, PlayerData data) {
@@ -46,6 +72,15 @@ public final class LevelService {
     }
 
     public void apply(Player player, PlayerData data, boolean fullHeal) {
+        applyInternal(player, data, fullHeal ? HealthMode.FULL : HealthMode.CURRENT);
+    }
+
+    public void restore(Player player, PlayerData data) {
+        applyInternal(player, data, HealthMode.STORED);
+    }
+
+    private void applyInternal(Player player, PlayerData data, HealthMode healthMode) {
+        double currentHealth = player.getHealth();
         PlayerStats value = stats.recalculate(player, data);
         var maxHealth = player.getAttribute(Attribute.MAX_HEALTH);
         if (maxHealth != null) maxHealth.setBaseValue(value.maxHp());
@@ -53,10 +88,14 @@ public final class LevelService {
         if (attackDamage != null) attackDamage.setBaseValue(value.atk());
         var attackSpeed = player.getAttribute(Attribute.ATTACK_SPEED);
         if (attackSpeed != null) attackSpeed.setBaseValue(value.value(com.github.saku0817.combatcoresystems.model.StatKey.ATTACK_SPEED));
-        player.setLevel(data.getLevel());
-        long required = data.getLevel() >= 100 ? 1 : requiredExp(data.getLevel());
-        player.setExp(data.getLevel() >= 100 ? 0 : Math.min(0.999999f, (float) data.getExp() / required));
-        double desired = fullHeal ? value.maxHp() : Math.min(Math.max(0.1, data.getHealth()), value.maxHp());
+        player.setHealthScaled(true);
+        player.setHealthScale(Math.max(1, definitions.snapshot().config("levels.yml").getDouble("player.minecraft-health-scale", 20)));
+        double source = switch (healthMode) { case FULL -> value.maxHp(); case STORED -> data.getHealth(); case CURRENT -> currentHealth; };
+        double desired = CoreMath.preservedHealth(source, value.maxHp());
         player.setHealth(desired);
     }
+
+    private String message(String path, String fallback) { return definitions.snapshot().config("messages.yml").getString(path, fallback); }
+    private String format(double value) { return String.format(Locale.ROOT, "%.1f", Math.max(0, value)); }
+    private enum HealthMode { CURRENT, STORED, FULL }
 }

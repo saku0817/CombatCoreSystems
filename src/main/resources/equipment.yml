@@ -1,2 +1,3 @@
 data-version: 1
+# 装備追加例: equipment.iron_head: {name: "鉄兜", material: IRON_HELMET, slot: HEAD, rarity: 3, main-stat: {type: DEF_FLAT, level-1: 5, max-level: 20}}
 equipment: {}

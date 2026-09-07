@@ -40,4 +40,12 @@ public final class CoreMath {
     public static long roundedDamage(double damage) {
         return Math.max(0L, Math.round(damage));
     }
+
+    public static double preservedHealth(double current, double maximum) {
+        return Math.min(Math.max(0.1, current), Math.max(0.1, maximum));
+    }
+
+    public static long overdamage(long damage, double currentHealth) {
+        return Math.max(0L, damage - Math.round(Math.max(0, currentHealth)));
+    }
 }

@@ -2,14 +2,14 @@
 
 Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドRPG基盤プラグインです。
 
-現在のバージョン: **v1.1.2**
+現在のバージョン: **v1.2.0**
 
 ## 主な機能
 
-- レベル、経験値、基礎・上級ステータス、転生、5プリセットのスキルツリー
+- Mob討伐で得る独自経験値と独自レベル、基礎・上級ステータス、転生、5プリセットのスキルツリー
 - 5属性と全10組の属性反応、会心、防御・耐性を含むダメージ計算
 - 近接／遠距離武器、スキル、必殺技、限界突破、装備、セット効果、神の心
-- カスタムMob・Boss、リージョン、スポーン、図鑑、HUD、GUI
+- カスタムMob・Boss、設定可能なバニラMob、リージョン、スポーン、図鑑、HUD、GUI
 - 最大4人のパーティー、PvP設定、10秒間の戦闘状態
 - SQLite／YAML／JSON／MySQL／MariaDB、定期保存・バックアップ・復元
 - PlaceholderAPI連携と、他プラグイン向け公開API・イベント
@@ -30,6 +30,8 @@ Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドR
 1. `CombatCoreSystems-<version>.jar` をPaperサーバーの `plugins` に配置します。
 2. サーバーを起動し、`plugins/CombatCoreSystems/` に設定・データファイルを生成します。
 3. 必要に応じて設定を編集し、`/ccsadmin reload` で再読込します。
+
+Minecraft標準の経験値・レベルとCCSの経験値・レベルは独立しています。Mobごとの`custom-exp`と`drop-custom-exp`は`mobs.yml`、必要経験値式とバニラ武器ATK変換値は`levels.yml`で変更できます。
 
 ## コマンド
 

@@ -83,7 +83,7 @@ public final class BackupService {
                 } catch (IOException ex) { throw new CompletionException(ex); }
             }).thenCompose(ignored -> parties.load()).thenCompose(ignored -> players.reloadOnline(data -> {
                 var player = Bukkit.getPlayer(data.uuid()); if (player == null) return;
-                elements.clear(data.uuid()); elements.resumePlayer(data); stats.invalidate(data.uuid()); levels.apply(player, data, false);
+                elements.clear(data.uuid()); elements.resumePlayer(data); stats.invalidate(data.uuid()); levels.restore(player, data);
             }));
         });
     }

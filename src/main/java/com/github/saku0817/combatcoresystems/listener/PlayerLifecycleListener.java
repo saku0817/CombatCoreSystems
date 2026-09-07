@@ -37,7 +37,7 @@ public final class PlayerLifecycleListener implements Listener {
     @EventHandler public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         players.load(player, data -> {
-            elements.resumePlayer(data); equipment.syncArmor(player); registerWeapons(player, data); levels.apply(player, data, false);
+            elements.resumePlayer(data); equipment.syncArmor(player); registerWeapons(player, data); levels.restore(player, data);
             if (data.getCombatLogoutCount() > 0) player.sendMessage(mini.deserialize("<yellow>Combat Logout警告: " + data.getCombatLogoutCount() + "/4（4回目でPlayer Lv -1）</yellow>"));
         });
     }
@@ -58,19 +58,13 @@ public final class PlayerLifecycleListener implements Listener {
     }
 
     @EventHandler public void onDeath(PlayerDeathEvent event) {
-        event.setKeepLevel(true); event.setDroppedExp(0); combat.clear(event.getPlayer().getUniqueId()); elements.clear(event.getPlayer().getUniqueId());
+        combat.clear(event.getPlayer().getUniqueId()); elements.clear(event.getPlayer().getUniqueId());
         players.find(event.getPlayer().getUniqueId()).ifPresent(data -> { data.setHealth(0); buffs.onDeath(event.getPlayer()); });
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onExperience(PlayerExpChangeEvent event) {
-        if (event.getAmount() <= 0) return; int amount = event.getAmount(); event.setAmount(0);
-        players.find(event.getPlayer().getUniqueId()).ifPresent(data -> levels.addExp(event.getPlayer(), data, amount));
     }
 
     @EventHandler public void onMobDeath(EntityDeathEvent event) {
         if (event instanceof PlayerDeathEvent) return;
-        MobDefinition definition = mobs.definition(event.getEntity()).orElse(null); if (definition == null || event.getEntity().getKiller() == null) return;
+        MobDefinition definition = mobs.definition(event.getEntity()).orElse(null); if (definition == null || !definition.dropCustomExp() || event.getEntity().getKiller() == null) return;
         Player killer = event.getEntity().getKiller(); players.find(killer.getUniqueId()).ifPresent(data -> levels.addExp(killer, data, definition.exp()));
     }
 

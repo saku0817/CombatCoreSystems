@@ -86,7 +86,7 @@ public final class HudService {
         StringBuilder text = new StringBuilder();
         if (combatRemaining > 0) {
             SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
-            String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0) + "秒";
+            String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0);
             String template = definitions.snapshot().config("gui.yml").getString("hud.combat-actionbar", "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>");
             text.append(template.replace("<combat_remaining>", remaining)
                     .replace("<skill_status>", skill.ready() ? "発動可能" : "あと" + format(skill.remainingSeconds()) + "秒")
@@ -102,10 +102,14 @@ public final class HudService {
     }
 
     private String replace(String input, Player player, PlayerData data, PlayerStats value) {
+        long required = data.getLevel() >= definitions.snapshot().config("levels.yml").getInt("player.max-level", 100)
+                ? 0 : levels.requiredExp(data.getLevel());
         return input.replace("<server>", definitions.snapshot().config("config.yml").getString("server-name", "CCS"))
                 .replace("<player>", player.getName()).replace("<level>", Integer.toString(data.getLevel()))
-                .replace("<exp_remaining>", Long.toString(data.getLevel() >= 100 ? 0 : levels.requiredExp(data.getLevel()) - data.getExp()))
-                .replace("<hp>", Long.toString(Math.round(player.getHealth()))).replace("<max_hp>", Long.toString(Math.round(value.maxHp())));
+                .replace("<exp>", Long.toString(data.getExp())).replace("<required_exp>", Long.toString(required))
+                .replace("<exp_remaining>", Long.toString(Math.max(0, required - data.getExp())))
+                .replace("<hp>", Long.toString(Math.round(player.getHealth()))).replace("<max_hp>", Long.toString(Math.round(value.maxHp())))
+                .replace("<atk>", Long.toString(Math.round(value.atk()))).replace("<def>", Long.toString(Math.round(value.def())));
     }
     private String format(double value) { return String.format(Locale.ROOT, "%.1f", value); }
 

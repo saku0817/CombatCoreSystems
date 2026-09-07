@@ -1,2 +1,3 @@
 data-version: 1
+# 自動Spawn例: spawns.field_zombie: {enabled: true, region: field, definition: flame_zombie, boss: false, amount: 1, max-alive: 5, interval-seconds: 30}
 spawns: {}

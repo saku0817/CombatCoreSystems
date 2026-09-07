@@ -1,2 +1,3 @@
 data-version: 1
+# Region追加例: regions.field: {world: world, full-height: true, pos1: {x: 0, z: 0}, pos2: {x: 100, z: 100}, flags: {pvp: allow}}
 regions: {}

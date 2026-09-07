@@ -10,6 +10,10 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -19,7 +23,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
-public final class MobService {
+public final class MobService implements Listener {
     private final DefinitionRegistry definitions;
     private final NamespacedKey definitionKey;
     private final NamespacedKey levelKey;
@@ -49,6 +53,45 @@ public final class MobService {
         entity.getPersistentDataContainer().set(bossKey, PersistentDataType.BOOLEAN, boss);
         entity.getPersistentDataContainer().set(autoSpawnKey, PersistentDataType.BOOLEAN, automatic);
         managed.add(entity.getUniqueId());
+        applyDefinition(entity, definition, level);
+        if (boss) entity.setPersistent(true);
+        return Optional.of(entity);
+    }
+
+    public Optional<MobDefinition> definition(LivingEntity entity) {
+        String id = entity.getPersistentDataContainer().get(definitionKey, PersistentDataType.STRING);
+        if (id == null) return vanillaDefinition(entity);
+        boolean boss = Boolean.TRUE.equals(entity.getPersistentDataContainer().get(bossKey, PersistentDataType.BOOLEAN));
+        return Optional.ofNullable((boss ? definitions.snapshot().bosses() : definitions.snapshot().mobs()).get(id));
+    }
+
+    public void start() {
+        org.bukkit.Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(this::applyVanillaDefinition));
+    }
+
+    @EventHandler public void onCreatureSpawn(CreatureSpawnEvent event) { applyVanillaDefinition(event.getEntity()); }
+
+    private Optional<MobDefinition> vanillaDefinition(LivingEntity entity) {
+        return definitions.snapshot().vanillaMobs().values().stream()
+                .filter(definition -> definition.entityType().equalsIgnoreCase(entity.getType().name())).findFirst();
+    }
+
+    private void applyVanillaDefinition(LivingEntity entity) {
+        if (entity instanceof Player || entity.getPersistentDataContainer().has(definitionKey, PersistentDataType.STRING)) return;
+        MobDefinition definition = vanillaDefinition(entity).orElse(null);
+        if (definition == null) {
+            var armor = entity.getAttribute(Attribute.ARMOR);
+            if (armor != null) armor.setBaseValue(0);
+            return;
+        }
+        int level = entity.getPersistentDataContainer().getOrDefault(levelKey, PersistentDataType.INTEGER,
+                ThreadLocalRandom.current().nextInt(definition.minLevel(), definition.maxLevel() + 1));
+        entity.getPersistentDataContainer().set(levelKey, PersistentDataType.INTEGER, level);
+        applyDefinition(entity, definition, level);
+        managed.add(entity.getUniqueId());
+    }
+
+    private void applyDefinition(LivingEntity entity, MobDefinition definition, int level) {
         double hp = CoreMath.linear(definition.hpAtMin(), definition.hpAtMax(), level - definition.minLevel() + 1,
                 definition.maxLevel() - definition.minLevel() + 1);
         var maxHealth = entity.getAttribute(Attribute.MAX_HEALTH);
@@ -59,15 +102,6 @@ public final class MobService {
         if (armor != null) armor.setBaseValue(0);
         entity.setHealth(hp);
         if (definition.showLevel()) entity.customName(mini.deserialize("<gray>Lv." + level + "</gray> " + definition.name()));
-        if (boss) entity.setPersistent(true);
-        return Optional.of(entity);
-    }
-
-    public Optional<MobDefinition> definition(LivingEntity entity) {
-        String id = entity.getPersistentDataContainer().get(definitionKey, PersistentDataType.STRING);
-        if (id == null) return Optional.empty();
-        boolean boss = Boolean.TRUE.equals(entity.getPersistentDataContainer().get(bossKey, PersistentDataType.BOOLEAN));
-        return Optional.ofNullable((boss ? definitions.snapshot().bosses() : definitions.snapshot().mobs()).get(id));
     }
 
     public int level(LivingEntity entity) { return entity.getPersistentDataContainer().getOrDefault(levelKey, PersistentDataType.INTEGER, 1); }

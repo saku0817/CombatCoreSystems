@@ -1,4 +1,5 @@
 data-version: 1
+# GUI表示例: name: "<aqua>表示名</aqua>"。MiniMessage形式を使用できます。
 main-menu:
   title: "<dark_gray>CombatCoreSystems</dark_gray>"
   size: 54
@@ -12,6 +13,7 @@ main-menu:
     encyclopedia: {slot: 33, icon: KNOWLEDGE_BOOK, name: "<aqua>図鑑</aqua>"}
     settings: {slot: 40, icon: COMPARATOR, name: "<gray>設定</gray>"}
 hud:
+  # sidebar-linesで使用可能: <server>, <player>, <level>, <exp>, <required_exp>, <exp_remaining>, <hp>, <max_hp>, <atk>, <def>
   sidebar-title: "<gold><server></gold>"
   sidebar-lines:
     - "<white><player></white>"
@@ -20,5 +22,6 @@ hud:
     - "<gray>次のレベルまで、あと <exp_remaining></gray>"
     - ""
     - "<red>HP <hp> / <max_hp></red>"
+  # 使用可能: <combat_remaining>, <skill_status>, <ultimate_status>
   combat-actionbar: "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>"
   attribute-actionbar: "<attributes>"

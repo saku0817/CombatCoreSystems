@@ -1,4 +1,5 @@
 data-version: 1
+# MySQL使用例: backendを MYSQL に変更し、下の接続情報を設定してください。
 backend: SQLITE
 sqlite:
   file: data.db

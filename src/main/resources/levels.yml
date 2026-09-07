@@ -1,12 +1,39 @@
 data-version: 1
+# 独自レベル設定例: mode は QUADRATIC / LINEAR / FIXED / TABLE を指定できます。
 player:
   max-level: 100
+  # Minecraftのハート表示を常に1行（10個）に縮尺表示します。
+  minecraft-health-scale: 20.0
   hp: {start: 20.0, end: 3000.0}
   atk: {start: 2.0, end: 200.0}
   def: {start: 0.0, end: 100.0}
-  vanilla-exp-multiplier: 5.0
   required-exp:
-    mode: VANILLA
+    mode: QUADRATIC
+    base: 100
+    growth: 25
+    # TABLE使用例:
+    # values: {1: 100, 2: 150, 3: 225}
+  # バニラ武器の攻撃力をCCS ATKへ加算します。値と倍率は自由に変更できます。
+  vanilla-weapons:
+    enabled: true
+    conversion-multiplier: 1.0
+    attack-values:
+      WOODEN_SWORD: 4.0
+      GOLDEN_SWORD: 4.0
+      STONE_SWORD: 5.0
+      IRON_SWORD: 6.0
+      DIAMOND_SWORD: 7.0
+      NETHERITE_SWORD: 8.0
+      WOODEN_AXE: 7.0
+      GOLDEN_AXE: 7.0
+      STONE_AXE: 9.0
+      IRON_AXE: 9.0
+      DIAMOND_AXE: 9.0
+      NETHERITE_AXE: 10.0
+      TRIDENT: 9.0
+      MACE: 6.0
+      BOW: 6.0
+      CROSSBOW: 9.0
   rebirth:
     hp: 100.0
     atk: 20.0
@@ -20,6 +47,7 @@ equipment-exp:
   base: 100
   growth: 25
 materials:
+  # 素材追加例: custom_book: {name: "<green>修練書</green>", material: BOOK, exp: 250, type: PLAYER}
   player_exp_low: {name: "<white>初級修練書</white>", material: PAPER, exp: 100, type: PLAYER}
   player_exp_mid: {name: "<aqua>中級修練書</aqua>", material: BOOK, exp: 1000, type: PLAYER}
   player_exp_high: {name: "<gold>上級修練書</gold>", material: ENCHANTED_BOOK, exp: 10000, type: PLAYER}

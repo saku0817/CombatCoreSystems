@@ -45,8 +45,8 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
         if (key.startsWith("buff_") && key.endsWith("_remaining")) return format(effectRemaining(data, key.substring(5, key.length() - 10)) / 1000.0);
         return switch (key) {
             case "player_name" -> player.getName(); case "level" -> Integer.toString(data.getLevel()); case "exp" -> Long.toString(data.getExp());
-            case "exp_required" -> Long.toString(data.getLevel() >= 100 ? 0 : levels.requiredExp(data.getLevel()));
-            case "exp_remaining" -> Long.toString(data.getLevel() >= 100 ? 0 : levels.requiredExp(data.getLevel()) - data.getExp());
+            case "exp_required" -> Long.toString(data.getLevel() >= maxLevel() ? 0 : levels.requiredExp(data.getLevel()));
+            case "exp_remaining" -> Long.toString(data.getLevel() >= maxLevel() ? 0 : levels.requiredExp(data.getLevel()) - data.getExp());
             case "rebirth_count" -> Integer.toString(data.getRebirthCount()); case "skill_points" -> Integer.toString(data.getSkillPoints());
             case "hp" -> Long.toString(Math.round(player.getHealth())); case "max_hp" -> Long.toString(Math.round(value.maxHp()));
             case "atk" -> format(value.atk()); case "def" -> format(value.def()); case "crit_rate" -> format(value.value(StatKey.CRIT_RATE));
@@ -77,12 +77,12 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
             case "party_leader" -> parties.findByPlayer(player.getUniqueId()).map(p -> p.getLeader()).orElse(""); case "party_size" -> Integer.toString(parties.findByPlayer(player.getUniqueId()).map(p -> p.getMembers().size()).orElse(0));
             case "party_max_size" -> "4"; case "party_is_leader" -> bool(parties.findByPlayer(player.getUniqueId()).map(p -> p.leader().equals(player.getUniqueId())).orElse(false));
             case "pvp" -> bool(data.isPvpEnabled()); case "pvp_display" -> data.isPvpEnabled() ? "ON" : "OFF";
-            case "encyclopedia_mob_discovered" -> Integer.toString(data.getDiscoveredMobs().size()); case "encyclopedia_mob_total" -> Integer.toString(definitions.snapshot().mobs().size());
+            case "encyclopedia_mob_discovered" -> Integer.toString(data.getDiscoveredMobs().size()); case "encyclopedia_mob_total" -> Integer.toString(mobTotal());
             case "encyclopedia_boss_discovered" -> Integer.toString(data.getDiscoveredBosses().size()); case "encyclopedia_boss_total" -> Integer.toString(definitions.snapshot().bosses().size());
             case "encyclopedia_discovered" -> Integer.toString(data.getDiscoveredMobs().size() + data.getDiscoveredBosses().size());
-            case "encyclopedia_total" -> Integer.toString(definitions.snapshot().mobs().size() + definitions.snapshot().bosses().size());
-            case "encyclopedia_progress" -> progress(data.getDiscoveredMobs().size() + data.getDiscoveredBosses().size(), definitions.snapshot().mobs().size() + definitions.snapshot().bosses().size());
-            case "encyclopedia_mob_progress" -> progress(data.getDiscoveredMobs().size(), definitions.snapshot().mobs().size()); case "encyclopedia_boss_progress" -> progress(data.getDiscoveredBosses().size(), definitions.snapshot().bosses().size());
+            case "encyclopedia_total" -> Integer.toString(mobTotal() + definitions.snapshot().bosses().size());
+            case "encyclopedia_progress" -> progress(data.getDiscoveredMobs().size() + data.getDiscoveredBosses().size(), mobTotal() + definitions.snapshot().bosses().size());
+            case "encyclopedia_mob_progress" -> progress(data.getDiscoveredMobs().size(), mobTotal()); case "encyclopedia_boss_progress" -> progress(data.getDiscoveredBosses().size(), definitions.snapshot().bosses().size());
             default -> null;
         };
     }
@@ -94,4 +94,6 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
     private long effectRemaining(PlayerData data, String id) { return data.getBuffs().stream().filter(e -> e.getId().equals(id)).mapToLong(TimedEffect::getRemainingMillis).findFirst().orElse(0); }
     private String bool(boolean value) { return Boolean.toString(value); } private String format(double value) { return String.format(Locale.ROOT, "%.1f", value); }
     private String progress(int current, int total) { return total == 0 ? "0.0" : format(current * 100.0 / total); }
+    private int maxLevel() { return Math.min(100, Math.max(1, definitions.snapshot().config("levels.yml").getInt("player.max-level", 100))); }
+    private int mobTotal() { return definitions.snapshot().mobs().size() + definitions.snapshot().vanillaMobs().size(); }
 }

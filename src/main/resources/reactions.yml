@@ -1,4 +1,5 @@
 data-version: 1
+# 属性反応追加例: attributesに2属性、damage-componentsに各倍率、cooldownに同一対象CT秒数を指定します。
 reactions:
   vaporize: {name: "蒸発", attributes: [FIRE, WATER], radius: 0.0, cooldown: 2.0, damage-components: {FIRE: 0.5, WATER: 0.5}}
   fire_wind: {name: "炎風", attributes: [FIRE, WIND], radius: 2.0, cooldown: 1.5, levitation: 0.35, damage-components: {FIRE: 1.0, WIND: 0.3}}

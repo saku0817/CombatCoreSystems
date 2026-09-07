@@ -1,4 +1,5 @@
 name: CombatCoreSystems
+# コマンド権限例: LuckPerms等で combatcoresystems.admin.exp を付与します。
 version: '${project.version}'
 main: com.github.saku0817.combatcoresystems.CombatCoreSystems
 api-version: '26.2'

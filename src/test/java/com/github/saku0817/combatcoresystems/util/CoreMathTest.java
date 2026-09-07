@@ -33,4 +33,14 @@ class CoreMathTest {
         assertEquals(100, CoreMath.quadraticExp(100, 25, 1));
         assertEquals(200, CoreMath.quadraticExp(100, 25, 3));
     }
+
+    @Test void experienceRecalculationPreservesCurrentHealth() {
+        assertEquals(18.0, CoreMath.preservedHealth(18, 100), 0.0001);
+        assertEquals(80.0, CoreMath.preservedHealth(120, 80), 0.0001);
+    }
+
+    @Test void overdamageOnlyReportsDamageBeyondCurrentHealth() {
+        assertEquals(0, CoreMath.overdamage(10, 20));
+        assertEquals(30, CoreMath.overdamage(50, 20));
+    }
 }
