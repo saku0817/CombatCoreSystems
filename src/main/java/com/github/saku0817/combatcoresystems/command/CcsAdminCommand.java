@@ -22,15 +22,15 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     private final PlayerDataService players; private final LevelService levels; private final StatService stats;
     private final BuffService buffs; private final ElementService elements; private final ItemService items; private final MobService mobs;
     private final RegionService regions; private final BackupService backups; private final EncyclopediaService encyclopedia;
-    private final PartyService parties; private final MiniMessage mini = MiniMessage.miniMessage();
+    private final PartyService parties; private final CombatStateService combat; private final MiniMessage mini = MiniMessage.miniMessage();
 
     public CcsAdminCommand(JavaPlugin plugin, DefinitionRegistry definitions, StorageService storage, PlayerDataService players,
                            LevelService levels, StatService stats, BuffService buffs, ElementService elements, ItemService items,
                            MobService mobs, RegionService regions, BackupService backups, EncyclopediaService encyclopedia,
-                           PartyService parties) {
+                           PartyService parties, CombatStateService combat) {
         this.plugin = plugin; this.definitions = definitions; this.storage = storage; this.players = players; this.levels = levels;
         this.stats = stats; this.buffs = buffs; this.elements = elements; this.items = items; this.mobs = mobs; this.regions = regions;
-        this.backups = backups; this.encyclopedia = encyclopedia; this.parties = parties;
+        this.backups = backups; this.encyclopedia = encyclopedia; this.parties = parties; this.combat = combat;
     }
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -105,7 +105,25 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (type.equals("buff") && args.length >= 5) { Player target = Bukkit.getPlayerExact(args[3]); if (target == null) throw new IllegalArgumentException("online player"); boolean ok = args[2].equalsIgnoreCase("add") ? buffs.apply(target, args[4], null) : buffs.remove(target, args[4]); message(sender, ok ? "<green>更新しました。</green>" : "<red>更新できません。</red>"); return; }
         if (type.equals("element") && args.length >= 5) { Player target = Bukkit.getPlayerExact(args[3]); Element element = Element.parse(args[4]).orElseThrow(() -> new IllegalArgumentException("element")); if (target == null) throw new IllegalArgumentException("online player"); boolean ok; if (args[2].equalsIgnoreCase("add")) { elements.attach(target, element, 5); ok = true; } else ok = elements.remove(target.getUniqueId(), element); message(sender, ok ? "<green>更新しました。</green>" : "<red>更新できません。</red>"); return; }
-        if (type.equals("force")) message(sender, "<yellow>forceのゲーム上の意味が仕様書で未定義のため、安全のため変更しません。</yellow>");
+        if (type.equals("force")) { forceCombat(sender, args); return; }
+    }
+
+    private void forceCombat(CommandSender sender, String[] args) {
+        if (args.length < 3) throw new IllegalArgumentException("/ccsadmin edit force on|off [username]");
+        boolean enable = switch (args[2].toLowerCase(Locale.ROOT)) {
+            case "on" -> true;
+            case "off" -> false;
+            default -> throw new IllegalArgumentException("on/off");
+        };
+        Player target;
+        if (args.length >= 4) {
+            target = Bukkit.getPlayerExact(args[3]);
+            if (target == null) throw new IllegalArgumentException("online player");
+        } else if (sender instanceof Player player) target = player;
+        else throw new IllegalArgumentException("コンソールから実行する場合はusernameを指定してください");
+
+        if (enable) combat.forceOn(target); else combat.forceOff(target.getUniqueId());
+        message(sender, "<green>" + target.getName() + " の戦闘状態を " + (enable ? "ON" : "OFF") + " にしました。</green>");
     }
 
     private void encyclopedia(CommandSender sender, String[] args) {
@@ -128,7 +146,10 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     }
 
     private void main(Runnable action) { Bukkit.getScheduler().runTask(plugin, action); }
-    private void help(CommandSender sender) { message(sender, "<gold>/ccsadmin edit|give|spawn|region|backup|encyclopedia|reload|save</gold>"); }
+    private void help(CommandSender sender) {
+        message(sender, "<gold>/ccsadmin edit|give|spawn|region|backup|encyclopedia|reload|save</gold>");
+        message(sender, "<gray>/ccsadmin edit force on|off [username]</gray>");
+    }
     private void message(CommandSender sender, String text) { sender.sendMessage(mini.deserialize("<dark_gray>[<gold>CCS</gold>]</dark_gray> " + text)); }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
@@ -137,7 +158,12 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         if (args.length == 2 && args[0].equalsIgnoreCase("backup")) return complete(args[1], List.of("create", "restore", "list"));
         if (args.length == 2 && args[0].equalsIgnoreCase("region")) return complete(args[1], List.of("wand", "pos1", "pos2", "create", "delete", "info", "list", "flag"));
         if (args.length == 2 && args[0].equalsIgnoreCase("spawn")) return complete(args[1], List.of("mob", "boss"));
-        if (args.length == 3 && (args[0].equalsIgnoreCase("edit") || args[0].equalsIgnoreCase("give") || args[0].equalsIgnoreCase("encyclopedia"))) return complete(args[2], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
+        if (args.length == 3 && args[0].equalsIgnoreCase("edit") && args[1].equalsIgnoreCase("force")) return complete(args[2], List.of("on", "off"));
+        if (args.length == 4 && args[0].equalsIgnoreCase("edit") && args[1].equalsIgnoreCase("force")) return complete(args[3], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
+        if (args.length == 3 && args[0].equalsIgnoreCase("edit") && (args[1].equalsIgnoreCase("level") || args[1].equalsIgnoreCase("exp"))) return complete(args[2], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
+        if (args.length == 3 && args[0].equalsIgnoreCase("edit") && (args[1].equalsIgnoreCase("buff") || args[1].equalsIgnoreCase("element"))) return complete(args[2], List.of("add", "remove"));
+        if (args.length == 4 && args[0].equalsIgnoreCase("edit") && (args[1].equalsIgnoreCase("buff") || args[1].equalsIgnoreCase("element"))) return complete(args[3], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
+        if (args.length == 3 && (args[0].equalsIgnoreCase("give") || args[0].equalsIgnoreCase("encyclopedia"))) return complete(args[2], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
         if (args.length == 4 && args[0].equalsIgnoreCase("give")) return complete(args[3], itemIds());
         if (args.length == 6 && (args[1].equalsIgnoreCase("mob") || args[1].equalsIgnoreCase("boss"))) return complete(args[5], args[1].equalsIgnoreCase("boss") ? definitions.snapshot().bosses().keySet() : definitions.snapshot().mobs().keySet());
         return List.of();

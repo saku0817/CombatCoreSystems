@@ -67,14 +67,14 @@ public final class CombatCoreSystems extends JavaPlugin {
 
         CcsCommand general = new CcsCommand(players, combat, gui, parties, debug);
         CcsAdminCommand admin = new CcsAdminCommand(this, definitions, storage, players, levels, stats, buffs, elements,
-                items, mobs, regions, backups, encyclopedia, parties);
+                items, mobs, regions, backups, encyclopedia, parties, combat);
         configureCommand("ccs", general, general);
         configureCommand("ccsadmin", admin, admin);
 
         api = new CombatCoreApiImpl(players, stats, combat, damage, parties, healing, elements, buffs, equipment, skills,
                 levels, mobs, encyclopedia);
         Bukkit.getServicesManager().register(CombatCoreApi.class, api, this, ServicePriority.Normal);
-        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(definitions, players, stats, levels, combat, elements, skills, parties).register();
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(this, definitions, players, stats, levels, combat, elements, skills, parties).register();
         if (Bukkit.getPluginManager().getPlugin("floodgate") != null) getLogger().info("Floodgate detected; Bedrock players use the common CCS controls and GUI flow.");
 
         combat.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule();

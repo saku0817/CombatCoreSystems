@@ -6,12 +6,14 @@ import com.github.saku0817.combatcoresystems.service.*;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Locale;
 
 public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
+    private final JavaPlugin plugin;
     private final DefinitionRegistry definitions;
     private final PlayerDataService players;
     private final StatService stats;
@@ -21,15 +23,16 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
     private final SkillService skills;
     private final PartyService parties;
 
-    public CcsPlaceholderExpansion(DefinitionRegistry definitions, PlayerDataService players, StatService stats,
+    public CcsPlaceholderExpansion(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                                    LevelService levels, CombatStateService combat, ElementService elements,
                                    SkillService skills, PartyService parties) {
+        this.plugin = plugin;
         this.definitions = definitions; this.players = players; this.stats = stats; this.levels = levels;
         this.combat = combat; this.elements = elements; this.skills = skills; this.parties = parties;
     }
     @Override public @NotNull String getIdentifier() { return "ccs"; }
     @Override public @NotNull String getAuthor() { return "s3_q3x"; }
-    @Override public @NotNull String getVersion() { return "1.0.0"; }
+    @Override public @NotNull String getVersion() { return plugin.getPluginMeta().getVersion(); }
     @Override public boolean persist() { return true; }
 
     @Override public @Nullable String onRequest(OfflinePlayer offline, @NotNull String parameter) {
@@ -55,7 +58,7 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
             case "thunder_damage" -> format(value.elementDamage(Element.THUNDER)); case "thunder_resistance" -> format(value.resistance(Element.THUNDER));
             case "moon_damage" -> format(value.elementDamage(Element.MOON)); case "moon_resistance" -> format(value.resistance(Element.MOON));
             case "combat" -> bool(combat.inCombat(player.getUniqueId())); case "combat_display" -> combat.inCombat(player.getUniqueId()) ? "戦闘中" : "非戦闘";
-            case "combat_remaining" -> format(combat.remainingMillis(player.getUniqueId()) / 1000.0);
+            case "combat_remaining" -> combat.isForced(player.getUniqueId()) ? "∞" : format(combat.remainingMillis(player.getUniqueId()) / 1000.0);
             case "skill_ready" -> bool(skills.status(player.getUniqueId(), false).ready()); case "skill_status" -> skills.status(player.getUniqueId(), false).ready() ? "ready" : "cooldown";
             case "skill_status_display" -> skills.status(player.getUniqueId(), false).ready() ? "発動可能" : "あと" + format(skills.status(player.getUniqueId(), false).remainingSeconds()) + "秒";
             case "skill_cooldown" -> format(skills.status(player.getUniqueId(), false).remainingSeconds()); case "skill_charges" -> Integer.toString(skills.status(player.getUniqueId(), false).charges());

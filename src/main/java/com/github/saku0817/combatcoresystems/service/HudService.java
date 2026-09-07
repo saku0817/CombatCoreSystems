@@ -86,7 +86,8 @@ public final class HudService {
         StringBuilder text = new StringBuilder();
         if (combatRemaining > 0) {
             SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
-            text.append("<red>⚔ 戦闘中 ").append(format(combatRemaining / 1000.0)).append("秒</red> <gray>|</gray> <yellow>スキル: ")
+            String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0) + "秒";
+            text.append("<red>⚔ 戦闘中 ").append(remaining).append("</red> <gray>|</gray> <yellow>スキル: ")
                     .append(skill.ready() ? "発動可能" : "あと" + format(skill.remainingSeconds()) + "秒").append("</yellow> <gray>|</gray> <gold>必殺技: ")
                     .append(ultimate.ready() ? "発動可能" : "あと" + format(ultimate.remainingSeconds()) + "秒").append("</gold>");
         }
