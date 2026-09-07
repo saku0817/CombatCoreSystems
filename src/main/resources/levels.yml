@@ -1,0 +1,31 @@
+data-version: 1
+player:
+  max-level: 100
+  hp: {start: 20.0, end: 3000.0}
+  atk: {start: 2.0, end: 200.0}
+  def: {start: 0.0, end: 100.0}
+  vanilla-exp-multiplier: 5.0
+  required-exp:
+    mode: VANILLA
+  rebirth:
+    hp: 100.0
+    atk: 20.0
+    def: 10.0
+weapon-exp:
+  mode: QUADRATIC
+  base: 100
+  growth: 25
+equipment-exp:
+  mode: QUADRATIC
+  base: 100
+  growth: 25
+materials:
+  player_exp_low: {name: "<white>初級修練書</white>", material: PAPER, exp: 100, type: PLAYER}
+  player_exp_mid: {name: "<aqua>中級修練書</aqua>", material: BOOK, exp: 1000, type: PLAYER}
+  player_exp_high: {name: "<gold>上級修練書</gold>", material: ENCHANTED_BOOK, exp: 10000, type: PLAYER}
+  weapon_exp_low: {name: "<white>粗製強化鉱</white>", material: RAW_IRON, exp: 100, type: WEAPON}
+  weapon_exp_mid: {name: "<aqua>精製強化鉱</aqua>", material: IRON_INGOT, exp: 1000, type: WEAPON}
+  weapon_exp_high: {name: "<gold>高純度強化鉱</gold>", material: DIAMOND, exp: 10000, type: WEAPON}
+  equipment_exp_low: {name: "<white>微光の繊維</white>", material: STRING, exp: 100, type: EQUIPMENT}
+  equipment_exp_mid: {name: "<aqua>輝光の繊維</aqua>", material: GLOWSTONE_DUST, exp: 1000, type: EQUIPMENT}
+  equipment_exp_high: {name: "<gold>星光の繊維</gold>", material: PRISMARINE_CRYSTALS, exp: 10000, type: EQUIPMENT}

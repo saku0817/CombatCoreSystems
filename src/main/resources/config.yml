@@ -1,0 +1,32 @@
+data-version: 1
+server-name: "<gold>CombatCoreSystems</gold>"
+pvp-enabled: true
+combat-duration-seconds: 10
+element-attachment-seconds: 5
+autosave-minutes: 20
+backup-hours: 12
+backup-retention: 7
+text-display:
+  enabled: true
+  duration-seconds: 0.8
+  max-per-player: 20
+hud:
+  sidebar-enabled: true
+  actionbar-enabled: true
+  update-ticks: 5
+region-wand:
+  material: WOODEN_AXE
+performance:
+  max-operations-per-tick: 250
+element-colors:
+  FIRE: "#ff0000"
+  WATER: "#0000cd"
+  WIND: "#3cb371"
+  THUNDER: "#4b0082"
+  MOON: "#6495ed"
+rarity-colors:
+  1: "#ffffff"
+  2: "#55ff55"
+  3: "#5555ff"
+  4: "#aa00aa"
+  5: "#ffaa00"

@@ -1,0 +1,9 @@
+data-version: 1
+categories:
+  weapons: {name: "<gold>武器</gold>", icon: IRON_SWORD, discovery: PUBLIC}
+  equipment: {name: "<blue>装備</blue>", icon: DIAMOND_CHESTPLATE, discovery: PUBLIC}
+  divine_hearts: {name: "<light_purple>神心</light_purple>", icon: NETHER_STAR, discovery: PUBLIC}
+  materials: {name: "<green>強化素材</green>", icon: EXPERIENCE_BOTTLE, discovery: PUBLIC}
+  mobs: {name: "<red>敵Mob</red>", icon: ZOMBIE_HEAD, discovery: ENCOUNTER}
+  bosses: {name: "<dark_red>敵Boss</dark_red>", icon: DRAGON_HEAD, discovery: ENCOUNTER}
+custom-entries: {}

@@ -1,0 +1,13 @@
+data-version: 1
+prefix: "<dark_gray>[<gold>CCS</gold>]</dark_gray> "
+no-permission: "<red>権限がありません。</red>"
+player-only: "<red>プレイヤーのみ実行できます。</red>"
+combat-command-blocked: "<red>戦闘中は一般CCSコマンドを使用できません。</red>"
+reloaded: "<green>設定を再読み込みしました。</green>"
+reload-failed: "<red>設定の検証に失敗したため、現在の正常な設定を維持しました。</red>"
+saved: "<green>データを保存しました。</green>"
+backup-created: "<green>バックアップを作成しました: <id></green>"
+level-up: "<green>Lv.<level>になりました。</green>"
+rebirth-complete: "<light_purple>新生回帰を行いました。回数: <count></light_purple>"
+party-friendly-fire: "<yellow>同じPartyのメンバーには攻撃できません。</yellow>"
+encyclopedia-unlock: "<aqua>図鑑に新しい対象を登録しました: <name></aqua>"

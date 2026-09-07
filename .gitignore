@@ -1,0 +1,12 @@
+target/
+.m2/
+.idea/
+.vscode/
+*.iml
+*.log
+server/
+releases/
+backups/
+dependency-reduced-pom.xml
+sources/
+AGENTS.md

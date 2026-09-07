@@ -1,0 +1,64 @@
+name: CombatCoreSystems
+version: '${project.version}'
+main: com.github.saku0817.combatcoresystems.CombatCoreSystems
+api-version: '26.2'
+description: "ARPG,オープンワールドサーバー向けに必要な要素を追加するプラグインです。"
+authors:
+  - s3_q3x
+softdepend:
+  - PlaceholderAPI
+commands:
+  ccs:
+    description: CombatCoreSystemsの一般コマンドです。
+    usage: /ccs
+  ccsadmin:
+    description: CombatCoreSystemsの管理者コマンドです。
+    usage: /ccsadmin
+permissions:
+  combatcoresystems.command.*:
+    default: true
+    children:
+      combatcoresystems.command.help: true
+      combatcoresystems.command.menu: true
+      combatcoresystems.command.open.stats: true
+      combatcoresystems.command.open.equipments: true
+      combatcoresystems.command.open.skilltree: true
+      combatcoresystems.command.open.rebirth: true
+      combatcoresystems.command.open.party: true
+      combatcoresystems.command.encyclopedia: true
+      combatcoresystems.command.setting.pvp: true
+      combatcoresystems.command.setting.hud: true
+      combatcoresystems.command.setting.controls: true
+      combatcoresystems.command.party: true
+  combatcoresystems.command.debug:
+    default: op
+  combatcoresystems.debug.*:
+    default: op
+    children:
+      combatcoresystems.debug.player: true
+      combatcoresystems.debug.mob: true
+      combatcoresystems.debug.damage: true
+      combatcoresystems.debug.critical: true
+      combatcoresystems.debug.element: true
+      combatcoresystems.debug.reaction: true
+      combatcoresystems.debug.buff: true
+      combatcoresystems.debug.skill: true
+      combatcoresystems.debug.combat: true
+      combatcoresystems.debug.storage: true
+      combatcoresystems.debug.performance: true
+  combatcoresystems.admin.*:
+    default: op
+    children:
+      combatcoresystems.admin.level: true
+      combatcoresystems.admin.exp: true
+      combatcoresystems.admin.give: true
+      combatcoresystems.admin.spawn: true
+      combatcoresystems.admin.buff: true
+      combatcoresystems.admin.element: true
+      combatcoresystems.admin.force: true
+      combatcoresystems.admin.region: true
+      combatcoresystems.admin.backup: true
+      combatcoresystems.admin.encyclopedia: true
+      combatcoresystems.admin.reload: true
+      combatcoresystems.admin.save: true
+      combatcoresystems.admin.storage.alert: true

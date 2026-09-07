@@ -1,0 +1,11 @@
+data-version: 1
+backend: SQLITE
+sqlite:
+  file: data.db
+mysql:
+  host: localhost
+  port: 3306
+  database: combatcoresystems
+  username: root
+  password: ""
+  use-ssl: false
