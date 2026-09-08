@@ -49,11 +49,15 @@ public final class RegionService implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onWand(PlayerInteractEvent event) {
         if (!event.getPlayer().hasPermission("combatcoresystems.admin.region") || event.getClickedBlock() == null) return;
-        if (!event.getItem().isSimilar(wand())) return;
+        if (!isWand(event.getItem(), wand())) return;
         if (event.getAction() != Action.LEFT_CLICK_BLOCK && event.getAction() != Action.RIGHT_CLICK_BLOCK) return;
         event.setCancelled(true);
         boolean first = event.getAction() == Action.LEFT_CLICK_BLOCK;
         select(event.getPlayer(), first, event.getClickedBlock().getLocation());
+    }
+
+    static boolean isWand(ItemStack item, ItemStack wand) {
+        return item != null && item.isSimilar(wand);
     }
 
     public void select(Player player, boolean first, Location location) {
