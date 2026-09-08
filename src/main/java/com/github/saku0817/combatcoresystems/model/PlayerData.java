@@ -3,7 +3,7 @@ package com.github.saku0817.combatcoresystems.model;
 import java.util.*;
 
 public final class PlayerData {
-    public static final int DATA_VERSION = 1;
+    public static final int DATA_VERSION = 2;
 
     private int dataVersion = DATA_VERSION;
     private String uuid = "";
@@ -30,6 +30,7 @@ public final class PlayerData {
     private Set<String> discoveredBosses = new HashSet<>();
     private String partyId = "";
     private long lastSaveEpochMillis;
+    private Map<String, Long> enhancementMaterials = new LinkedHashMap<>();
 
     public PlayerData() {}
 
@@ -64,6 +65,7 @@ public final class PlayerData {
     public Set<String> getDiscoveredBosses() { return discoveredBosses; }
     public String getPartyId() { return partyId; }
     public long getLastSaveEpochMillis() { return lastSaveEpochMillis; }
+    public Map<String, Long> getEnhancementMaterials() { return enhancementMaterials; }
 
     public void setLastName(String lastName) { this.lastName = lastName; }
     public void setLevel(int level) { this.level = Math.max(1, Math.min(100, level)); }
@@ -92,6 +94,10 @@ public final class PlayerData {
         if (discoveredBosses == null) discoveredBosses = new HashSet<>();
         if (controls == null) controls = "DEFAULT";
         if (partyId == null) partyId = "";
+        if (enhancementMaterials == null) enhancementMaterials = new LinkedHashMap<>();
+        enhancementMaterials.replaceAll((id, amount) -> Math.max(0L, amount == null ? 0L : amount));
+        enhancementMaterials.entrySet().removeIf(entry -> entry.getValue() <= 0);
+        dataVersion = DATA_VERSION;
         return this;
     }
 }

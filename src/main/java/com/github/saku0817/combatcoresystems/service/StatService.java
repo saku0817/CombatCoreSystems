@@ -23,13 +23,15 @@ public final class StatService implements Listener {
     private final JavaPlugin plugin;
     private final DefinitionRegistry definitions;
     private final CombatStateService combat;
+    private final ItemService items;
     private final NamespacedKey itemIdKey;
     private final Map<UUID, PlayerStats> cache = new ConcurrentHashMap<>();
 
-    public StatService(JavaPlugin plugin, DefinitionRegistry definitions, CombatStateService combat) {
+    public StatService(JavaPlugin plugin, DefinitionRegistry definitions, CombatStateService combat, ItemService items) {
         this.plugin = plugin;
         this.definitions = definitions;
         this.combat = combat;
+        this.items = items;
         this.itemIdKey = new NamespacedKey(plugin, "item_id");
     }
 
@@ -66,24 +68,16 @@ public final class StatService implements Listener {
 
         EnumMap<StatKey, Double> modifiers = defaults();
         double weaponAtk = vanillaWeaponAttack(player, levels);
-        ItemStack held = player.getInventory().getItemInMainHand();
-        String heldCustomId = held.hasItemMeta() ? held.getItemMeta().getPersistentDataContainer().get(itemIdKey, PersistentDataType.STRING) : null;
-        String activeWeapon = combat.state(player.getUniqueId()).activeWeapon();
-        if (heldCustomId != null && definitions.snapshot().weapons().containsKey(heldCustomId)) activeWeapon = heldCustomId;
-        else if (weaponAtk > 0) activeWeapon = "";
-        else if (activeWeapon.isBlank()) {
-            ItemInstance preferred = data.getEquipment().get(EquipmentSlot.MELEE_WEAPON);
-            if (preferred == null) preferred = data.getEquipment().get(EquipmentSlot.RANGED_WEAPON);
-            if (preferred != null) activeWeapon = preferred.getDefinitionId();
+        for (int slot = 0; slot <= 8; slot++) {
+            ItemInstance instance = items.instance(player.getInventory().getItem(slot)).orElse(null);
+            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
+            if (weapon == null) continue;
+            if (level < weapon.minimumEquipLevel() || level > weapon.maximumEquipLevel()) continue;
+            weaponAtk += CoreMath.linear(weapon.attackAtLevel1(), weapon.attackAtLevel100(), instance.getLevel(), 100);
+            if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
         }
         for (Map.Entry<EquipmentSlot, ItemInstance> equipped : data.getEquipment().entrySet()) {
             ItemInstance item = equipped.getValue();
-            WeaponDefinition weapon = definitions.snapshot().weapons().get(item.getDefinitionId());
-            if (weapon != null && item.getDefinitionId().equals(activeWeapon)
-                    && (equipped.getKey() == EquipmentSlot.MELEE_WEAPON || equipped.getKey() == EquipmentSlot.RANGED_WEAPON)) {
-                weaponAtk += CoreMath.linear(weapon.attackAtLevel1(), weapon.attackAtLevel100(), item.getLevel(), 100);
-                if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
-            }
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
             if (equipment != null) {
                 add(modifiers, equipment.mainStat(), CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), item.getLevel(), equipment.maxLevel()));

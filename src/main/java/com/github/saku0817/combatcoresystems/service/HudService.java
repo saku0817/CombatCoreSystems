@@ -108,7 +108,7 @@ public final class HudService {
                 .replace("<player>", player.getName()).replace("<level>", Integer.toString(data.getLevel()))
                 .replace("<exp>", Long.toString(data.getExp())).replace("<required_exp>", Long.toString(required))
                 .replace("<exp_remaining>", Long.toString(Math.max(0, required - data.getExp())))
-                .replace("<hp>", Long.toString(Math.round(player.getHealth()))).replace("<max_hp>", Long.toString(Math.round(value.maxHp())))
+                .replace("<hp>", Long.toString(Math.round(data.getHealth()))).replace("<max_hp>", Long.toString(Math.round(value.maxHp())))
                 .replace("<atk>", Long.toString(Math.round(value.atk()))).replace("<def>", Long.toString(Math.round(value.def())));
     }
     private String format(double value) { return String.format(Locale.ROOT, "%.1f", value); }

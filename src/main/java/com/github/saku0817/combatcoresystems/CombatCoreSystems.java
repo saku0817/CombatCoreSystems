@@ -40,16 +40,16 @@ public final class CombatCoreSystems extends JavaPlugin {
         try { parties.load().get(15, TimeUnit.SECONDS); }
         catch (Exception ex) { getLogger().log(Level.SEVERE, "Could not load party data", ex); Bukkit.getPluginManager().disablePlugin(this); return; }
 
-        StatService stats = new StatService(this, definitions, combat);
+        ItemService items = new ItemService(this, definitions);
+        StatService stats = new StatService(this, definitions, combat, items);
         LevelService levels = new LevelService(definitions, stats);
         RegionService regions = new RegionService(this, definitions);
         MobService mobs = new MobService(this, definitions);
         ElementService elements = new ElementService(this, definitions);
         DamageDisplayService displays = new DamageDisplayService(this, definitions);
-        ItemService items = new ItemService(this, definitions);
-        DamageService damage = new DamageService(this, definitions, players, stats, combat, elements, mobs, parties, displays, regions);
+        DamageService damage = new DamageService(this, definitions, players, stats, combat, elements, mobs, parties, displays, regions, levels);
         MobAbilityService mobAbilities = new MobAbilityService(this, definitions, mobs, damage, items);
-        HealService healing = new HealService(players, stats, displays);
+        HealService healing = new HealService(players, stats, displays, levels);
         BuffService buffs = new BuffService(this, definitions, players, stats, damage, healing);
         EquipmentService equipment = new EquipmentService(this, definitions, players, stats, combat, items);
         SkillService skills = new SkillService(this, definitions, players, stats, combat, damage, items);
@@ -74,7 +74,7 @@ public final class CombatCoreSystems extends JavaPlugin {
         api = new CombatCoreApiImpl(players, stats, combat, damage, parties, healing, elements, buffs, equipment, skills,
                 levels, mobs, encyclopedia);
         Bukkit.getServicesManager().register(CombatCoreApi.class, api, this, ServicePriority.Normal);
-        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(this, definitions, players, stats, levels, combat, elements, skills, parties).register();
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(this, definitions, players, stats, levels, combat, elements, skills, parties, items).register();
         if (Bukkit.getPluginManager().getPlugin("floodgate") != null) getLogger().info("Floodgate detected; Bedrock players use the common CCS controls and GUI flow.");
 
         combat.start(); mobs.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule();

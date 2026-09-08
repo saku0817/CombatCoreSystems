@@ -7,8 +7,12 @@ attribute-attachment-seconds: 5
 autosave-minutes: 20
 backup-hours: 12
 backup-retention: 7
+# 最終ダメージ全体へ掛ける倍率です。1.0で旧v1.2.0相当、標準値2.0でDEF 0の対象に概ねATK相当を与えます。
+damage:
+  global-multiplier: 2.0
 text-display:
   enabled: true
+  # 超過分も含む元の総ダメージ値を通常表示形式で表示します。
   show-overdamage: true
   duration-seconds: 0.8
   max-per-player: 20

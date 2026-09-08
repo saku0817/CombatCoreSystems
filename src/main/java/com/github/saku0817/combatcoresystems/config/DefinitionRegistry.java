@@ -133,8 +133,9 @@ public final class DefinitionRegistry {
             Material material = Material.matchMaterial(s.getString("material", ""));
             if (material == null) { errors.add("weapon " + id + " has invalid material"); continue; }
             WeaponDefinition.Category category;
-            try { category = WeaponDefinition.Category.valueOf(s.getString("category", "").toUpperCase(Locale.ROOT)); }
-            catch (IllegalArgumentException ex) { errors.add("weapon " + id + " has invalid category"); continue; }
+            String categoryName = s.contains("type") ? s.getString("type", "") : s.getString("category", "");
+            try { category = WeaponDefinition.Category.valueOf(categoryName.toUpperCase(Locale.ROOT)); }
+            catch (IllegalArgumentException ex) { errors.add("weapon " + id + " has invalid type (MELEE or RANGED)"); continue; }
             int rarity = s.getInt("rarity", 1);
             if (rarity < 1 || rarity > 5) { errors.add("weapon " + id + " rarity must be 1..5"); continue; }
             Element element = Element.parse(value(s, "attribute-bonus.type", "element-bonus.type")).orElse(Element.PHYSICAL);

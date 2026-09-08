@@ -4,6 +4,8 @@ player:
   max-level: 100
   # Minecraftのハート表示を常に1行（10個）に縮尺表示します。
   minecraft-health-scale: 20.0
+  # Minecraft内部の上限を超えるHPは仮想HPとして保持し、この値までの実HPへ比例変換します。
+  minecraft-max-health: 1024.0
   hp: {start: 20.0, end: 3000.0}
   atk: {start: 2.0, end: 200.0}
   def: {start: 0.0, end: 100.0}

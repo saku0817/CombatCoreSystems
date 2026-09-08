@@ -36,12 +36,13 @@ public final class DamageService implements DamageApi, Listener {
     private final PartyService parties;
     private final DamageDisplayService displays;
     private final RegionService regions;
+    private final LevelService levels;
     private final NamespacedKey itemIdKey;
     private final NamespacedKey projectileWeaponKey;
 
     public DamageService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                          CombatStateService combat, ElementService elements, MobService mobs, PartyService parties,
-                         DamageDisplayService displays, RegionService regions) {
+                         DamageDisplayService displays, RegionService regions, LevelService levels) {
         this.plugin = plugin;
         this.definitions = definitions;
         this.players = players;
@@ -52,6 +53,7 @@ public final class DamageService implements DamageApi, Listener {
         this.parties = parties;
         this.displays = displays;
         this.regions = regions;
+        this.levels = levels;
         this.itemIdKey = new NamespacedKey(plugin, "item_id");
         this.projectileWeaponKey = new NamespacedKey(plugin, "projectile_weapon");
     }
@@ -176,6 +178,7 @@ public final class DamageService implements DamageApi, Listener {
         double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown);
         double defenseCoefficient = CoreMath.defenseCoefficient(source.level, defender.level, effectiveDef);
         double damage = base * defenseCoefficient;
+        damage *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
         double resistance = 0;
         if (request.element() != Element.PHYSICAL) {
             if (mobs.immune(target, request.element())) damage = 0;
@@ -212,6 +215,7 @@ public final class DamageService implements DamageApi, Listener {
             }
             boolean critical = ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
             if (critical) total *= 1 + source.critDamage;
+            total *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
             long rounded = CoreMath.roundedDamage(total);
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
@@ -248,12 +252,16 @@ public final class DamageService implements DamageApi, Listener {
         if (damage <= 0 || target.isDead()) return;
         target.setLastDamage(damage);
         target.setNoDamageTicks(target.getMaximumNoDamageTicks());
-        target.setHealth(Math.max(0, target.getHealth() - damage));
+        if (target instanceof Player player) {
+            PlayerData data = players.require(player);
+            levels.setVirtualHealth(player, data, data.getHealth() - damage);
+        } else target.setHealth(Math.max(0, target.getHealth() - damage));
     }
 
     private long overdamage(LivingEntity target, long damage) {
         if (!definitions.snapshot().config("config.yml").getBoolean("text-display.show-overdamage", true)) return 0;
-        return CoreMath.overdamage(damage, target.getHealth());
+        double current = target instanceof Player player ? players.require(player).getHealth() : target.getHealth();
+        return CoreMath.overdamage(damage, current);
     }
 
     private void applyStandardKnockback(LivingEntity attacker, LivingEntity target) {

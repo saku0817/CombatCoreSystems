@@ -55,10 +55,11 @@ public final class SkillService implements Listener {
         if (weaponId.isBlank()) return false;
         WeaponDefinition weapon = definitions.snapshot().weapons().get(weaponId);
         if (weapon == null) return false;
+        if (data.getLevel() < weapon.minimumEquipLevel() || data.getLevel() > weapon.maximumEquipLevel()) return false;
         WeaponDefinition.SkillDefinition ability = ultimate ? weapon.ultimate() : weapon.skill();
         if (ability == null || !conditionsMet(player, target, ability.conditions())) return false;
 
-        ItemInstance instance = data.getEquipment().values().stream().filter(item -> item.getDefinitionId().equals(weaponId)).findFirst().orElse(null);
+        ItemInstance instance = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
         int limitBreak = instance == null ? 0 : instance.getLimitBreak();
         double baseCooldown = override(weapon, limitBreak, (ultimate ? "ultimate" : "skill") + ".cooldown", ability.cooldownSeconds());
         int maxCharges = Math.max(1, (int) override(weapon, limitBreak, (ultimate ? "ultimate" : "skill") + ".charges", ability.charges()));
@@ -108,7 +109,9 @@ public final class SkillService implements Listener {
     }
 
     private boolean conditionsMet(Player player, LivingEntity target, Map<String, Object> conditions) {
-        double hpRatio = player.getHealth() / Math.max(1, player.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH).getValue());
+        PlayerData data = players.require(player);
+        PlayerStats currentStats = stats.get(player, data);
+        double hpRatio = data.getHealth() / Math.max(1, currentStats.maxHp());
         if (conditions.containsKey("min-hp-percent") && hpRatio < number(conditions.get("min-hp-percent"))) return false;
         if (Boolean.TRUE.equals(conditions.get("requires-target")) && target == null) return false;
         if (conditions.containsKey("max-distance") && (target == null || target.getLocation().distanceSquared(player.getLocation()) > Math.pow(number(conditions.get("max-distance")), 2))) return false;

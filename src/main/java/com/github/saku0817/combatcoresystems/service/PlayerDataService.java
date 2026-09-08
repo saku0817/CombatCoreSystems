@@ -85,7 +85,6 @@ public final class PlayerDataService {
     public CompletableFuture<Void> saveAndUnload(Player player) {
         PlayerData data = loaded.remove(player.getUniqueId());
         if (data == null) return CompletableFuture.completedFuture(null);
-        data.setHealth(player.getHealth());
         return storage.savePlayers(List.of(storage.snapshot(data))).whenComplete((ignored, error) -> {
             if (error != null) {
                 loaded.put(data.uuid(), data);

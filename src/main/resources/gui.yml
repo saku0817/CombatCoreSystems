@@ -12,6 +12,34 @@ main-menu:
     enhancement: {slot: 31, icon: ANVIL, name: "<blue>強化</blue>"}
     encyclopedia: {slot: 33, icon: KNOWLEDGE_BOOK, name: "<aqua>図鑑</aqua>"}
     settings: {slot: 40, icon: COMPARATOR, name: "<gray>設定</gray>"}
+enhancement:
+  title: "<blue>強化</blue>"
+  player: {name: "<green>プレイヤーレベルアップ</green>", lore: "<gray>3種類の素材を選んでレベルアップ</gray>"}
+  weapon: {name: "<aqua>武器レベルアップ＆限界突破</aqua>", lore: "<gray>所持武器から選択</gray>"}
+  equipment: {name: "<gold>装備レベルアップ</gold>", lore: "<gray>所持・装備中の装備から選択</gray>"}
+  conversion: {name: "<light_purple>変換</light_purple>", lore: "<gray>実物素材・数値素材・等級を相互変換</gray>"}
+  weapon-list-title: "<aqua>武器を選択</aqua>"
+  equipment-list-title: "<gold>装備を選択</gold>"
+  detail-title: "<blue>新強化GUI</blue>"
+  conversion-title: "<light_purple>強化素材の変換</light_purple>"
+  preview-name: "<white>強化プレビュー</white>"
+  player-target: "<yellow>プレイヤー Lv.<level></yellow>"
+  preview-before: "<gray>強化前: Lv.<level> EXP <exp></gray>"
+  preview-after: "<green>強化後: Lv.<level> EXP <exp></green>"
+  preview-gain: "<yellow>上昇幅: Lv. +<levels> / EXP +<exp></yellow>"
+  material-count: "<gray>選択: <selected> / 所持: <available></gray>"
+  material-exp: "<gray>獲得EXP: <exp></gray>"
+  material-controls: "<yellow>左:+1 右:-1 Shift:±10</yellow>"
+  limit-break: "<light_purple>限界突破</light_purple>"
+  limit-break-lore: "<gray>同じ武器を1本消費</gray>"
+  confirm: "<green>この内容で強化</green>"
+  success: "<green>強化しました。Lv.<level></green>"
+  limit-break-success: "<green>限界突破しました。</green>"
+  failure: "<red>強化できません: <reason></red>"
+  conversion-failed: "<red>変換に必要な素材または空きがありません。</red>"
+  conversion-count: "<gray>実物: <physical> / 数値: <virtual></gray>"
+  conversion-controls: "<yellow>左:実物→数値 右:数値→実物</yellow>"
+  tier-controls: "<aqua>Shift左:上級へ Shift右:下級へ</aqua>"
 hud:
   # sidebar-linesで使用可能: <server>, <player>, <level>, <exp>, <required_exp>, <exp_remaining>, <hp>, <max_hp>, <atk>, <def>
   sidebar-title: "<gold><server></gold>"

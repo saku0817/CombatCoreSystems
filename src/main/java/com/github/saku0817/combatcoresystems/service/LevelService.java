@@ -80,19 +80,32 @@ public final class LevelService {
     }
 
     private void applyInternal(Player player, PlayerData data, HealthMode healthMode) {
-        double currentHealth = player.getHealth();
         PlayerStats value = stats.recalculate(player, data);
         var maxHealth = player.getAttribute(Attribute.MAX_HEALTH);
-        if (maxHealth != null) maxHealth.setBaseValue(value.maxHp());
+        double physicalMaximum = Math.min(value.maxHp(), Math.max(20, definitions.snapshot().config("levels.yml").getDouble("player.minecraft-max-health", 1024)));
+        if (maxHealth != null) maxHealth.setBaseValue(physicalMaximum);
         var attackDamage = player.getAttribute(Attribute.ATTACK_DAMAGE);
         if (attackDamage != null) attackDamage.setBaseValue(value.atk());
         var attackSpeed = player.getAttribute(Attribute.ATTACK_SPEED);
         if (attackSpeed != null) attackSpeed.setBaseValue(value.value(com.github.saku0817.combatcoresystems.model.StatKey.ATTACK_SPEED));
         player.setHealthScaled(true);
         player.setHealthScale(Math.max(1, definitions.snapshot().config("levels.yml").getDouble("player.minecraft-health-scale", 20)));
-        double source = switch (healthMode) { case FULL -> value.maxHp(); case STORED -> data.getHealth(); case CURRENT -> currentHealth; };
+        double source = switch (healthMode) { case FULL -> value.maxHp(); case STORED, CURRENT -> data.getHealth(); };
         double desired = CoreMath.preservedHealth(source, value.maxHp());
-        player.setHealth(desired);
+        data.setHealth(desired);
+        player.setHealth(CoreMath.toPhysicalHealth(desired, value.maxHp(), physicalMaximum));
+    }
+
+    public void setVirtualHealth(Player player, PlayerData data, double health) {
+        PlayerStats value = stats.get(player, data); double desired = Math.max(0, Math.min(value.maxHp(), health)); data.setHealth(desired);
+        var attribute = player.getAttribute(Attribute.MAX_HEALTH); double physicalMaximum = attribute == null ? Math.min(1024, value.maxHp()) : attribute.getValue();
+        player.setHealth(CoreMath.toPhysicalHealth(desired, value.maxHp(), physicalMaximum));
+    }
+
+    public void capturePhysicalHealth(Player player, PlayerData data) {
+        PlayerStats value = stats.get(player, data); var attribute = player.getAttribute(Attribute.MAX_HEALTH);
+        double physicalMaximum = attribute == null ? Math.max(1, player.getHealth()) : attribute.getValue();
+        data.setHealth(CoreMath.toVirtualHealth(player.getHealth(), physicalMaximum, value.maxHp()));
     }
 
     private String message(String path, String fallback) { return definitions.snapshot().config("messages.yml").getString(path, fallback); }

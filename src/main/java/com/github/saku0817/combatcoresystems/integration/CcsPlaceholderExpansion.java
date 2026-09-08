@@ -22,13 +22,15 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
     private final ElementService elements;
     private final SkillService skills;
     private final PartyService parties;
+    private final ItemService items;
 
     public CcsPlaceholderExpansion(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                                    LevelService levels, CombatStateService combat, ElementService elements,
-                                   SkillService skills, PartyService parties) {
+                                   SkillService skills, PartyService parties, ItemService items) {
         this.plugin = plugin;
         this.definitions = definitions; this.players = players; this.stats = stats; this.levels = levels;
         this.combat = combat; this.elements = elements; this.skills = skills; this.parties = parties;
+        this.items = items;
     }
     @Override public @NotNull String getIdentifier() { return "ccs"; }
     @Override public @NotNull String getAuthor() { return "s3_q3x"; }
@@ -48,7 +50,7 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
             case "exp_required" -> Long.toString(data.getLevel() >= maxLevel() ? 0 : levels.requiredExp(data.getLevel()));
             case "exp_remaining" -> Long.toString(data.getLevel() >= maxLevel() ? 0 : levels.requiredExp(data.getLevel()) - data.getExp());
             case "rebirth_count" -> Integer.toString(data.getRebirthCount()); case "skill_points" -> Integer.toString(data.getSkillPoints());
-            case "hp" -> Long.toString(Math.round(player.getHealth())); case "max_hp" -> Long.toString(Math.round(value.maxHp()));
+            case "hp" -> Long.toString(Math.round(data.getHealth())); case "max_hp" -> Long.toString(Math.round(value.maxHp()));
             case "atk" -> format(value.atk()); case "def" -> format(value.def()); case "crit_rate" -> format(value.value(StatKey.CRIT_RATE));
             case "crit_damage" -> format(value.value(StatKey.CRIT_DAMAGE)); case "healing_power" -> format(value.value(StatKey.HEALING_POWER));
             case "cooltime" -> format(value.value(StatKey.COOLDOWN)); case "attack_speed" -> format(value.value(StatKey.ATTACK_SPEED));
@@ -65,9 +67,9 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
             case "ultimate_ready" -> bool(skills.status(player.getUniqueId(), true).ready()); case "ultimate_status" -> skills.status(player.getUniqueId(), true).ready() ? "ready" : "cooldown";
             case "ultimate_status_display" -> skills.status(player.getUniqueId(), true).ready() ? "発動可能" : "あと" + format(skills.status(player.getUniqueId(), true).remainingSeconds()) + "秒";
             case "ultimate_cooldown" -> format(skills.status(player.getUniqueId(), true).remainingSeconds()); case "ultimate_charges" -> Integer.toString(skills.status(player.getUniqueId(), true).charges());
-            case "melee_weapon" -> equipment(data, EquipmentSlot.MELEE_WEAPON); case "melee_weapon_level" -> equipmentLevel(data, EquipmentSlot.MELEE_WEAPON);
-            case "melee_weapon_limitbreak" -> equipmentLimit(data, EquipmentSlot.MELEE_WEAPON); case "ranged_weapon" -> equipment(data, EquipmentSlot.RANGED_WEAPON);
-            case "ranged_weapon_level" -> equipmentLevel(data, EquipmentSlot.RANGED_WEAPON); case "ranged_weapon_limitbreak" -> equipmentLimit(data, EquipmentSlot.RANGED_WEAPON);
+            case "melee_weapon" -> weapon(player, WeaponDefinition.Category.MELEE, WeaponValue.ID); case "melee_weapon_level" -> weapon(player, WeaponDefinition.Category.MELEE, WeaponValue.LEVEL);
+            case "melee_weapon_limitbreak" -> weapon(player, WeaponDefinition.Category.MELEE, WeaponValue.LIMIT); case "ranged_weapon" -> weapon(player, WeaponDefinition.Category.RANGED, WeaponValue.ID);
+            case "ranged_weapon_level" -> weapon(player, WeaponDefinition.Category.RANGED, WeaponValue.LEVEL); case "ranged_weapon_limitbreak" -> weapon(player, WeaponDefinition.Category.RANGED, WeaponValue.LIMIT);
             case "head" -> equipment(data, EquipmentSlot.HEAD); case "chest" -> equipment(data, EquipmentSlot.CHEST); case "legs" -> equipment(data, EquipmentSlot.LEGS);
             case "feet" -> equipment(data, EquipmentSlot.FEET); case "resonance" -> equipment(data, EquipmentSlot.RESONANCE); case "divine_heart" -> equipment(data, EquipmentSlot.DIVINE_HEART);
             case "element_count" -> Integer.toString(elements.remaining(player.getUniqueId()).size()); case "elements", "elements_display" -> String.join(",", elements.remaining(player.getUniqueId()).keySet().stream().map(Element::japaneseName).toList());
@@ -89,6 +91,14 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
     private String equipment(PlayerData data, EquipmentSlot slot) { ItemInstance item = data.getEquipment().get(slot); return item == null ? "" : item.getDefinitionId(); }
     private String equipmentLevel(PlayerData data, EquipmentSlot slot) { ItemInstance item = data.getEquipment().get(slot); return item == null ? "0" : Integer.toString(item.getLevel()); }
     private String equipmentLimit(PlayerData data, EquipmentSlot slot) { ItemInstance item = data.getEquipment().get(slot); return item == null ? "0" : Integer.toString(item.getLimitBreak()); }
+    private String weapon(Player player, WeaponDefinition.Category category, WeaponValue field) {
+        for (int slot = 0; slot <= 8; slot++) {
+            ItemInstance instance = items.instance(player.getInventory().getItem(slot)).orElse(null); if (instance == null) continue;
+            WeaponDefinition definition = definitions.snapshot().weapons().get(instance.getDefinitionId()); if (definition == null || definition.category() != category) continue;
+            return switch (field) { case ID -> instance.getDefinitionId(); case LEVEL -> Integer.toString(instance.getLevel()); case LIMIT -> Integer.toString(instance.getLimitBreak()); };
+        }
+        return field == WeaponValue.ID ? "" : "0";
+    }
     private boolean hasEffect(PlayerData data, String id) { return data.getBuffs().stream().anyMatch(e -> e.getId().equals(id)); }
     private int effectStacks(PlayerData data, String id) { return data.getBuffs().stream().filter(e -> e.getId().equals(id)).mapToInt(TimedEffect::getStacks).findFirst().orElse(0); }
     private long effectRemaining(PlayerData data, String id) { return data.getBuffs().stream().filter(e -> e.getId().equals(id)).mapToLong(TimedEffect::getRemainingMillis).findFirst().orElse(0); }
@@ -96,4 +106,5 @@ public final class CcsPlaceholderExpansion extends PlaceholderExpansion {
     private String progress(int current, int total) { return total == 0 ? "0.0" : format(current * 100.0 / total); }
     private int maxLevel() { return Math.min(100, Math.max(1, definitions.snapshot().config("levels.yml").getInt("player.max-level", 100))); }
     private int mobTotal() { return definitions.snapshot().mobs().size() + definitions.snapshot().vanillaMobs().size(); }
+    private enum WeaponValue { ID, LEVEL, LIMIT }
 }

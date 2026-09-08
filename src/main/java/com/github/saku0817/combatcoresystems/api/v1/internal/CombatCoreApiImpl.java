@@ -79,7 +79,7 @@ public final class CombatCoreApiImpl implements CombatCoreApi, PlayerApi, Combat
         java.util.EnumMap<com.github.saku0817.combatcoresystems.model.EquipmentSlot, String> result = new java.util.EnumMap<>(com.github.saku0817.combatcoresystems.model.EquipmentSlot.class);
         data.get().getEquipment().forEach((slot, item) -> result.put(slot, item.getDefinitionId())); return java.util.Map.copyOf(result);
     }
-    @Override public boolean equipMainHand(UUID playerId, com.github.saku0817.combatcoresystems.model.EquipmentSlot slot) { Player player = Bukkit.getPlayer(playerId); return player != null && equipment.registerWeapon(player, slot, player.getInventory().getItemInMainHand()); }
+    @Deprecated @Override public boolean equipMainHand(UUID playerId, com.github.saku0817.combatcoresystems.model.EquipmentSlot slot) { return false; }
     @Override public boolean activate(UUID playerId, UUID targetId, boolean ultimate) { Player player = Bukkit.getPlayer(playerId); var entity = targetId == null ? null : Bukkit.getEntity(targetId); return player != null && skills.activate(player, entity instanceof LivingEntity living ? living : null, ultimate); }
     @Override public SkillApi.Status status(UUID player, boolean ultimate) { var state = skills.status(player, ultimate); return new SkillApi.Status(state.ready(), state.remainingSeconds(), state.charges()); }
     @Override public boolean addExperience(UUID playerId, long amount) { Player player = Bukkit.getPlayer(playerId); var data = players.find(playerId); if (player == null || data.isEmpty()) return false; progression.addExp(player, data.get(), amount); return true; }

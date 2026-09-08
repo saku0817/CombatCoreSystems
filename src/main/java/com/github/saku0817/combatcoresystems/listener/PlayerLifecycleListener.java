@@ -10,6 +10,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.*;
@@ -37,7 +38,7 @@ public final class PlayerLifecycleListener implements Listener {
     @EventHandler public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         players.load(player, data -> {
-            elements.resumePlayer(data); equipment.syncArmor(player); registerWeapons(player, data); levels.restore(player, data);
+            elements.resumePlayer(data); equipment.syncArmor(player); levels.restore(player, data);
             if (data.getCombatLogoutCount() > 0) player.sendMessage(mini.deserialize("<yellow>Combat Logout警告: " + data.getCombatLogoutCount() + "/4（4回目でPlayer Lv -1）</yellow>"));
         });
     }
@@ -50,7 +51,7 @@ public final class PlayerLifecycleListener implements Listener {
             if (violations >= 4) { data.setLevel(Math.max(1, data.getLevel() - 1)); data.setCombatLogoutCount(0); }
             else data.setCombatLogoutCount(violations);
         }
-        data.setHealth(player.getHealth()); elements.pausePlayer(data); hud.remove(player); combat.forget(player.getUniqueId()); players.saveAndUnload(player);
+        levels.capturePhysicalHealth(player, data); elements.pausePlayer(data); hud.remove(player); combat.forget(player.getUniqueId()); players.saveAndUnload(player);
     }
 
     @EventHandler public void onRespawn(PlayerRespawnEvent event) {
@@ -70,7 +71,9 @@ public final class PlayerLifecycleListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onNaturalRegeneration(EntityRegainHealthEvent event) {
-        if (event.getEntity() instanceof Player && event.getRegainReason() == EntityRegainHealthEvent.RegainReason.SATIATED) event.setCancelled(true);
+        if (!(event.getEntity() instanceof Player player)) return;
+        if (event.getRegainReason() == EntityRegainHealthEvent.RegainReason.SATIATED) { event.setCancelled(true); return; }
+        Bukkit.getScheduler().runTask(plugin, () -> players.find(player.getUniqueId()).ifPresent(data -> levels.capturePhysicalHealth(player, data)));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -78,9 +81,9 @@ public final class PlayerLifecycleListener implements Listener {
         if (event.getItem().hasItemMeta() && event.getItem().getItemMeta().isUnbreakable()) event.setCancelled(true);
     }
 
-    private void registerWeapons(Player player, PlayerData data) {
-        var melee = data.getEquipment().get(com.github.saku0817.combatcoresystems.model.EquipmentSlot.MELEE_WEAPON);
-        var ranged = data.getEquipment().get(com.github.saku0817.combatcoresystems.model.EquipmentSlot.RANGED_WEAPON);
-        combat.registerWeapons(player.getUniqueId(), melee == null ? "" : melee.getDefinitionId(), ranged == null ? "" : ranged.getDefinitionId());
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEnvironmentalDamage(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player) || event instanceof org.bukkit.event.entity.EntityDamageByEntityEvent) return;
+        Bukkit.getScheduler().runTask(plugin, () -> players.find(player.getUniqueId()).ifPresent(data -> levels.capturePhysicalHealth(player, data)));
     }
 }

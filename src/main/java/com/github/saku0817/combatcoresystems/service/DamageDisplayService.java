@@ -36,8 +36,8 @@ public final class DamageDisplayService {
 
     public void damage(UUID owner, LivingEntity target, long amount, boolean critical, String reaction, boolean small, long overdamage) {
         if (!definitions.snapshot().config("config.yml").getBoolean("text-display.enabled", true)) return;
-        String path = overdamage > 0 ? "damage-display.overdamage" : reaction != null ? "damage-display.reaction" : critical ? "damage-display.critical" : "damage-display.normal";
-        String fallback = overdamage > 0 ? "<red>OVER <damage> (+<overdamage>)</red>" : reaction != null ? "<aqua><reaction> <damage></aqua>" : critical ? "<gold>CRIT <damage></gold>" : "<white><damage></white>";
+        String path = reaction != null ? "damage-display.reaction" : critical ? "damage-display.critical" : "damage-display.normal";
+        String fallback = reaction != null ? "<aqua><reaction> <damage></aqua>" : critical ? "<gold>CRIT <damage></gold>" : "<white><damage></white>";
         Component text = mini.deserialize(template(path, fallback).replace("<reaction>", reaction == null ? "" : reaction)
                 .replace("<damage>", Long.toString(amount)).replace("<overdamage>", Long.toString(overdamage)));
         spawn(owner, target, text, critical ? 1.35f : small ? 0.7f : 1.0f);

@@ -10,6 +10,7 @@ saved: "<green>データを保存しました。</green>"
 backup-created: "<green>バックアップを作成しました: <id></green>"
 exp-gained: "<aqua>独自EXP +<amount>（<current>/<required>）</aqua>"
 level-up: "<green>Lv.<old_level> → Lv.<level>！ HP +<hp_gain> / ATK +<atk_gain> / DEF +<def_gain></green>"
+weapon-audit-moved: "<yellow>同カテゴリの武器はホットバー/オフハンドに1本だけ置けます。余分な武器を移動しました。</yellow>"
 rebirth-complete: "<light_purple>新生回帰を行いました。回数: <count></light_purple>"
 party-friendly-fire: "<yellow>同じPartyのメンバーには攻撃できません。</yellow>"
 encyclopedia-unlock: "<aqua>図鑑に新しい対象を登録しました: <name></aqua>"
@@ -20,7 +21,8 @@ damage-display:
   normal: "<white><damage></white>"
   critical: "<gold>CRIT <damage></gold>"
   reaction: "<aqua><reaction> <damage></aqua>"
-  overdamage: "<red>OVER <damage> (+<overdamage>)</red>"
+  # v1.2.1以降、オーバーダメージもnormal/critical/reactionと同じ形式で総ダメージを表示します。
+  overdamage: "<white><damage></white>"
   heal: "<green>+<heal></green>"
 command:
   updated: "<green>設定を更新しました。</green>"

@@ -48,4 +48,14 @@ public final class CoreMath {
     public static long overdamage(long damage, double currentHealth) {
         return Math.max(0L, damage - Math.round(Math.max(0, currentHealth)));
     }
+
+    public static double toPhysicalHealth(double virtualHealth, double virtualMaximum, double physicalMaximum) {
+        if (virtualMaximum <= 0 || physicalMaximum <= 0) return 0;
+        return Math.max(0, Math.min(physicalMaximum, virtualHealth / virtualMaximum * physicalMaximum));
+    }
+
+    public static double toVirtualHealth(double physicalHealth, double physicalMaximum, double virtualMaximum) {
+        if (physicalMaximum <= 0 || virtualMaximum <= 0) return 0;
+        return Math.max(0, Math.min(virtualMaximum, physicalHealth / physicalMaximum * virtualMaximum));
+    }
 }
