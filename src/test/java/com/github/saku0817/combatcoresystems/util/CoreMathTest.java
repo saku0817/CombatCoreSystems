@@ -43,4 +43,10 @@ class CoreMathTest {
         assertEquals(0, CoreMath.overdamage(10, 20));
         assertEquals(30, CoreMath.overdamage(50, 20));
     }
+
+    @Test void virtualHealthScalesPastMinecraftAttributeLimit() {
+        assertEquals(512.0, CoreMath.toPhysicalHealth(1500, 3000, 1024), 0.0001);
+        assertEquals(1500.0, CoreMath.toVirtualHealth(512, 1024, 3000), 0.0001);
+        assertEquals(1024.0, CoreMath.toPhysicalHealth(5000, 3000, 1024), 0.0001);
+    }
 }
