@@ -14,7 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public final class DebugService {
+public final class DebugService implements org.bukkit.event.Listener {
     private final JavaPlugin plugin;
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final Map<UUID, Scheduled> scheduled = new ConcurrentHashMap<>();
@@ -30,9 +30,17 @@ public final class DebugService {
     public Optional<Session> session(UUID user) { return Optional.ofNullable(sessions.get(user)); }
     public Optional<Scheduled> scheduled(UUID user) { return Optional.ofNullable(scheduled.get(user)); }
 
+    @org.bukkit.event.EventHandler
+    public void onDamage(com.github.saku0817.combatcoresystems.api.v1.event.AfterDamageEvent event) {
+        UUID attacker = event.getRequest().attacker();
+        if (attacker != null && enabled(attacker)) log(attacker, "damage", "source=" + event.getRequest().source()
+                + " target=" + event.getRequest().target() + " multiplier=" + event.getRequest().multiplier()
+                + " damage=" + event.getResult().finalDamage() + " critical=" + event.getResult().critical());
+    }
+
     public void log(UUID user, String category, String message) {
         Session session = sessions.get(user);
-        if (session == null || (!session.categories.contains("all") && !session.categories.contains(category))) return;
+        if (!enabled(user) || session == null || (!session.categories.contains("all") && !session.categories.contains(category))) return;
         Player player = Bukkit.getPlayer(user);
         Component component = mini.deserialize("<gray>[DEBUG:" + category + "]</gray> " + message);
         if (player != null) player.sendMessage(component);

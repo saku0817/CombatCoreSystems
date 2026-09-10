@@ -36,7 +36,8 @@ public final class StatService implements Listener {
     }
 
     public PlayerStats get(Player player, PlayerData data) {
-        return cache.computeIfAbsent(player.getUniqueId(), ignored -> calculate(player, data));
+        // Inventory changes made by commands and other plugins do not always fire inventory events.
+        return recalculate(player, data);
     }
 
     public PlayerStats recalculate(Player player, PlayerData data) {

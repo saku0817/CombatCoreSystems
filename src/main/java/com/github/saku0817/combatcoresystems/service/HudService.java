@@ -25,6 +25,7 @@ public final class HudService {
     private final SkillService skills;
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final Map<UUID, Board> boards = new HashMap<>();
+    private final Map<UUID, net.kyori.adventure.bossbar.BossBar> targetBars = new HashMap<>();
 
     public HudService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                       LevelService levels, CombatStateService combat, ElementService elements, SkillService skills) {
@@ -38,6 +39,8 @@ public final class HudService {
     }
 
     public void remove(Player player) {
+        var bar = targetBars.remove(player.getUniqueId());
+        if (bar != null) player.hideBossBar(bar);
         Board board = boards.remove(player.getUniqueId());
         if (board != null && player.getScoreboard() == board.scoreboard) player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
     }
@@ -48,8 +51,36 @@ public final class HudService {
 
     private void update(Player player, PlayerData data) {
         if (!data.isHudEnabled()) { remove(player); return; }
+        updateTarget(player);
         if (definitions.snapshot().config("config.yml").getBoolean("hud.sidebar-enabled", true)) updateSidebar(player, data);
         if (definitions.snapshot().config("config.yml").getBoolean("hud.actionbar-enabled", true)) updateActionBar(player);
+    }
+
+    private void updateTarget(Player player) {
+        var config = definitions.snapshot().config("config.yml");
+        org.bukkit.entity.LivingEntity target = null;
+        if (config.getBoolean("hud.target-bossbar-enabled", true)) {
+            var hit = player.getWorld().rayTraceEntities(player.getEyeLocation(), player.getEyeLocation().getDirection(),
+                    Math.max(1, config.getDouble("hud.target-range", 24)), 0.25,
+                    entity -> entity instanceof org.bukkit.entity.Mob && !entity.isDead() && player.hasLineOfSight(entity));
+            if (hit != null && hit.getHitEntity() instanceof org.bukkit.entity.LivingEntity living) target = living;
+        }
+        if (target == null) {
+            var previous = targetBars.remove(player.getUniqueId());
+            if (previous != null) player.hideBossBar(previous);
+            return;
+        }
+        var health = target.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
+        double maximum = health == null ? target.getHealth() : health.getValue();
+        Component name = target.customName() == null ? Component.text(target.getName()) : target.customName();
+        String template = definitions.snapshot().config("gui.yml").getString("hud.target-health", "<hp> / <max_hp>");
+        Component title = name.append(Component.text(" ")).append(mini.deserialize(template.replace("<hp>", Long.toString(Math.round(target.getHealth()))).replace("<max_hp>", Long.toString(Math.round(maximum)))));
+        var bar = targetBars.get(player.getUniqueId());
+        if (bar == null) {
+            bar = net.kyori.adventure.bossbar.BossBar.bossBar(title, 1, net.kyori.adventure.bossbar.BossBar.Color.RED, net.kyori.adventure.bossbar.BossBar.Overlay.PROGRESS);
+            targetBars.put(player.getUniqueId(), bar); player.showBossBar(bar);
+        }
+        bar.name(title).progress((float) Math.max(0, Math.min(1, target.getHealth() / Math.max(1, maximum))));
     }
 
     private void updateSidebar(Player player, PlayerData data) {

@@ -13,13 +13,20 @@ import java.util.*;
 public final class CcsCommand implements CommandExecutor, TabCompleter {
     private final PlayerDataService players; private final CombatStateService combat; private final GuiService gui;
     private final PartyService parties; private final DebugService debug; private final MiniMessage mini = MiniMessage.miniMessage();
+    private final SkillService skills;
 
-    public CcsCommand(PlayerDataService players, CombatStateService combat, GuiService gui, PartyService parties, DebugService debug) {
+    public CcsCommand(PlayerDataService players, CombatStateService combat, GuiService gui, PartyService parties, DebugService debug, SkillService skills) {
+        this.skills = skills;
         this.players = players; this.combat = combat; this.gui = gui; this.parties = parties; this.debug = debug;
     }
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) { sender.sendMessage("Players only."); return true; }
+        if (args.length == 1 && Set.of("skill", "ultimate").contains(args[0].toLowerCase(Locale.ROOT))) {
+            if (!player.hasPermission("combatcoresystems.command." + args[0].toLowerCase(Locale.ROOT))) { message(player, "<red>権限がありません。</red>"); return true; }
+            if (!skills.activate(player, args[0].equalsIgnoreCase("ultimate"))) message(player, "<red>発動できません。CCS武器を手に持ち、対象・装備レベル・発動条件を確認してください。</red>");
+            return true;
+        }
         if (combat.inCombat(player.getUniqueId())) { message(player, "<red>戦闘中は一般CCSコマンドを使用できません。</red>"); return true; }
         if (players.find(player.getUniqueId()).isEmpty()) { message(player, "<yellow>データを読み込み中です。</yellow>"); return true; }
         String permission = permissionFor(args);
@@ -30,10 +37,7 @@ public final class CcsCommand implements CommandExecutor, TabCompleter {
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "menu" -> gui.openMain(player);
             case "open" -> open(player, args);
-            case "encyclopedia" -> gui.openEncyclopedia(player, "", 0, "");
             case "setting" -> setting(player, args);
-            case "party" -> party(player, args);
-            case "debug" -> debug(player, args);
             default -> help(player);
         }
         return true;
@@ -43,7 +47,14 @@ public final class CcsCommand implements CommandExecutor, TabCompleter {
         if (args.length < 2) { gui.openMain(player); return; }
         switch (args[1].toLowerCase(Locale.ROOT)) {
             case "stats" -> gui.openStats(player); case "equipments" -> gui.openEquipment(player); case "skilltree" -> gui.openSkillTree(player, "");
-            case "rebirth" -> gui.openRebirth(player, false); case "party" -> gui.openParty(player); default -> gui.openMain(player);
+            case "rebirth" -> gui.openRebirth(player, false); case "party" -> {
+                if (args.length == 2) gui.openParty(player);
+                else party(player, Arrays.copyOfRange(args, 1, args.length));
+            }
+            case "encyclopedia" -> gui.openEncyclopedia(player, "", 0, "");
+            case "enhancement" -> gui.openEnhancement(player);
+            case "settings" -> gui.openSettings(player);
+            default -> gui.openMain(player);
         }
     }
 
@@ -99,12 +110,13 @@ public final class CcsCommand implements CommandExecutor, TabCompleter {
         };
     }
     private Player argumentPlayer(String[] args, int index) { return args.length > index ? Bukkit.getPlayerExact(args[index]) : null; }
-    private void help(Player player) { message(player, "<gold>/ccs menu, open, encyclopedia, setting, party, debug</gold>"); }
+    private void help(Player player) { message(player, "<gold>/ccs menu | /ccs open stats|equipments|skilltree|rebirth|party|encyclopedia|enhancement|settings | /ccs skill | /ccs ultimate | /ccs setting</gold>"); }
     private void message(CommandSender sender, String value) { sender.sendMessage(mini.deserialize("<dark_gray>[<gold>CCS</gold>]</dark_gray> " + value)); }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return complete(args[0], List.of("help", "menu", "open", "encyclopedia", "setting", "party", "debug"));
-        if (args.length == 2 && args[0].equalsIgnoreCase("open")) return complete(args[1], List.of("stats", "equipments", "skilltree", "rebirth", "party"));
+        if (args.length == 1) return complete(args[0], List.of("help", "menu", "open", "setting", "skill", "ultimate"));
+        if (args.length == 2 && args[0].equalsIgnoreCase("open")) return complete(args[1], List.of("stats", "equipments", "skilltree", "rebirth", "party", "encyclopedia", "enhancement", "settings"));
+        if (args.length >= 3 && args[0].equalsIgnoreCase("open") && args[1].equalsIgnoreCase("party")) return onTabComplete(sender, command, alias, Arrays.copyOfRange(args, 1, args.length));
         if (args.length == 2 && args[0].equalsIgnoreCase("party")) return complete(args[1], List.of("create", "invite", "accept", "decline", "leave", "kick", "leader", "disband", "list", "chat"));
         if (args.length == 2 && args[0].equalsIgnoreCase("setting")) return complete(args[1], List.of("pvp", "hud", "controls"));
         if (args.length == 3 && args[0].equalsIgnoreCase("setting") && args[1].equalsIgnoreCase("pvp")) return complete(args[2], List.of("on", "off"));

@@ -1,4 +1,7 @@
 data-version: 1
+item-lore:
+  # 神心ルール・セット効果。利用可能: <label>, <key>, <value>
+  effect: "<gray><label>: <key> = <value></gray>"
 # MiniMessage形式で全表示文を編集できます。例: <red>赤文字</red>
 prefix: "<dark_gray>[<gold>CCS</gold>]</dark_gray> "
 no-permission: "<red>権限がありません。</red>"

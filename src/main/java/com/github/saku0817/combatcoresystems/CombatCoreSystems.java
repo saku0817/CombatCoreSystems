@@ -62,12 +62,12 @@ public final class CombatCoreSystems extends JavaPlugin {
         GuiService gui = new GuiService(this, definitions, players, stats, levels, combat, equipment, skillTrees, parties, enhancement, items);
         BackupService backups = new BackupService(this, definitions, storage, players, parties, stats, levels, elements);
 
-        registerListeners(List.of(regions, mobs, stats, damage, equipment, skills, encyclopedia, gui, mobAbilities,
+        registerListeners(List.of(regions, mobs, stats, damage, equipment, skills, encyclopedia, gui, mobAbilities, debug,
                 new PlayerLifecycleListener(this, players, levels, combat, elements, buffs, equipment, hud, mobs)));
 
-        CcsCommand general = new CcsCommand(players, combat, gui, parties, debug);
+        CcsCommand general = new CcsCommand(players, combat, gui, parties, debug, skills);
         CcsAdminCommand admin = new CcsAdminCommand(this, definitions, storage, players, levels, stats, buffs, elements,
-                items, mobs, regions, backups, encyclopedia, parties, combat);
+                items, mobs, regions, backups, encyclopedia, parties, combat, debug);
         configureCommand("ccs", general, general);
         configureCommand("ccsadmin", admin, admin);
 

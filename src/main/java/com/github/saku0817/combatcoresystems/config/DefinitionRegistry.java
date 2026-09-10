@@ -159,7 +159,7 @@ public final class DefinitionRegistry {
         catch (IllegalArgumentException ex) { warnings.add(fallbackId + " uses ATK because reference is invalid"); stat = ReferenceStat.ATK; }
         return new WeaponDefinition.SkillDefinition(s.getString("id", fallbackId), s.getString("name", fallbackId), stat,
                 s.getDouble("multiplier", 1), Element.parse(value(s, "attribute", "element")).orElse(Element.PHYSICAL),
-                Math.max(0, s.getDouble("cooldown", 0)), Math.max(1, s.getInt("charges", 1)),
+                Math.max(0, s.getDouble("cooldown-seconds", s.getDouble("cooldown", 0))), Math.max(1, s.getInt("charges", 1)),
                 Math.max(0, s.getDouble("radius", 0)), s.getString("target", "ENEMY"),
                 s.getConfigurationSection("conditions") == null ? Map.of() : Map.copyOf(s.getConfigurationSection("conditions").getValues(false)));
     }

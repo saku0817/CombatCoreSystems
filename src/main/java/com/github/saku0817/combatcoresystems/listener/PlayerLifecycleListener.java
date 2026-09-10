@@ -47,9 +47,8 @@ public final class PlayerLifecycleListener implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer(); PlayerData data = players.find(player.getUniqueId()).orElse(null); if (data == null) return;
         if (combat.inCombat(player.getUniqueId())) {
-            int violations = data.getCombatLogoutCount() + 1;
+            int violations = data.recordCombatLogout(System.currentTimeMillis());
             if (violations >= 4) { data.setLevel(Math.max(1, data.getLevel() - 1)); data.setCombatLogoutCount(0); }
-            else data.setCombatLogoutCount(violations);
         }
         levels.capturePhysicalHealth(player, data); elements.pausePlayer(data); hud.remove(player); combat.forget(player.getUniqueId()); players.saveAndUnload(player);
     }
@@ -65,8 +64,9 @@ public final class PlayerLifecycleListener implements Listener {
 
     @EventHandler public void onMobDeath(EntityDeathEvent event) {
         if (event instanceof PlayerDeathEvent) return;
-        MobDefinition definition = mobs.definition(event.getEntity()).orElse(null); if (definition == null || !definition.dropCustomExp() || event.getEntity().getKiller() == null) return;
-        Player killer = event.getEntity().getKiller(); players.find(killer.getUniqueId()).ifPresent(data -> levels.addExp(killer, data, definition.exp()));
+        Player killer = event.getEntity().getKiller(); if (killer == null) return;
+        long reward = mobs.customExperience(event.getEntity());
+        players.find(killer.getUniqueId()).ifPresent(data -> levels.addExp(killer, data, reward));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)

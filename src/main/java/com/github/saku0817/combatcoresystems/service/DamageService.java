@@ -39,6 +39,22 @@ public final class DamageService implements DamageApi, Listener {
     private final LevelService levels;
     private final NamespacedKey itemIdKey;
     private final NamespacedKey projectileWeaponKey;
+    private final Map<UUID, AttackCharge> attackCharges = new HashMap<>();
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBeforeAttack(io.papermc.paper.event.player.PrePlayerAttackEntityEvent event) {
+        Player player = event.getPlayer();
+        attackCharges.put(player.getUniqueId(), new AttackCharge(Bukkit.getCurrentTick(), player.getAttackCooldown()));
+    }
+
+    @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) { attackCharges.remove(event.getPlayer().getUniqueId()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBow(org.bukkit.event.entity.EntityShootBowEvent event) {
+        event.getProjectile().getPersistentDataContainer().set(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, (double) event.getForce());
+    }
+
+    private record AttackCharge(int tick, double value) {}
 
     public DamageService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                          CombatStateService combat, ElementService elements, MobService mobs, PartyService parties,
@@ -79,8 +95,11 @@ public final class DamageService implements DamageApi, Listener {
 
         double multiplier = 1.0;
         if (attacker instanceof Player player && !(event.getDamager() instanceof Projectile)) {
-            double cooled = player.getAttackCooldown();
-            multiplier = 0.2 + cooled * cooled * 0.8;
+            AttackCharge charge = attackCharges.get(player.getUniqueId());
+            double cooled = charge != null && charge.tick() == Bukkit.getCurrentTick() ? charge.value() : player.getAttackCooldown();
+            multiplier = attackMultiplier(cooled);
+        } else if (event.getDamager() instanceof Projectile projectile) {
+            multiplier = Math.max(0, Math.min(1, projectile.getPersistentDataContainer().getOrDefault(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, 1.0)));
         }
         Element element = mobs.definition(attacker).map(MobDefinition::nativeElement).orElse(Element.PHYSICAL);
         if (attacker instanceof Player player) {
@@ -94,6 +113,7 @@ public final class DamageService implements DamageApi, Listener {
         }
         DamageRequest request = new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), ReferenceStat.ATK,
                 multiplier, element, true, false, 0, "normal_attack");
+        event.setCancelled(true);
         DamageResult result = apply(request);
         if (!result.applied()) return;
         event.setCancelled(true);
@@ -112,6 +132,11 @@ public final class DamageService implements DamageApi, Listener {
             return !parties.sameParty(first.getUniqueId(), second.getUniqueId());
         }
         return true;
+    }
+
+    static double attackMultiplier(double cooled) {
+        double clamped = Math.max(0, Math.min(1, cooled));
+        return 0.2 + clamped * clamped * 0.8;
     }
 
     private LivingEntity resolveAttacker(Entity damager) {
@@ -148,6 +173,8 @@ public final class DamageService implements DamageApi, Listener {
 
         DamageResult result = calculate(request, attacker, target);
         if (!result.applied()) return result;
+        if (attacker != null && !allowed(attacker, target)) return DamageResult.failed(request.source(), "not_allowed");
+        if (result.finalDamage() > 0 && attacker instanceof Player player) target.setKiller(player);
         long overdamage = overdamage(target, result.finalDamage());
         subtractHealth(target, result.finalDamage());
         UUID owner = attacker == null ? target.getUniqueId() : attacker.getUniqueId();
@@ -217,6 +244,8 @@ public final class DamageService implements DamageApi, Listener {
             if (critical) total *= 1 + source.critDamage;
             total *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
             long rounded = CoreMath.roundedDamage(total);
+            if (!allowed(attacker, target)) continue;
+            if (rounded > 0 && attacker instanceof Player player) target.setKiller(player);
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
             displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage);

@@ -3,7 +3,7 @@ package com.github.saku0817.combatcoresystems.model;
 import java.util.*;
 
 public final class PlayerData {
-    public static final int DATA_VERSION = 2;
+    public static final int DATA_VERSION = 3;
 
     private int dataVersion = DATA_VERSION;
     private String uuid = "";
@@ -23,6 +23,7 @@ public final class PlayerData {
     private boolean hudEnabled = true;
     private String controls = "DEFAULT";
     private int combatLogoutCount;
+    private List<Long> combatLogoutTimes = new ArrayList<>();
     private List<TimedEffect> buffs = new ArrayList<>();
     private List<TimedEffect> debuffs = new ArrayList<>();
     private List<ElementAttachment> elements = new ArrayList<>();
@@ -57,7 +58,18 @@ public final class PlayerData {
     public boolean isPvpEnabled() { return pvpEnabled; }
     public boolean isHudEnabled() { return hudEnabled; }
     public String getControls() { return controls; }
-    public int getCombatLogoutCount() { return combatLogoutCount; }
+    public int getCombatLogoutCount() { return expireCombatLogouts(System.currentTimeMillis()); }
+    public int expireCombatLogouts(long now) {
+        if (combatLogoutTimes == null) combatLogoutTimes = new ArrayList<>();
+        combatLogoutTimes.removeIf(time -> time == null || now - time >= 86_400_000L);
+        combatLogoutCount = combatLogoutTimes.size();
+        return combatLogoutCount;
+    }
+    public int recordCombatLogout(long now) {
+        expireCombatLogouts(now);
+        combatLogoutTimes.add(now);
+        return combatLogoutCount = combatLogoutTimes.size();
+    }
     public List<TimedEffect> getBuffs() { return buffs; }
     public List<TimedEffect> getDebuffs() { return debuffs; }
     public List<ElementAttachment> getElements() { return elements; }
@@ -78,11 +90,21 @@ public final class PlayerData {
     public void setPvpEnabled(boolean value) { this.pvpEnabled = value; }
     public void setHudEnabled(boolean value) { this.hudEnabled = value; }
     public void setControls(String value) { this.controls = value == null ? "DEFAULT" : value; }
-    public void setCombatLogoutCount(int value) { this.combatLogoutCount = Math.max(0, value); }
+    public void setCombatLogoutCount(int value) {
+        combatLogoutTimes = new ArrayList<>();
+        for (int i = 0; i < Math.max(0, value); i++) combatLogoutTimes.add(System.currentTimeMillis());
+        combatLogoutCount = combatLogoutTimes.size();
+    }
     public void setPartyId(String partyId) { this.partyId = partyId == null ? "" : partyId; }
     public void setLastSaveEpochMillis(long value) { this.lastSaveEpochMillis = value; }
 
     public PlayerData normalize() {
+        if (combatLogoutTimes == null) combatLogoutTimes = new ArrayList<>();
+        if (dataVersion < 3 && combatLogoutTimes.isEmpty() && combatLogoutCount > 0) {
+            long occurred = lastSaveEpochMillis > 0 ? lastSaveEpochMillis : System.currentTimeMillis();
+            for (int i = 0; i < combatLogoutCount; i++) combatLogoutTimes.add(occurred);
+        }
+        expireCombatLogouts(System.currentTimeMillis());
         if (grantedLevelPoints == null) grantedLevelPoints = new HashSet<>();
         if (skillNodes == null) skillNodes = new LinkedHashMap<>();
         if (skillPresets == null) skillPresets = new LinkedHashMap<>();

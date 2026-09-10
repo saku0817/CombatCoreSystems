@@ -81,7 +81,7 @@ public final class EquipmentService implements Listener {
     }
 
     public void syncArmor(Player player) {
-        if (combat.inCombat(player.getUniqueId())) return;
+        for (ItemStack stack : player.getInventory().getContents()) items.instance(stack).ifPresent(instance -> items.writeInstance(stack, instance));
         players.find(player.getUniqueId()).ifPresent(data -> {
             data.getEquipment().remove(EquipmentSlot.MELEE_WEAPON);
             data.getEquipment().remove(EquipmentSlot.RANGED_WEAPON);
@@ -95,11 +95,60 @@ public final class EquipmentService implements Listener {
                 if (instance != null) {
                     EquipmentDefinition definition = definitions.snapshot().equipment().get(instance.getDefinitionId());
                     if (definition != null && definition.slot() == entry.getKey()) data.getEquipment().put(entry.getKey(), instance);
+                    else data.getEquipment().remove(entry.getKey());
                 } else data.getEquipment().remove(entry.getKey());
+            }
+            for (EquipmentSlot accessory : List.of(EquipmentSlot.RESONANCE, EquipmentSlot.DIVINE_HEART)) {
+                ItemInstance registered = data.getEquipment().get(accessory);
+                if (registered == null) continue;
+                ItemInstance actual = Arrays.stream(player.getInventory().getContents()).map(items::instance).flatMap(Optional::stream)
+                        .filter(value -> value.getInstanceId().equals(registered.getInstanceId())).findFirst().orElse(null);
+                if (actual == null) data.getEquipment().remove(accessory);
+                else data.getEquipment().put(accessory, actual);
             }
             stats.invalidate(player.getUniqueId());
         });
         auditWeapons(player);
+    }
+
+    public boolean equip(Player player, int inventorySlot) {
+        if (combat.inCombat(player.getUniqueId()) || inventorySlot < 0 || inventorySlot >= 36) return false;
+        ItemStack stack = player.getInventory().getItem(inventorySlot);
+        ItemInstance instance = items.instance(stack).orElse(null);
+        if (instance == null) return false;
+        EquipmentDefinition definition = definitions.snapshot().equipment().get(instance.getDefinitionId());
+        EquipmentSlot slot = definition != null ? definition.slot() :
+                definitions.snapshot().config("divine_hearts.yml").contains("divine-hearts." + instance.getDefinitionId()) ? EquipmentSlot.DIVINE_HEART : null;
+        if (slot == null) return false;
+        int physical = physicalSlot(slot);
+        if (physical >= 0) {
+            ItemStack previous = player.getInventory().getItem(physical);
+            player.getInventory().setItem(physical, stack);
+            player.getInventory().setItem(inventorySlot, previous);
+        } else {
+            // Accessory registration refers to the real inventory instance; no duplicate item is created.
+            players.require(player).getEquipment().put(slot, instance);
+        }
+        syncArmor(player);
+        return true;
+    }
+
+    public boolean unequip(Player player, EquipmentSlot slot) {
+        if (combat.inCombat(player.getUniqueId())) return false;
+        int physical = physicalSlot(slot);
+        if (physical >= 0) {
+            int empty = player.getInventory().firstEmpty();
+            if (empty < 0 || empty >= 36) return false;
+            player.getInventory().setItem(empty, player.getInventory().getItem(physical));
+            player.getInventory().setItem(physical, null);
+        }
+        players.require(player).getEquipment().remove(slot);
+        syncArmor(player);
+        return true;
+    }
+
+    private int physicalSlot(EquipmentSlot slot) {
+        return switch (slot) { case HEAD -> 39; case CHEST -> 38; case LEGS -> 37; case FEET -> 36; default -> -1; };
     }
 
     public void markUsed(Player player, ItemStack item) {
@@ -138,7 +187,7 @@ public final class EquipmentService implements Listener {
         stats.invalidate(player.getUniqueId());
     }
 
-    private void auditLater(Player player) { Bukkit.getScheduler().runTask(plugin, () -> { if (combat.inCombat(player.getUniqueId())) auditWeapons(player); else syncArmor(player); }); }
+    private void auditLater(Player player) { Bukkit.getScheduler().runTask(plugin, () -> { if (player.isOnline()) syncArmor(player); }); }
     private void collect(Map<com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category, List<WeaponSlot>> grouped, WeaponSlot slot) {
         ItemInstance instance = items.instance(slot.item).orElse(null); if (instance == null) return;
         var definition = definitions.snapshot().weapons().get(instance.getDefinitionId()); if (definition == null) return;

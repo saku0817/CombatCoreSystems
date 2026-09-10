@@ -69,6 +69,14 @@ public final class MobService implements Listener {
         org.bukkit.Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(this::applyVanillaDefinition));
     }
 
+    public long customExperience(LivingEntity entity) {
+        MobDefinition configured = definition(entity).orElse(null);
+        if (configured != null) return configured.dropCustomExp() ? configured.exp() : 0;
+        if (!(entity instanceof org.bukkit.entity.Mob)) return 0;
+        var config = definitions.snapshot().config("mobs.yml");
+        return config.getBoolean("vanilla-defaults.drop-custom-exp", true) ? Math.max(0, config.getLong("vanilla-defaults.custom-exp", 5)) : 0;
+    }
+
     @EventHandler public void onCreatureSpawn(CreatureSpawnEvent event) { applyVanillaDefinition(event.getEntity()); }
 
     private Optional<MobDefinition> vanillaDefinition(LivingEntity entity) {

@@ -17,6 +17,9 @@ text-display:
   duration-seconds: 0.8
   max-per-player: 20
 hud:
+  # 視線の先にいるMobのHPを表示。遮蔽物越しの対象は表示しません。
+  target-bossbar-enabled: true
+  target-range: 24.0
   sidebar-enabled: true
   actionbar-enabled: true
   update-ticks: 5

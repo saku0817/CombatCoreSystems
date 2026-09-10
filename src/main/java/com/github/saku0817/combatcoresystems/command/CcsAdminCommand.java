@@ -18,6 +18,7 @@ import java.util.*;
 import java.util.function.Consumer;
 
 public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
+    private final DebugService debug;
     private final JavaPlugin plugin; private final DefinitionRegistry definitions; private final StorageService storage;
     private final PlayerDataService players; private final LevelService levels; private final StatService stats;
     private final BuffService buffs; private final ElementService elements; private final ItemService items; private final MobService mobs;
@@ -27,7 +28,8 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     public CcsAdminCommand(JavaPlugin plugin, DefinitionRegistry definitions, StorageService storage, PlayerDataService players,
                            LevelService levels, StatService stats, BuffService buffs, ElementService elements, ItemService items,
                            MobService mobs, RegionService regions, BackupService backups, EncyclopediaService encyclopedia,
-                           PartyService parties, CombatStateService combat) {
+                           PartyService parties, CombatStateService combat, DebugService debug) {
+        this.debug = debug;
         this.plugin = plugin; this.definitions = definitions; this.storage = storage; this.players = players; this.levels = levels;
         this.stats = stats; this.buffs = buffs; this.elements = elements; this.items = items; this.mobs = mobs; this.regions = regions;
         this.backups = backups; this.encyclopedia = encyclopedia; this.parties = parties; this.combat = combat;
@@ -40,6 +42,7 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("combatcoresystems.admin." + permission) && !sender.hasPermission("combatcoresystems.admin.*")) { message(sender, "<red>権限がありません。</red>"); return true; }
         try {
             switch (root) {
+                case "debug" -> debug(sender, args);
                 case "reload" -> message(sender, definitions.reloadSafely() ? "<green>設定を再読み込みしました。</green>" : "<red>検証に失敗したため現在の設定を維持しました。</red>");
                 case "save" -> { parties.save(); players.saveAll().whenComplete((ok, error) -> main(() -> message(sender, error == null ? "<green>保存しました。</green>" : "<red>保存に失敗しました。</red>"))); }
                 case "backup" -> backup(sender, args);
@@ -146,6 +149,30 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
                 .whenComplete((ok, error) -> main(() -> message(sender, error == null ? "<green>Offline Playerを更新しました。</green>" : "<red>更新に失敗しました。</red>")));
     }
 
+    private void debug(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) throw new IllegalArgumentException("ゲーム内から実行してください。");
+        String action = args.length < 2 ? "status" : args[1].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "on" -> debug.enable(player.getUniqueId(), args.length > 2 ? duration(args[2]) : java.time.Duration.ofMinutes(10));
+            case "off", "cancel" -> debug.disable(player.getUniqueId());
+            case "schedule" -> {
+                if (args.length < 3) throw new IllegalArgumentException("/ccsadmin debug schedule <delay:30s|5m|1h> [duration:10m]");
+                debug.schedule(player.getUniqueId(), duration(args[2]), args.length > 3 ? duration(args[3]) : java.time.Duration.ofMinutes(10));
+            }
+            case "status" -> { }
+            default -> throw new IllegalArgumentException("/ccsadmin debug on [10m] | off | status | schedule <delay> [duration] | cancel");
+        }
+        message(sender, "<gray>Debug: " + (debug.enabled(player.getUniqueId()) ? "ON" : "OFF") + " / 予約: " + debug.scheduled(player.getUniqueId()).isPresent() + " / 保存先: plugins/CombatCoreSystems/logs/debug/</gray>");
+    }
+
+    private java.time.Duration duration(String input) {
+        if (!input.matches("[1-9][0-9]*[smhd]")) throw new IllegalArgumentException("時間は30s・5m・1h・1dのように指定してください。");
+        long amount = Long.parseLong(input.substring(0, input.length() - 1));
+        try {
+            return java.time.Duration.ofSeconds(Math.multiplyExact(amount, switch (input.charAt(input.length() - 1)) { case 's' -> 1L; case 'm' -> 60L; case 'h' -> 3600L; default -> 86400L; }));
+        } catch (ArithmeticException ex) { throw new IllegalArgumentException("時間が大きすぎます。"); }
+    }
+
     private void main(Runnable action) { Bukkit.getScheduler().runTask(plugin, action); }
     private String configuredMessage(String path, String fallback, Map<String, String> replacements) {
         String value = definitions.snapshot().config("messages.yml").getString(path, fallback);
@@ -153,6 +180,7 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         return value;
     }
     private void help(CommandSender sender) {
+        message(sender, "<gray>/ccsadmin debug on [10m] | off | status | schedule <delay> [duration] | cancel</gray>");
         message(sender, "<gold>/ccsadmin edit|give|spawn|region|backup|encyclopedia|reload|save</gold>");
         message(sender, "<gray>/ccsadmin edit attribute add|remove <player> <attribute></gray>");
         message(sender, "<gray>/ccsadmin edit force on|off [username]</gray>");
@@ -160,7 +188,9 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     private void message(CommandSender sender, String text) { sender.sendMessage(mini.deserialize("<dark_gray>[<gold>CCS</gold>]</dark_gray> " + text)); }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return complete(args[0], List.of("edit", "give", "spawn", "region", "backup", "encyclopedia", "reload", "save"));
+        if (args.length == 1) return complete(args[0], List.of("edit", "give", "spawn", "region", "backup", "encyclopedia", "reload", "save", "debug"));
+        if (args.length == 2 && args[0].equalsIgnoreCase("debug")) return complete(args[1], List.of("on", "off", "status", "schedule", "cancel"));
+        if (args.length >= 3 && args[0].equalsIgnoreCase("debug")) return complete(args[args.length - 1], List.of("30s", "5m", "10m", "1h"));
         if (args.length == 2 && args[0].equalsIgnoreCase("edit")) return complete(args[1], List.of("level", "exp", "buff", "attribute", "force"));
         if (args.length == 2 && args[0].equalsIgnoreCase("backup")) return complete(args[1], List.of("create", "restore", "list"));
         if (args.length == 2 && args[0].equalsIgnoreCase("region")) return complete(args[1], List.of("wand", "pos1", "pos2", "create", "delete", "info", "list", "flag"));

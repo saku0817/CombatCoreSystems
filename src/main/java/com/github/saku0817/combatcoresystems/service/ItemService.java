@@ -101,9 +101,29 @@ public final class ItemService {
         EquipmentDefinition equipment = definitions.snapshot().equipment().get(instance.getDefinitionId());
         if (weapon != null) weapon.lore().forEach(line -> lore.add(mini.deserialize(line)));
         if (equipment != null) equipment.lore().forEach(line -> lore.add(mini.deserialize(line)));
+        ConfigurationSection heart = definitions.snapshot().config("divine_hearts.yml").getConfigurationSection("divine-hearts." + instance.getDefinitionId());
+        if (heart != null) {
+            heart.getStringList("lore").forEach(line -> lore.add(mini.deserialize(line)));
+            appendEffects(lore, heart.getConfigurationSection("modifiers"), "神心");
+            appendEffects(lore, heart.getConfigurationSection("rules"), "神心ルール");
+        }
         lore.add(mini.deserialize("<gray>Lv." + instance.getLevel() + "</gray>"));
         if (weapon != null) lore.add(mini.deserialize("<gray>限界突破 " + instance.getLimitBreak() + "/5</gray>"));
+        if (weapon != null) {
+            lore.add(mini.deserialize("<white>ATK: " + com.github.saku0817.combatcoresystems.util.CoreMath.linear(weapon.attackAtLevel1(), weapon.attackAtLevel100(), instance.getLevel(), 100) + "</white>"));
+            appendAbility(lore, weapon.skill(), "スキル /ccs skill");
+            appendAbility(lore, weapon.ultimate(), "必殺技 /ccs ultimate");
+        }
         if (equipment != null) {
+            lore.add(mini.deserialize("<white>" + equipment.mainStat() + ": " + com.github.saku0817.combatcoresystems.util.CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), instance.getLevel(), equipment.maxLevel()) + "</white>"));
+            if (!equipment.setId().isBlank()) lore.add(mini.deserialize("<gray>セット: " + equipment.setId() + "</gray>"));
+            if (!equipment.setId().isBlank()) {
+                ConfigurationSection set = definitions.snapshot().config("sets.yml").getConfigurationSection("sets." + equipment.setId());
+                if (set != null) {
+                    appendEffects(lore, set.getConfigurationSection("two-piece.modifiers"), "2部位");
+                    appendEffects(lore, set.getConfigurationSection("four-piece.modifiers"), "4部位");
+                }
+            }
             int index = 0;
             for (var entry : instance.getSubstats().entrySet()) {
                 boolean open = index++ < instance.getUnlockedSubstats();
@@ -111,6 +131,23 @@ public final class ItemService {
             }
         }
         meta.lore(lore); item.setItemMeta(meta);
+    }
+
+    private void appendAbility(List<Component> lore, WeaponDefinition.SkillDefinition ability, String label) {
+        if (ability == null) return;
+        lore.add(mini.deserialize("<gold>" + label + " — " + ability.name() + "</gold>"));
+        lore.add(mini.deserialize("<gray>" + ability.referenceStat() + " × " + ability.multiplier() + " / " + ability.element().japaneseName()
+                + " / CT " + ability.cooldownSeconds() + "秒 / " + ability.charges() + "回 / 範囲 " + ability.radius() + "m</gray>"));
+        if (!ability.conditions().isEmpty()) lore.add(Component.text("条件: " + ability.conditions()));
+    }
+
+    private void appendEffects(List<Component> lore, ConfigurationSection section, String label) {
+        if (section == null) return;
+        String template = definitions.snapshot().config("messages.yml").getString("item-lore.effect", "<gray><label>: <key> = <value></gray>");
+        section.getValues(true).forEach((key, value) -> {
+            if (!(value instanceof ConfigurationSection)) lore.add(mini.deserialize(template
+                    .replace("<label>", label).replace("<key>", key).replace("<value>", String.valueOf(value))));
+        });
     }
 
     private void generateSubstats(ItemInstance instance, EquipmentDefinition definition) {

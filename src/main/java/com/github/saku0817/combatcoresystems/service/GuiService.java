@@ -36,7 +36,7 @@ public final class GuiService implements Listener {
     private final EnhancementService enhancement;
     private final ItemService items;
     private final MiniMessage mini = MiniMessage.miniMessage();
-    private final Map<UUID, SearchState> awaitingSearch = new HashMap<>();
+    private final Map<UUID, SearchState> awaitingSearch = new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Long>> enhancementSelection = new HashMap<>();
 
     public GuiService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
@@ -77,15 +77,33 @@ public final class GuiService implements Listener {
     }
 
     public void openEquipment(Player player) {
+        equipment.syncArmor(player);
         PlayerData data = players.require(player);
         Inventory inv = inventory(player, Screen.EQUIPMENT, "<gold>装備</gold>", 54, "", 0, "");
+        int weaponIcon = 10;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (definitions.snapshot().weapons().containsKey(items.id(stack).orElse("")) && weaponIcon < 18) inv.setItem(weaponIcon++, stack.clone());
+        }
         Map<EquipmentSlot, Integer> slots = equipmentSlots();
         slots.forEach((slot, index) -> {
             ItemInstance instance = data.getEquipment().get(slot);
             ItemStack icon = instance == null ? item("GRAY_STAINED_GLASS_PANE", "<gray>" + slot + "</gray>", List.of("<dark_gray>未装備</dark_gray>"))
-                    : items.create(instance.getDefinitionId(), 1).orElse(item("BARRIER", instance.getDefinitionId(), List.of()));
+                    : Optional.ofNullable(findInstance(player, instance.getInstanceId())).map(ItemStack::clone).orElse(item("BARRIER", instance.getDefinitionId(), List.of()));
             inv.setItem(index, icon);
         });
+        inv.setItem(45, item("CHEST", gui("equipment.select", "<green>所持品から装備を選ぶ</green>"), List.of()));
+        back(inv); player.openInventory(inv);
+    }
+
+    private void openEquipmentList(Player player) {
+        Inventory inv = inventory(player, Screen.EQUIPMENT_LIST, gui("equipment.list-title", "<gold>タップして装備</gold>"), 54, "", 0, "");
+        for (int i = 0; i < 36; i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            String id = items.id(stack).orElse("");
+            if (definitions.snapshot().equipment().containsKey(id) || definitions.snapshot().config("divine_hearts.yml").contains("divine-hearts." + id))
+                inv.setItem(i, stack.clone());
+        }
         back(inv); player.openInventory(inv);
     }
 
@@ -129,12 +147,81 @@ public final class GuiService implements Listener {
             int slot = 10;
             for (PartyData.Member member : party.getMembers()) {
                 var offline = Bukkit.getOfflinePlayer(member.asUuid());
+                ((Holder) inv.getHolder()).actions.put(slot, member.uuid());
                 inv.setItem(slot++, item("PLAYER_HEAD", "<white>" + Optional.ofNullable(offline.getName()).orElse(member.uuid()) + "</white>", List.of(
                         party.leader().equals(member.asUuid()) ? "<gold>Leader</gold>" : "<gray>Member</gray>", offline.isOnline() ? "<green>Online</green>" : "<red>Offline</red>",
                         "<gray>Join: " + member.joinOrder() + "</gray>")));
             }
+            inv.setItem(45, item("OAK_DOOR", gui("party.leave", "<red>退出</red>"), List.of()));
+            if (party.leader().equals(player.getUniqueId())) {
+                inv.setItem(47, item("PAPER", gui("party.invite", "<green>プレイヤーを招待</green>"), List.of()));
+                inv.setItem(49, item("BARRIER", gui("party.disband", "<red>パーティを解散</red>"), List.of()));
+            }
         }
+        if (party == null) inv.setItem(47, item("PAPER", gui("party.invitations", "<yellow>届いた招待</yellow>"), List.of()));
         back(inv); player.openInventory(inv);
+    }
+
+    private void openPartyAction(Player player, String action, String target, int page) {
+        Inventory inv = inventory(player, Screen.PARTY_ACTION, gui("party.actions-title", "<yellow>パーティ操作</yellow>"), 54, action, page, target);
+        Holder holder = (Holder) inv.getHolder();
+        if (action.equals("invite") || action.equals("invitations")) {
+            List<UUID> candidates = action.equals("invite") ? Bukkit.getOnlinePlayers().stream().filter(p -> !p.equals(player) && parties.findByPlayer(p.getUniqueId()).isEmpty()).map(Player::getUniqueId).toList()
+                    : parties.invitations(player.getUniqueId()).stream().map(PartyService.Invite::inviter).distinct().toList();
+            for (int i = Math.max(0, page) * 45; i < Math.min(candidates.size(), (Math.max(0, page) + 1) * 45); i++) {
+                UUID uuid = candidates.get(i); int slot = i % 45;
+                holder.actions.put(slot, uuid.toString());
+                inv.setItem(slot, item("PLAYER_HEAD", Optional.ofNullable(Bukkit.getOfflinePlayer(uuid).getName()).orElse(uuid.toString()), List.of()));
+            }
+            inv.setItem(45, item("ARROW", "<yellow>前へ</yellow>", List.of()));
+            inv.setItem(52, item("ARROW", "<yellow>次へ</yellow>", List.of()));
+        } else if (action.equals("member")) {
+            inv.setItem(11, item("BARRIER", gui("party.kick", "<red>メンバーを除名</red>"), List.of()));
+            inv.setItem(15, item("GOLDEN_HELMET", gui("party.transfer", "<yellow>リーダーを移譲</yellow>"), List.of()));
+        } else if (action.equals("respond")) {
+            inv.setItem(11, item("LIME_DYE", gui("party.accept", "<green>招待を承認</green>"), List.of()));
+            inv.setItem(15, item("RED_DYE", gui("party.decline", "<red>招待を辞退</red>"), List.of()));
+        } else inv.setItem(13, item("LIME_CONCRETE", gui("party.confirm", "<green>実行する</green>"), List.of()));
+        back(inv); player.openInventory(inv);
+    }
+
+    private void handleParty(Player player, Holder holder, int slot) {
+        PartyData party = parties.findByPlayer(player.getUniqueId()).orElse(null);
+        if (slot == 53) { openMain(player); return; }
+        if (party == null) {
+            if (slot == 22) { parties.create(player.getUniqueId()); openParty(player); }
+            if (slot == 47) openPartyAction(player, "invitations", "", 0);
+            return;
+        }
+        if (slot == 45) openPartyAction(player, "leave", "", 0);
+        else if (party.leader().equals(player.getUniqueId())) {
+            if (slot == 47) openPartyAction(player, "invite", "", 0);
+            else if (slot == 49) openPartyAction(player, "disband", "", 0);
+            else if (holder.actions.containsKey(slot)) openPartyAction(player, "member", holder.actions.get(slot), 0);
+        }
+    }
+
+    private void handlePartyAction(Player player, Holder holder, int slot) {
+        if (slot == 53) { openParty(player); return; }
+        if (holder.context.equals("invite") || holder.context.equals("invitations")) {
+            if (slot == 45 || slot == 52) { openPartyAction(player, holder.context, "", Math.max(0, holder.page + (slot == 45 ? -1 : 1))); return; }
+            String id = holder.actions.get(slot); if (id == null) return;
+            if (holder.context.equals("invitations")) { openPartyAction(player, "respond", id, 0); return; }
+            if (parties.invite(player.getUniqueId(), UUID.fromString(id))) {
+                Player target = Bukkit.getPlayer(UUID.fromString(id));
+                if (target != null) target.sendMessage(mini.deserialize(gui("party.invited", "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>")));
+            }
+        } else if (holder.context.equals("respond")) {
+            if (slot == 11) parties.accept(player.getUniqueId(), UUID.fromString(holder.query));
+            else if (slot == 15) parties.decline(player.getUniqueId(), UUID.fromString(holder.query));
+        } else if (holder.context.equals("member")) {
+            if (slot == 11) parties.kick(player.getUniqueId(), UUID.fromString(holder.query));
+            else if (slot == 15) parties.transfer(player.getUniqueId(), UUID.fromString(holder.query));
+        } else if (slot == 13) {
+            if (holder.context.equals("leave")) parties.leave(player.getUniqueId());
+            else if (holder.context.equals("disband")) parties.disband(player.getUniqueId());
+        }
+        openParty(player);
     }
 
     public void openEnhancement(Player player) {
@@ -177,7 +264,7 @@ public final class GuiService implements Listener {
             if (instance == null) { openEnhancement(player); return; }
             preview = enhancement.previewItem(instance, selected); ItemStack icon = target.clone(); icon.setAmount(1); inv.setItem(13, icon);
         }
-        inv.setItem(22, item("NETHER_STAR", gui("enhancement.preview-name", "<white>強化プレビュー</white>"), List.of(
+        inv.setItem(4, item("NETHER_STAR", gui("enhancement.preview-name", "<white>強化プレビュー</white>"), List.of(
                 gui("enhancement.preview-before", "<gray>強化前: Lv.<level> EXP <exp></gray>").replace("<level>", Integer.toString(preview.beforeLevel())).replace("<exp>", Long.toString(preview.beforeExp())),
                 gui("enhancement.preview-after", "<green>強化後: Lv.<level> EXP <exp></green>").replace("<level>", Integer.toString(preview.afterLevel())).replace("<exp>", Long.toString(preview.afterExp())),
                 gui("enhancement.preview-gain", "<yellow>上昇幅: Lv. +<levels> / EXP +<exp></yellow>").replace("<levels>", Integer.toString(preview.afterLevel() - preview.beforeLevel())).replace("<exp>", Long.toString(preview.gainedExp())))));
@@ -189,7 +276,9 @@ public final class GuiService implements Listener {
             inv.setItem(slots[i], materialIcon(material, List.of(
                     gui("enhancement.material-count", "<gray>選択: <selected> / 所持: <available></gray>").replace("<selected>", Long.toString(count)).replace("<available>", Long.toString(available)),
                     gui("enhancement.material-exp", "<gray>獲得EXP: <exp></gray>").replace("<exp>", Long.toString(count * material.exp())),
-                    gui("enhancement.material-controls", "<yellow>左:+1 右:-1 Shift:±10</yellow>"))));
+                    gui("enhancement.tap-controls", "<yellow>上下のボタンで使用数を変更</yellow>"))));
+            inv.setItem(slots[i] - 9, item("LIME_DYE", gui("enhancement.add-one", "<green>1個増やす</green>"), List.of()));
+            inv.setItem(slots[i] + 9, item("RED_DYE", gui("enhancement.remove-one", "<red>1個減らす</red>"), List.of()));
         }
         if (type.equals("WEAPON")) inv.setItem(47, item("AMETHYST_SHARD", gui("enhancement.limit-break", "<light_purple>限界突破</light_purple>"), List.of(gui("enhancement.limit-break-lore", "<gray>同じ武器を1本消費</gray>"))));
         inv.setItem(49, item("LIME_CONCRETE", gui("enhancement.confirm", "<green>この内容で強化</green>"), List.of()));
@@ -205,8 +294,26 @@ public final class GuiService implements Listener {
             long physical = physicalCount(player, material.id());
             inv.setItem(slot++, materialIcon(material, List.of(
                     gui("enhancement.conversion-count", "<gray>実物: <physical> / 数値: <virtual></gray>").replace("<physical>", Long.toString(physical)).replace("<virtual>", Long.toString(virtual)),
-                    gui("enhancement.conversion-controls", "<yellow>左:実物→数値 右:数値→実物</yellow>"), gui("enhancement.tier-controls", "<aqua>Shift左:上級へ Shift右:下級へ</aqua>"))));
+                    gui("enhancement.conversion-select", "<yellow>タップして変換方法を選択</yellow>"))));
         }
+        back(inv); player.openInventory(inv);
+    }
+
+    private void openConversionDetail(Player player, String id) {
+        Inventory inv = inventory(player, Screen.CONVERSION_DETAIL, gui("enhancement.conversion-title", "<light_purple>強化素材の変換</light_purple>"), 27, id, 0, "");
+        ItemStack material = items.create(id, 1).orElse(null);
+        if (material != null) {
+            ItemMeta meta = material.getItemMeta();
+            List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of()));
+            lore.add(mini.deserialize(gui("enhancement.conversion-count", "<gray>実物: <physical> / 数値: <virtual></gray>")
+                    .replace("<physical>", Long.toString(physicalCount(player, id)))
+                    .replace("<virtual>", Long.toString(players.require(player).getEnhancementMaterials().getOrDefault(id, 0L)))));
+            meta.lore(lore); material.setItemMeta(meta); inv.setItem(4, material);
+        }
+        inv.setItem(10, item("HOPPER", gui("enhancement.deposit", "<green>実物1個 → 数値1個</green>"), List.of()));
+        inv.setItem(12, item("CHEST", gui("enhancement.withdraw", "<green>数値1個 → 実物1個</green>"), List.of()));
+        inv.setItem(14, item("GOLD_INGOT", gui("enhancement.upgrade-tier", "<yellow>数値10個 → 上級1個</yellow>"), List.of()));
+        inv.setItem(16, item("IRON_NUGGET", gui("enhancement.downgrade-tier", "<yellow>数値1個 → 下級10個</yellow>"), List.of()));
         back(inv); player.openInventory(inv);
     }
 
@@ -260,27 +367,97 @@ public final class GuiService implements Listener {
         }
         entries.sort(Comparator.comparing(Entry::id));
         int start = Math.max(0, page) * 45;
-        for (int i = start; i < Math.min(start + 45, entries.size()); i++) { Entry entry = entries.get(i); inv.setItem(i - start, item(entry.material, entry.name, entry.lore)); }
+        for (int i = start; i < Math.min(start + 45, entries.size()); i++) {
+            Entry entry = entries.get(i); inv.setItem(i - start, item(entry.material, entry.name, entry.lore));
+            if (!entry.name.equals("？？？")) ((Holder) inv.getHolder()).actions.put(i - start, entry.id);
+        }
+    }
+
+    private void openEncyclopediaDetail(Player player, Holder parent, String id) {
+        Inventory inv = inventory(player, Screen.ENCYCLOPEDIA_DETAIL, gui("encyclopedia.detail-title", "<aqua>図鑑・詳細</aqua>"), 54, parent.context, parent.page, parent.query);
+        ItemStack icon = items.create(id, 1).orElse(null);
+        if (icon != null) inv.setItem(13, icon);
+        else {
+            MobDefinition mob = definitions.snapshot().bosses().get(id);
+            if (mob == null) mob = definitions.snapshot().mobs().get(id);
+            if (mob == null) mob = definitions.snapshot().vanillaMobs().get(id);
+            if (mob != null) inv.setItem(13, item("PAPER", mob.name(), List.of("<gray>ID: " + id, "<gray>Lv: " + mob.minLevel() + "–" + mob.maxLevel(),
+                    "<gray>HP: " + mob.hpAtMin() + "–" + mob.hpAtMax(), "<gray>ATK: " + mob.atkAtMin() + "–" + mob.atkAtMax(),
+                    "<gray>DEF: " + mob.defAtMin() + "–" + mob.defAtMax(), "<gray>EXP: " + mob.exp(), "<gray>属性: " + mob.nativeElement().japaneseName())));
+        }
+        back(inv); player.openInventory(inv);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player) || !(event.getInventory().getHolder() instanceof Holder holder)) return;
-        event.setCancelled(true); int slot = event.getRawSlot(); if (slot < 0 || slot >= event.getInventory().getSize()) return;
+        int slot = event.getRawSlot();
+        int topSize = event.getView().getTopInventory().getSize();
+        if (slot >= topSize) {
+            // Keep ordinary rearrangement in the player's inventory; reject transfers into the menu.
+            if (event.isShiftClick() || event.getAction() == org.bukkit.event.inventory.InventoryAction.COLLECT_TO_CURSOR) event.setCancelled(true);
+            return;
+        }
+        event.setCancelled(true);
+        if (slot < 0) return;
+        if (!event.getCursor().getType().isAir()) {
+            ItemStack cursor = event.getCursor().clone();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!player.getItemOnCursor().equals(cursor)) return;
+                player.setItemOnCursor(null);
+                var remainder = player.getInventory().addItem(cursor);
+                if (!remainder.isEmpty()) player.setItemOnCursor(remainder.values().iterator().next());
+                equipment.syncArmor(player);
+            });
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (player.getOpenInventory().getTopInventory().getHolder() == holder) handleClick(player, holder, event, slot);
+        });
+    }
+
+    private void handleClick(Player player, Holder holder, InventoryClickEvent event, int slot) {
         switch (holder.screen) {
             case MAIN -> handleMain(player, slot);
             case STATS -> { if (slot == event.getInventory().getSize() - 1) openMain(player); }
-            case EQUIPMENT -> { if (slot == 53) openMain(player); }
+            case EQUIPMENT -> {
+                if (slot == 53) openMain(player);
+                else if (slot == 45) openEquipmentList(player);
+                else equipmentSlots().forEach((kind, index) -> { if (index == slot) { if (equipment.unequip(player, kind)) levels.apply(player, players.require(player), false); openEquipment(player); } });
+            }
+            case EQUIPMENT_LIST -> {
+                if (slot == 53) openEquipment(player);
+                else if (slot < 36) {
+                    ItemInstance selected = items.instance(event.getCurrentItem()).orElse(null);
+                    ItemInstance actual = items.instance(player.getInventory().getItem(slot)).orElse(null);
+                    if (selected != null && actual != null && selected.getInstanceId().equals(actual.getInstanceId()) && equipment.equip(player, slot)) levels.apply(player, players.require(player), false);
+                    openEquipment(player);
+                }
+            }
             case SKILL_TREE -> handleSkillTree(player, holder.context, slot, event.getCurrentItem());
             case REBIRTH -> { if (slot == 13 && !combat.inCombat(player.getUniqueId())) openRebirth(player, true); else if (slot == 26) openMain(player); }
             case REBIRTH_CONFIRM -> { if (slot == 13 && levels.rebirth(player, players.require(player))) player.closeInventory(); else if (slot == 26) openRebirth(player, false); }
-            case PARTY -> { if (slot == 22 && parties.findByPlayer(player.getUniqueId()).isEmpty()) { parties.create(player.getUniqueId()); openParty(player); } else if (slot == 53) openMain(player); }
+            case PARTY -> handleParty(player, holder, slot);
+            case PARTY_ACTION -> handlePartyAction(player, holder, slot);
             case ENHANCEMENT -> { if (slot == 10) openEnhancePlayer(player); else if (slot == 12) openEnhanceItems(player, "WEAPON"); else if (slot == 14) openEnhanceItems(player, "EQUIPMENT"); else if (slot == 16) openConversion(player); else if (slot == 26) openMain(player); }
             case ENHANCE_WEAPON_LIST, ENHANCE_EQUIPMENT_LIST -> handleEnhanceList(player, holder, slot, event.getCurrentItem());
             case ENHANCE_PLAYER, ENHANCE_WEAPON, ENHANCE_EQUIPMENT -> handleEnhanceDetail(player, holder, event);
             case ENHANCE_CONVERSION -> handleConversion(player, slot, event);
-            case SETTINGS -> { PlayerData data = players.require(player); if (slot == 11) data.setPvpEnabled(!data.isPvpEnabled()); if (slot == 15) data.setHudEnabled(!data.isHudEnabled()); openSettings(player); }
+            case CONVERSION_DETAIL -> {
+                if (slot == 26) { openConversion(player); return; }
+                boolean ok = switch (slot) {
+                    case 10 -> enhancement.deposit(player, holder.context, 1);
+                    case 12 -> enhancement.withdraw(player, holder.context, 1);
+                    case 14 -> enhancement.exchangeTier(player, holder.context, true);
+                    case 16 -> enhancement.exchangeTier(player, holder.context, false);
+                    default -> true;
+                };
+                if (!ok) player.sendMessage(mini.deserialize(gui("enhancement.conversion-failed", "<red>素材または空きが不足しています。</red>")));
+                openConversionDetail(player, holder.context);
+            }
+            case SETTINGS -> { if (slot == 26) { openMain(player); return; } PlayerData data = players.require(player); if (slot == 11) data.setPvpEnabled(!data.isPvpEnabled()); if (slot == 15) data.setHudEnabled(!data.isHudEnabled()); openSettings(player); }
             case ENCYCLOPEDIA -> handleEncyclopedia(player, holder, slot, event.getCurrentItem());
+            case ENCYCLOPEDIA_DETAIL -> { if (slot == 53) openEncyclopedia(player, holder.context, holder.page, holder.query); }
         }
     }
 
@@ -316,9 +493,11 @@ public final class GuiService implements Listener {
             if (result.success()) enhancementSelection.put(player.getUniqueId(), new LinkedHashMap<>());
             openEnhanceDetail(player, screen, type, holder.context); return;
         }
-        String id = items.id(event.getCurrentItem()).orElse(""); if (id.isBlank()) return;
-        List<EnhancementService.MaterialInfo> valid = enhancement.materials(type); if (valid.stream().noneMatch(value -> value.id().equals(id))) return;
-        long delta = event.isShiftClick() ? 10 : 1; if (event.isRightClick()) delta = -delta;
+        List<EnhancementService.MaterialInfo> valid = enhancement.materials(type);
+        int index = switch (slot) { case 20, 38 -> 0; case 22, 40 -> 1; case 24, 42 -> 2; default -> -1; };
+        if (index < 0 || index >= Math.min(3, valid.size())) return;
+        String id = valid.get(index).id();
+        long delta = slot < 29 ? 1 : -1;
         Map<String, Long> selected = enhancementSelection.computeIfAbsent(player.getUniqueId(), ignored -> new LinkedHashMap<>());
         long next = Math.max(0, Math.min(enhancement.available(player, id), selected.getOrDefault(id, 0L) + delta));
         if (next == 0) selected.remove(id); else selected.put(id, next);
@@ -328,11 +507,7 @@ public final class GuiService implements Listener {
     private void handleConversion(Player player, int slot, InventoryClickEvent event) {
         if (slot == 53) { openEnhancement(player); return; }
         String id = items.id(event.getCurrentItem()).orElse(""); if (id.isBlank()) return;
-        boolean changed;
-        if (event.isShiftClick()) changed = enhancement.exchangeTier(player, id, event.isLeftClick());
-        else changed = event.isLeftClick() ? enhancement.deposit(player, id, 1) : enhancement.withdraw(player, id, 1);
-        if (!changed) player.sendMessage(mini.deserialize(gui("enhancement.conversion-failed", "<red>変換に必要な素材または空きがありません。</red>")));
-        openConversion(player);
+        openConversionDetail(player, id);
     }
 
     private void handleSkillTree(Player player, String tree, int slot, ItemStack clicked) {
@@ -349,6 +524,7 @@ public final class GuiService implements Listener {
         if (slot == 45) { openEncyclopedia(player, holder.context, Math.max(0, holder.page - 1), holder.query); return; }
         if (slot == 53) { openEncyclopedia(player, holder.context, holder.page + 1, holder.query); return; }
         if (slot == 49 && !holder.context.isBlank()) { awaitingSearch.put(player.getUniqueId(), new SearchState(holder.context, holder.page)); player.closeInventory(); player.sendMessage(mini.deserialize("<aqua>検索する名前をChatへ入力してください。</aqua>")); return; }
+        if (!holder.context.isBlank() && holder.actions.containsKey(slot)) { openEncyclopediaDetail(player, holder, holder.actions.get(slot)); return; }
         if (holder.context.isBlank() && clicked != null) {
             String plain = PlainTextComponentSerializer.plainText().serialize(clicked.getItemMeta().itemName());
             ConfigurationSection categories = definitions.snapshot().config("encyclopedia.yml").getConfigurationSection("categories");
@@ -365,6 +541,12 @@ public final class GuiService implements Listener {
 
     @EventHandler public void onClose(InventoryCloseEvent event) {
         if (event.getInventory().getHolder() instanceof Holder && !awaitingSearch.containsKey(event.getPlayer().getUniqueId())) awaitingSearch.remove(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onDrag(org.bukkit.event.inventory.InventoryDragEvent event) {
+        if (!(event.getView().getTopInventory().getHolder() instanceof Holder)) return;
+        if (event.getRawSlots().stream().anyMatch(slot -> slot < event.getView().getTopInventory().getSize())) event.setCancelled(true);
     }
 
     private Inventory inventory(Player player, Screen screen, String title, int size, String context, int page, String query) {
@@ -387,10 +569,11 @@ public final class GuiService implements Listener {
     }
     private Map<EquipmentSlot, Integer> equipmentSlots() { return Map.of(EquipmentSlot.HEAD, 19, EquipmentSlot.CHEST, 21, EquipmentSlot.LEGS, 23, EquipmentSlot.FEET, 25, EquipmentSlot.RESONANCE, 30, EquipmentSlot.DIVINE_HEART, 32); }
     private long round(double value) { return Math.round(value); } private String percent(double value) { return String.format(Locale.ROOT, "%.1f%%", value * 100); } private String onOff(boolean value) { return value ? "ON" : "OFF"; }
-    private enum Screen { MAIN, STATS, EQUIPMENT, SKILL_TREE, REBIRTH, REBIRTH_CONFIRM, PARTY, ENHANCEMENT,
+    private enum Screen { MAIN, STATS, EQUIPMENT, EQUIPMENT_LIST, SKILL_TREE, REBIRTH, REBIRTH_CONFIRM, PARTY, ENHANCEMENT,
         ENHANCE_PLAYER, ENHANCE_WEAPON_LIST, ENHANCE_WEAPON, ENHANCE_EQUIPMENT_LIST, ENHANCE_EQUIPMENT, ENHANCE_CONVERSION,
-        SETTINGS, ENCYCLOPEDIA }
+        PARTY_ACTION, CONVERSION_DETAIL, SETTINGS, ENCYCLOPEDIA, ENCYCLOPEDIA_DETAIL }
     private static final class Holder implements InventoryHolder {
+        final Map<Integer, String> actions = new HashMap<>();
         final Screen screen; final UUID player; final String context; final int page; final String query; Inventory inventory;
         Holder(Screen screen, UUID player, String context, int page, String query) { this.screen = screen; this.player = player; this.context = context; this.page = page; this.query = query; }
         @Override public Inventory getInventory() { return inventory; }

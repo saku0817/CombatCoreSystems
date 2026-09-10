@@ -1,13 +1,129 @@
 data-version: 1
 # 属性反応追加例: attributesに2属性、damage-componentsに各倍率、cooldownに同一対象CT秒数を指定します。
 reactions:
-  vaporize: {name: "蒸発", attributes: [FIRE, WATER], radius: 0.0, cooldown: 2.0, damage-components: {FIRE: 0.5, WATER: 0.5}}
-  fire_wind: {name: "炎風", attributes: [FIRE, WIND], radius: 2.0, cooldown: 1.5, levitation: 0.35, damage-components: {FIRE: 1.0, WIND: 0.3}}
-  sky_fire: {name: "天火", attributes: [FIRE, THUNDER], radius: 0.0, cooldown: 2.5, hits: 3, multi-hit-attribute: THUNDER, damage-components: {FIRE: 0.5, THUNDER: 0.5}}
-  moon_burn: {name: "月燃焼", attributes: [FIRE, MOON], radius: 0.0, cooldown: 3.0, resistance-down: {attribute: FIRE, amount: 0.2, duration: 2.0}, damage-components: {FIRE: 0.5, MOON: 1.0}}
-  wind_release: {name: "風解", attributes: [WATER, WIND], radius: 2.0, cooldown: 1.5, levitation: 0.35, damage-components: {WATER: 1.0, WIND: 0.3}}
-  electro_charged: {name: "感電", attributes: [WATER, THUNDER], radius: 0.0, cooldown: 2.5, hits: 3, multi-hit-attribute: THUNDER, damage-components: {WATER: 0.5, THUNDER: 0.5}}
-  moon_water: {name: "月水天", attributes: [WATER, MOON], radius: 0.0, cooldown: 3.0, resistance-down: {attribute: WATER, amount: 0.2, duration: 2.0}, damage-components: {WATER: 1.0, MOON: 0.5}}
-  thunder_drift: {name: "雷飄", attributes: [WIND, THUNDER], radius: 2.0, cooldown: 1.5, levitation: 0.35, damage-components: {THUNDER: 1.0, WIND: 0.3}}
-  moon_wind: {name: "月風蝕", attributes: [WIND, MOON], radius: 0.0, cooldown: 3.0, levitation: 0.35, resistance-down: {attribute: WIND, amount: 0.2, duration: 2.0}, damage-components: {WIND: 1.5, MOON: 0.5}}
-  moon_thunder: {name: "月天雷", attributes: [THUNDER, MOON], radius: 0.0, cooldown: 3.0, hits: 3, multi-hit-attribute: THUNDER, resistance-down: {attribute: THUNDER, amount: 0.2, duration: 2.0}, damage-components: {THUNDER: 0.3, MOON: 1.5}}
+  vaporize:
+    name: "蒸発"
+    attributes:
+    - FIRE
+    - WATER
+    radius: 0.0
+    cooldown: 2.0
+    damage-components:
+      FIRE: 0.5
+      WATER: 0.5
+  fire_wind:
+    name: "炎風"
+    attributes:
+    - FIRE
+    - WIND
+    radius: 2.0
+    cooldown: 1.5
+    levitation: 0.35
+    damage-components:
+      FIRE: 1.0
+      WIND: 0.3
+  sky_fire:
+    name: "天火"
+    attributes:
+    - FIRE
+    - THUNDER
+    radius: 0.0
+    cooldown: 2.5
+    hits: 3
+    multi-hit-attribute: THUNDER
+    damage-components:
+      FIRE: 0.5
+      THUNDER: 0.5
+  moon_burn:
+    name: "月燃焼"
+    attributes:
+    - FIRE
+    - MOON
+    radius: 0.0
+    cooldown: 3.0
+    resistance-down:
+      attribute: FIRE
+      amount: 0.2
+      duration: 2.0
+    damage-components:
+      FIRE: 0.5
+      MOON: 1.0
+  wind_release:
+    name: "風解"
+    attributes:
+    - WATER
+    - WIND
+    radius: 2.0
+    cooldown: 1.5
+    levitation: 0.35
+    damage-components:
+      WATER: 1.0
+      WIND: 0.3
+  electro_charged:
+    name: "感電"
+    attributes:
+    - WATER
+    - THUNDER
+    radius: 0.0
+    cooldown: 2.5
+    hits: 3
+    multi-hit-attribute: THUNDER
+    damage-components:
+      WATER: 0.5
+      THUNDER: 0.5
+  moon_water:
+    name: "月水天"
+    attributes:
+    - WATER
+    - MOON
+    radius: 0.0
+    cooldown: 3.0
+    resistance-down:
+      attribute: WATER
+      amount: 0.2
+      duration: 2.0
+    damage-components:
+      WATER: 1.0
+      MOON: 0.5
+  thunder_drift:
+    name: "雷飄"
+    attributes:
+    - WIND
+    - THUNDER
+    radius: 2.0
+    cooldown: 1.5
+    levitation: 0.35
+    damage-components:
+      THUNDER: 1.0
+      WIND: 0.3
+  moon_wind:
+    name: "月風蝕"
+    attributes:
+    - WIND
+    - MOON
+    radius: 0.0
+    cooldown: 3.0
+    levitation: 0.35
+    resistance-down:
+      attribute: WIND
+      amount: 0.2
+      duration: 2.0
+    damage-components:
+      WIND: 1.5
+      MOON: 0.5
+  moon_thunder:
+    name: "月天雷"
+    attributes:
+    - THUNDER
+    - MOON
+    radius: 0.0
+    cooldown: 3.0
+    hits: 3
+    multi-hit-attribute: THUNDER
+    resistance-down:
+      attribute: THUNDER
+      amount: 0.2
+      duration: 2.0
+    damage-components:
+      THUNDER: 0.3
+      MOON: 1.5

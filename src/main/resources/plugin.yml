@@ -5,9 +5,9 @@ main: com.github.saku0817.combatcoresystems.CombatCoreSystems
 api-version: '26.2'
 description: "ARPG,オープンワールドサーバー向けに必要な要素を追加するプラグインです。"
 authors:
-  - s3_q3x
+- s3_q3x
 softdepend:
-  - PlaceholderAPI
+- PlaceholderAPI
 commands:
   ccs:
     description: CombatCoreSystemsの一般コマンドです。
@@ -26,6 +26,11 @@ permissions:
       combatcoresystems.command.open.skilltree: true
       combatcoresystems.command.open.rebirth: true
       combatcoresystems.command.open.party: true
+      combatcoresystems.command.open.encyclopedia: true
+      combatcoresystems.command.open.enhancement: true
+      combatcoresystems.command.open.settings: true
+      combatcoresystems.command.skill: true
+      combatcoresystems.command.ultimate: true
       combatcoresystems.command.encyclopedia: true
       combatcoresystems.command.setting.pvp: true
       combatcoresystems.command.setting.hud: true
@@ -63,4 +68,5 @@ permissions:
       combatcoresystems.admin.encyclopedia: true
       combatcoresystems.admin.reload: true
       combatcoresystems.admin.save: true
+      combatcoresystems.admin.debug: true
       combatcoresystems.admin.storage.alert: true

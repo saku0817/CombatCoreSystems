@@ -2,7 +2,7 @@
 
 Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドRPG基盤プラグインです。
 
-現在のバージョン: **v1.2.2**
+現在のバージョン: **v1.3.0**
 
 ## 主な機能
 
@@ -39,16 +39,24 @@ CCS武器は`weapons.yml`の`type: MELEE|RANGED`で種別を指定します。�
 
 | コマンド | 用途 |
 |---|---|
-| `/ccs` | メインメニュー |
+| `/ccs menu` | メインメニュー |
 | `/ccs help` | ヘルプ |
-| `/ccs party ...` | パーティー管理 |
-| `/ccs encyclopedia` | 図鑑 |
+| `/ccs open party` | パーティーGUI（招待・承認・退出・管理） |
+| `/ccs open party ...` | パーティー管理サブコマンド |
+| `/ccs open encyclopedia` | 図鑑と詳細画面 |
+| `/ccs open equipments` | 装備・解除と装備状態の確認 |
+| `/ccs open enhancement` | 素材数をボタンで指定して強化・変換 |
+| `/ccs skill`・`/ccs ultimate` | 手持ちCCS武器のスキル・必殺技（戦闘中可） |
+| `/ccsadmin debug on 10m` | 10分間の攻撃ログ記録 |
+| `/ccsadmin debug status` | debug状態と予約の確認 |
 | `/ccsadmin reload` | 設定の再読込 |
 | `/ccsadmin save` | 全データの保存 |
 | `/ccsadmin backup ...` | バックアップ／復元 |
 | `/ccsadmin edit force on\|off [username]` | 戦闘状態の強制変更。名前省略時は自分 |
 
 権限や全サブコマンドは [コマンドと権限](https://github.com/saku0817/CombatCoreSystems/wiki/Commands-and-Permissions) に掲載しています。
+
+v1.3.0の操作、設定例、移行時の注意は [v1.3.0ガイド](docs/v1.3.0.md) を参照してください。GUIの増減や変換は通常タップで操作できます。未登録のバニラMobの報酬は `mobs.yml` の `vanilla-defaults` で設定します。
 
 ## ビルドとリリース
 

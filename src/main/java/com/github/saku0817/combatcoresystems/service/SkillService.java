@@ -35,13 +35,11 @@ public final class SkillService implements Listener {
         this.definitions = definitions; this.players = players; this.stats = stats; this.combat = combat; this.damage = damage; this.items = items;
     }
 
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onSneakAttack(EntityDamageByEntityEvent event) {
         if (!(event.getDamager() instanceof Player player) || !player.isSneaking() || !(event.getEntity() instanceof LivingEntity target)) return;
         if (activate(player, target, false)) event.setCancelled(true);
     }
 
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onSneakUse(PlayerInteractEvent event) {
         if (!event.getPlayer().isSneaking() || (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK)) return;
         LivingEntity target = rayTarget(event.getPlayer());
@@ -58,6 +56,7 @@ public final class SkillService implements Listener {
         if (data.getLevel() < weapon.minimumEquipLevel() || data.getLevel() > weapon.maximumEquipLevel()) return false;
         WeaponDefinition.SkillDefinition ability = ultimate ? weapon.ultimate() : weapon.skill();
         if (ability == null || !conditionsMet(player, target, ability.conditions())) return false;
+        if (target == null && !ability.target().equalsIgnoreCase("SELF") && ability.radius() <= 0) return false;
 
         ItemInstance instance = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
         int limitBreak = instance == null ? 0 : instance.getLimitBreak();
@@ -118,9 +117,13 @@ public final class SkillService implements Listener {
         return !Boolean.TRUE.equals(conditions.get("requires-combat")) || combat.inCombat(player.getUniqueId());
     }
 
+    public boolean activate(Player player, boolean ultimate) {
+        return activate(player, rayTarget(player), ultimate);
+    }
+
     private LivingEntity rayTarget(Player player) {
         RayTraceResult ray = player.getWorld().rayTraceEntities(player.getEyeLocation(), player.getEyeLocation().getDirection(), 16,
-                0.5, entity -> entity instanceof LivingEntity && !entity.equals(player));
+                0.5, entity -> entity instanceof LivingEntity && !entity.equals(player) && player.hasLineOfSight(entity));
         Entity hit = ray == null ? null : ray.getHitEntity();
         return hit instanceof LivingEntity living ? living : null;
     }
@@ -135,6 +138,7 @@ public final class SkillService implements Listener {
         for (int level = 0; level <= limitBreak; level++) {
             Map<String, Object> values = weapon.limitBreaks().get(level);
             if (values != null && values.containsKey(key)) result = values.get(key);
+            if (values != null && key.endsWith(".cooldown") && values.containsKey(key + "-seconds")) result = values.get(key + "-seconds");
         }
         return result;
     }

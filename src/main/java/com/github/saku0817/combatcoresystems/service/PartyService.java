@@ -23,6 +23,9 @@ public final class PartyService implements PartyApi {
 
     public java.util.concurrent.CompletableFuture<Void> load() { return storage.loadParties().thenAccept(values -> { parties.clear(); parties.putAll(values); }); }
     public Collection<PartyData> all() { return Collections.unmodifiableCollection(parties.values()); }
+    public List<Invite> invitations(UUID target) {
+        return invites.getOrDefault(target, List.of()).stream().filter(invite -> !invite.expired()).toList();
+    }
 
     public Optional<PartyData> create(UUID leader) {
         if (partyId(leader).isPresent()) return Optional.empty();

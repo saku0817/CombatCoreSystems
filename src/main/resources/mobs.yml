@@ -1,4 +1,8 @@
 data-version: 1
+# 個別定義のないバニラMobの報酬。個別定義のcustom-exp/drop-custom-expが優先されます。
+vanilla-defaults:
+  custom-exp: 5
+  drop-custom-exp: true
 # CCS独自Mob追加例:
 # mobs:
 #   flame_zombie:
