@@ -21,6 +21,11 @@ public record WeaponDefinition(
         SkillDefinition ultimate,
         Map<Integer, Map<String, Object>> limitBreaks
 ) {
+    public boolean canEquip(int playerLevel) { return playerLevel >= minimumEquipLevel && playerLevel <= maximumEquipLevel; }
+    public double attackAt(int weaponLevel) {
+        return com.github.saku0817.combatcoresystems.util.CoreMath.linear(attackAtLevel1, attackAtLevel100, weaponLevel, 100);
+    }
+    public double attackFor(int playerLevel, int weaponLevel) { return canEquip(playerLevel) ? attackAt(weaponLevel) : 0; }
     public enum Category { MELEE, RANGED }
 
     public record SkillDefinition(String id, String name, ReferenceStat referenceStat, double multiplier,

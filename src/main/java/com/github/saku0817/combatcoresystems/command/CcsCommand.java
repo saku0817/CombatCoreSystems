@@ -24,7 +24,7 @@ public final class CcsCommand implements CommandExecutor, TabCompleter {
         if (!(sender instanceof Player player)) { sender.sendMessage("Players only."); return true; }
         if (args.length == 1 && Set.of("skill", "ultimate").contains(args[0].toLowerCase(Locale.ROOT))) {
             if (!player.hasPermission("combatcoresystems.command." + args[0].toLowerCase(Locale.ROOT))) { message(player, "<red>権限がありません。</red>"); return true; }
-            if (!skills.activate(player, args[0].equalsIgnoreCase("ultimate"))) message(player, "<red>発動できません。CCS武器を手に持ち、対象・装備レベル・発動条件を確認してください。</red>");
+            skills.activate(player, args[0].equalsIgnoreCase("ultimate"));
             return true;
         }
         if (combat.inCombat(player.getUniqueId())) { message(player, "<red>戦闘中は一般CCSコマンドを使用できません。</red>"); return true; }

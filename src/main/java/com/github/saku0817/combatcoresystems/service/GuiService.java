@@ -65,7 +65,15 @@ public final class GuiService implements Listener {
                 "<gray>EXP: " + data.getExp() + " / " + (data.getLevel() >= 100 ? 0 : levels.requiredExp(data.getLevel())) + "</gray>",
                 "<gray>新生回帰: " + data.getRebirthCount() + "</gray>", "<gray>スキルポイント: " + data.getSkillPoints() + "</gray>")));
         inv.setItem(12, item("REDSTONE", "<red>HP " + round(value.maxHp()) + "</red>", List.of()));
-        inv.setItem(13, item("IRON_SWORD", "<white>ATK " + round(value.atk()) + "</white>", List.of()));
+        List<String> attackLore = new ArrayList<>();
+        for (int i = 0; i < 9; i++) {
+            ItemInstance instance = items.instance(player.getInventory().getItem(i)).orElse(null);
+            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
+            if (weapon == null) continue;
+            attackLore.add("<gray>" + weapon.name() + " 武器Lv." + instance.getLevel() + "：+" + round(weapon.attackFor(data.getLevel(), instance.getLevel())) + "</gray>");
+            if (!weapon.canEquip(data.getLevel())) attackLore.add("<red>必要プレイヤーLv." + weapon.minimumEquipLevel() + "～" + weapon.maximumEquipLevel() + "（現在は無効）</red>");
+        }
+        inv.setItem(13, item("IRON_SWORD", "<white>攻撃力 " + round(value.atk()) + "</white>", attackLore));
         inv.setItem(14, item("SHIELD", "<gray>DEF " + round(value.def()) + "</gray>", List.of()));
         inv.setItem(20, item("AMETHYST_SHARD", "<light_purple>会心</light_purple>", List.of("<gray>率: " + percent(value.value(StatKey.CRIT_RATE)), "<gray>ダメージ: " + percent(value.value(StatKey.CRIT_DAMAGE)))));
         int slot = 28;
@@ -88,8 +96,15 @@ public final class GuiService implements Listener {
         Map<EquipmentSlot, Integer> slots = equipmentSlots();
         slots.forEach((slot, index) -> {
             ItemInstance instance = data.getEquipment().get(slot);
-            ItemStack icon = instance == null ? item("GRAY_STAINED_GLASS_PANE", "<gray>" + slot + "</gray>", List.of("<dark_gray>未装備</dark_gray>"))
+            ItemStack physical = switch (slot) { case HEAD -> player.getInventory().getHelmet(); case CHEST -> player.getInventory().getChestplate(); case LEGS -> player.getInventory().getLeggings(); case FEET -> player.getInventory().getBoots(); default -> null; };
+            ItemStack icon = instance == null ? physical != null && !physical.getType().isAir() ? physical.clone() : item("GRAY_STAINED_GLASS_PANE", "<gray>" + items.displayName(slot.name()) + "</gray>", List.of("<dark_gray>未装備</dark_gray>"))
                     : Optional.ofNullable(findInstance(player, instance.getInstanceId())).map(ItemStack::clone).orElse(item("BARRIER", instance.getDefinitionId(), List.of()));
+            if (instance != null || physical != null && !physical.getType().isAir()) {
+                ItemMeta meta = icon.getItemMeta();
+                List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of()));
+                lore.add(mini.deserialize(gui("equipment.equipped", "<green>装備中 — タップで解除</green>")));
+                meta.lore(lore); icon.setItemMeta(meta);
+            }
             inv.setItem(index, icon);
         });
         inv.setItem(45, item("CHEST", gui("equipment.select", "<green>所持品から装備を選ぶ</green>"), List.of()));
@@ -97,12 +112,21 @@ public final class GuiService implements Listener {
     }
 
     private void openEquipmentList(Player player) {
+        openEquipmentList(player, null);
+    }
+
+    private void openEquipmentList(Player player, EquipmentSlot filter) {
+        equipment.syncArmor(player);
         Inventory inv = inventory(player, Screen.EQUIPMENT_LIST, gui("equipment.list-title", "<gold>タップして装備</gold>"), 54, "", 0, "");
         for (int i = 0; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
+            if (stack == null || stack.getType().isAir()) continue;
             String id = items.id(stack).orElse("");
-            if (definitions.snapshot().equipment().containsKey(id) || definitions.snapshot().config("divine_hearts.yml").contains("divine-hearts." + id))
+            if (equipment.slotOf(id) != null && (filter == null || equipment.slotOf(id) == filter)) {
                 inv.setItem(i, stack.clone());
+                ItemInstance instance = items.instance(stack).orElse(null);
+                if (instance != null) ((Holder) inv.getHolder()).actions.put(i, instance.getInstanceId());
+            }
         }
         back(inv); player.openInventory(inv);
     }
@@ -357,7 +381,7 @@ public final class GuiService implements Listener {
                     entries.add(new Entry(value.id(), known ? value.name() : "？？？", known ? value.entityType() : "BARRIER", known ? List.of("<gray>ID: " + value.id() + "</gray>", "<gray>Lv." + value.minLevel() + "-" + value.maxLevel() + "</gray>") : List.of()));
             });
         } else if (category.equals("weapons")) definitions.snapshot().weapons().values().forEach(value -> entries.add(new Entry(value.id(), value.name(), value.material(), List.of("<gray>★" + value.rarity() + "</gray>"))));
-        else if (category.equals("equipment")) definitions.snapshot().equipment().values().forEach(value -> entries.add(new Entry(value.id(), value.name(), value.material(), List.of("<gray>★" + value.rarity() + " " + value.slot() + "</gray>"))));
+        else if (category.equals("equipment")) definitions.snapshot().equipment().values().forEach(value -> entries.add(new Entry(value.id(), value.name(), value.material(), List.of("<gray>★" + value.rarity() + " " + items.displayName(value.slot().name()) + "</gray>"))));
         else if (category.equals("materials")) {
             ConfigurationSection root = definitions.snapshot().config("levels.yml").getConfigurationSection("materials");
             if (root != null) root.getKeys(false).forEach(id -> { ConfigurationSection s = root.getConfigurationSection(id); entries.add(new Entry(id, s.getString("name", id), s.getString("material", "PAPER"), List.of("<gray>EXP: " + s.getLong("exp") + "</gray>"))); });
@@ -423,14 +447,27 @@ public final class GuiService implements Listener {
             case EQUIPMENT -> {
                 if (slot == 53) openMain(player);
                 else if (slot == 45) openEquipmentList(player);
-                else equipmentSlots().forEach((kind, index) -> { if (index == slot) { if (equipment.unequip(player, kind)) levels.apply(player, players.require(player), false); openEquipment(player); } });
+                else equipmentSlots().forEach((kind, index) -> { if (index == slot) {
+                    boolean hasPhysical = switch (kind) {
+                        case HEAD -> player.getInventory().getHelmet() != null;
+                        case CHEST -> player.getInventory().getChestplate() != null;
+                        case LEGS -> player.getInventory().getLeggings() != null;
+                        case FEET -> player.getInventory().getBoots() != null;
+                        default -> false;
+                    };
+                    if (!hasPhysical && !players.require(player).getEquipment().containsKey(kind)) { openEquipmentList(player, kind); return; }
+                    if (equipment.unequip(player, kind)) levels.apply(player, players.require(player), false);
+                    else player.sendMessage(mini.deserialize(gui("equipment.failed", "<red>変更できません。戦闘状態と所持品の空きを確認してください。</red>")));
+                    openEquipment(player);
+                } });
             }
             case EQUIPMENT_LIST -> {
                 if (slot == 53) openEquipment(player);
                 else if (slot < 36) {
-                    ItemInstance selected = items.instance(event.getCurrentItem()).orElse(null);
+                    String selected = holder.actions.get(slot);
                     ItemInstance actual = items.instance(player.getInventory().getItem(slot)).orElse(null);
-                    if (selected != null && actual != null && selected.getInstanceId().equals(actual.getInstanceId()) && equipment.equip(player, slot)) levels.apply(player, players.require(player), false);
+                    if (selected != null && actual != null && selected.equals(actual.getInstanceId()) && equipment.equip(player, slot)) levels.apply(player, players.require(player), false);
+                    else player.sendMessage(mini.deserialize(gui("equipment.failed", "<red>装備できません。戦闘状態・所持品・設定を確認してください。</red>")));
                     openEquipment(player);
                 }
             }

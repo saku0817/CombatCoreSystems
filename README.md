@@ -2,7 +2,7 @@
 
 Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドRPG基盤プラグインです。
 
-現在のバージョン: **v1.3.0**
+現在のバージョン: **v1.3.1**
 
 ## 主な機能
 
@@ -56,7 +56,7 @@ CCS武器は`weapons.yml`の`type: MELEE|RANGED`で種別を指定します。�
 
 権限や全サブコマンドは [コマンドと権限](https://github.com/saku0817/CombatCoreSystems/wiki/Commands-and-Permissions) に掲載しています。
 
-v1.3.0の操作、設定例、移行時の注意は [v1.3.0ガイド](docs/v1.3.0.md) を参照してください。GUIの増減や変換は通常タップで操作できます。未登録のバニラMobの報酬は `mobs.yml` の `vanilla-defaults` で設定します。
+最新の操作・修正理由・変更前後は [v1.3.1ガイド](docs/v1.3.1.md) を参照してください。スキルはしゃがみ＋攻撃、必殺技はしゃがみ＋使用（コマンド併用可）。装備GUIの空の部位から候補を選べます。GUIの増減や変換は通常タップで操作できます。未登録のバニラMobの報酬は `mobs.yml` の `vanilla-defaults` で設定します。
 
 ## ビルドとリリース
 

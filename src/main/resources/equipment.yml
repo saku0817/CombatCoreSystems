@@ -1,3 +1,34 @@
 data-version: 1
-# 装備追加例: equipment.iron_head: {name: "鉄兜", material: IRON_HELMET, slot: HEAD, rarity: 3, main-stat: {type: DEF_FLAT, level-1: 5, max-level: 20}}
+# 正式名は equipment.yml。equipments.yml の equipment: / equipments: も互換読込します。
+# 同じIDを両方に定義しないでください。以下は equipment: {} を置き換える例です。
+# equipment:
+#   iron_head:
+#     name: "<gray>鉄の兜</gray>"
+#     material: IRON_HELMET
+#     slot: HEAD
+#     rarity: 3
+#     max-level: 9
+#     main-stat:
+#       type: DEF_FLAT
+#       level-1: 5
+#       max-level: 20
+#     substats:
+#       - HP_PERCENT
+#       - CRIT_RATE
+#     lore:
+#       - "<gray>守りを固める兜</gray>"
+#   flame_resonance:
+#     name: "<red>炎の残響</red>"
+#     material: BLAZE_POWDER
+#     slot: RESONANCE
+#     rarity: 4
+#     max-level: 12
+#     main-stat:
+#       type: FIRE_DAMAGE
+#       level-1: 0.05
+#       max-level: 0.20
+#     substats: [ATK_PERCENT, CRIT_RATE]
+# 割合は 0.20 = 20%。表示は日本語、設定キーは英語のままです。
+# HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
+# 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
 equipment: {}

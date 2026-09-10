@@ -28,6 +28,7 @@ public final class SkillService implements Listener {
     private final DamageService damage;
     private final ItemService items;
     private final Map<UUID, Map<String, AbilityState>> cooldowns = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<Boolean, Integer>> inputTicks = new HashMap<>();
     private final MiniMessage mini = MiniMessage.miniMessage();
 
     public SkillService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
@@ -35,28 +36,52 @@ public final class SkillService implements Listener {
         this.definitions = definitions; this.players = players; this.stats = stats; this.combat = combat; this.damage = damage; this.items = items;
     }
 
-    public void onSneakAttack(EntityDamageByEntityEvent event) {
-        if (!(event.getDamager() instanceof Player player) || !player.isSneaking() || !(event.getEntity() instanceof LivingEntity target)) return;
-        if (activate(player, target, false)) event.setCancelled(true);
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onSneakAttack(io.papermc.paper.event.player.PrePlayerAttackEntityEvent event) {
+        Player player = event.getPlayer();
+        if (!player.isSneaking() || !(event.getAttacked() instanceof LivingEntity target)) return;
+        if (input(player, target, false)) event.setCancelled(true);
     }
 
+    @EventHandler(priority = EventPriority.LOW)
     public void onSneakUse(PlayerInteractEvent event) {
-        if (!event.getPlayer().isSneaking() || (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK)) return;
+        if (event.getHand() != org.bukkit.inventory.EquipmentSlot.HAND) return;
+        if (!event.getPlayer().isSneaking() || event.getAction() == Action.PHYSICAL) return;
+        boolean ultimate = event.getAction() == Action.RIGHT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_BLOCK;
         LivingEntity target = rayTarget(event.getPlayer());
-        if (activate(event.getPlayer(), target, true)) event.setCancelled(true);
+        if (input(event.getPlayer(), target, ultimate)) event.setCancelled(true);
     }
+
+    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
+    public void onSneakEntityUse(org.bukkit.event.player.PlayerInteractEntityEvent event) {
+        if (event.getHand() == org.bukkit.inventory.EquipmentSlot.HAND && event.getPlayer().isSneaking()
+                && event.getRightClicked() instanceof LivingEntity target && input(event.getPlayer(), target, true)) event.setCancelled(true);
+    }
+
+    private boolean input(Player player, LivingEntity target, boolean ultimate) {
+        if (!definitions.snapshot().config("config.yml").getBoolean("controls.sneak-inputs", true)
+                || !player.hasPermission("combatcoresystems.command." + (ultimate ? "ultimate" : "skill"))
+                || items.id(player.getInventory().getItemInMainHand()).isEmpty()) return false;
+        Map<Boolean, Integer> ticks = inputTicks.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>());
+        int tick = org.bukkit.Bukkit.getCurrentTick();
+        if (Objects.equals(ticks.put(ultimate, tick), tick)) return true;
+        return activate(player, target, ultimate);
+    }
+
+    @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) { inputTicks.remove(event.getPlayer().getUniqueId()); }
 
     public boolean activate(Player player, LivingEntity target, boolean ultimate) {
         PlayerData data = players.find(player.getUniqueId()).orElse(null);
-        if (data == null) return false;
-        String weaponId = items.id(player.getInventory().getItemInMainHand()).orElse(combat.state(player.getUniqueId()).activeWeapon());
+        if (data == null) return fail(player, "loading", "プレイヤーデータを読み込み中です。");
+        String weaponId = items.id(player.getInventory().getItemInMainHand()).orElse("");
         if (weaponId.isBlank()) return false;
         WeaponDefinition weapon = definitions.snapshot().weapons().get(weaponId);
-        if (weapon == null) return false;
-        if (data.getLevel() < weapon.minimumEquipLevel() || data.getLevel() > weapon.maximumEquipLevel()) return false;
+        if (weapon == null) return fail(player, "unknown-weapon", "この武器の設定が読み込まれていません。");
+        if (!weapon.canEquip(data.getLevel())) return fail(player, "equip-level", "武器の装備可能レベルを満たしていません。");
         WeaponDefinition.SkillDefinition ability = ultimate ? weapon.ultimate() : weapon.skill();
-        if (ability == null || !conditionsMet(player, target, ability.conditions())) return false;
-        if (target == null && !ability.target().equalsIgnoreCase("SELF") && ability.radius() <= 0) return false;
+        if (ability == null) return fail(player, "undefined", "この武器には使用する技が設定されていません。");
+        if (!conditionsMet(player, target, ability.conditions())) return fail(player, "conditions", "技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。");
+        if (target == null && !ability.target().equalsIgnoreCase("SELF") && ability.radius() <= 0) return fail(player, "target", "対象が見つかりません。対象に照準を合わせてください。");
 
         ItemInstance instance = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
         int limitBreak = instance == null ? 0 : instance.getLimitBreak();
@@ -118,7 +143,13 @@ public final class SkillService implements Listener {
     }
 
     public boolean activate(Player player, boolean ultimate) {
+        if (items.id(player.getInventory().getItemInMainHand()).isEmpty()) return fail(player, "weapon", "スキルを設定したCCS武器を手に持ってください。");
         return activate(player, rayTarget(player), ultimate);
+    }
+
+    private boolean fail(Player player, String key, String fallback) {
+        player.sendActionBar(mini.deserialize(definitions.snapshot().config("messages.yml").getString("skill-failure." + key, "<red>" + fallback + "</red>")));
+        return false;
     }
 
     private LivingEntity rayTarget(Player player) {

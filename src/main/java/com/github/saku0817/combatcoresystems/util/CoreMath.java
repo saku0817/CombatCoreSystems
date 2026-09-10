@@ -3,6 +3,14 @@ package com.github.saku0817.combatcoresystems.util;
 public final class CoreMath {
     private CoreMath() {}
 
+    public static double attack(double playerBase, double weapons, double percent, double flat) {
+        return Math.max(0, (playerBase + weapons) * (1 + percent) + flat);
+    }
+
+    public static double nativeAttackBase(double finalAttack, double add, double scalar, double product) {
+        return finalAttack / ((1 + scalar) * product) - add;
+    }
+
     public static double linear(double start, double end, int level, int maxLevel) {
         if (maxLevel <= 1) return end;
         int clamped = Math.max(1, Math.min(maxLevel, level));

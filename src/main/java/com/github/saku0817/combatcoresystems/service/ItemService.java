@@ -92,6 +92,16 @@ public final class ItemService {
 
     public NamespacedKey idKey() { return idKey; }
 
+    public String displayName(String key) {
+        return definitions.snapshot().config("messages.yml").getString("display-names." + key,
+                com.github.saku0817.combatcoresystems.util.DisplayNames.japanese(key));
+    }
+
+    public String statValue(String key, double value) {
+        boolean percent = !key.endsWith("_FLAT") && !key.equals("ATTACK_SPEED");
+        return String.format(java.util.Locale.ROOT, "%.1f%s", percent ? value * 100 : value, percent ? "%" : "");
+    }
+
     public void writeInstance(ItemStack item, ItemInstance instance) {
         if (item == null || !item.hasItemMeta()) return;
         ItemMeta meta = item.getItemMeta();
@@ -107,15 +117,16 @@ public final class ItemService {
             appendEffects(lore, heart.getConfigurationSection("modifiers"), "神心");
             appendEffects(lore, heart.getConfigurationSection("rules"), "神心ルール");
         }
-        lore.add(mini.deserialize("<gray>Lv." + instance.getLevel() + "</gray>"));
+        if (heart == null) lore.add(mini.deserialize("<gray>Lv." + instance.getLevel() + "</gray>"));
         if (weapon != null) lore.add(mini.deserialize("<gray>限界突破 " + instance.getLimitBreak() + "/5</gray>"));
         if (weapon != null) {
-            lore.add(mini.deserialize("<white>ATK: " + com.github.saku0817.combatcoresystems.util.CoreMath.linear(weapon.attackAtLevel1(), weapon.attackAtLevel100(), instance.getLevel(), 100) + "</white>"));
-            appendAbility(lore, weapon.skill(), "スキル /ccs skill");
-            appendAbility(lore, weapon.ultimate(), "必殺技 /ccs ultimate");
+            lore.add(mini.deserialize("<white>攻撃力: " + weapon.attackAt(instance.getLevel()) + "</white>"));
+            lore.add(mini.deserialize("<gray>装備可能レベル: " + weapon.minimumEquipLevel() + "～" + weapon.maximumEquipLevel() + "</gray>"));
+            appendAbility(lore, weapon.skill(), "スキル：しゃがみ＋攻撃 /ccs skill");
+            appendAbility(lore, weapon.ultimate(), "必殺技：しゃがみ＋使用 /ccs ultimate");
         }
         if (equipment != null) {
-            lore.add(mini.deserialize("<white>" + equipment.mainStat() + ": " + com.github.saku0817.combatcoresystems.util.CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), instance.getLevel(), equipment.maxLevel()) + "</white>"));
+            lore.add(mini.deserialize("<white>" + displayName(equipment.mainStat().name()) + ": " + statValue(equipment.mainStat().name(), com.github.saku0817.combatcoresystems.util.CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), instance.getLevel(), equipment.maxLevel())) + "</white>"));
             if (!equipment.setId().isBlank()) lore.add(mini.deserialize("<gray>セット: " + equipment.setId() + "</gray>"));
             if (!equipment.setId().isBlank()) {
                 ConfigurationSection set = definitions.snapshot().config("sets.yml").getConfigurationSection("sets." + equipment.setId());
@@ -127,7 +138,7 @@ public final class ItemService {
             int index = 0;
             for (var entry : instance.getSubstats().entrySet()) {
                 boolean open = index++ < instance.getUnlockedSubstats();
-                lore.add(mini.deserialize((open ? "<white>" : "<dark_gray>[未開放] ") + entry.getKey() + " +" + entry.getValue() + (open ? "</white>" : "</dark_gray>")));
+                lore.add(mini.deserialize((open ? "<white>" : "<dark_gray>[未開放] ") + displayName(entry.getKey()) + " +" + statValue(entry.getKey(), entry.getValue()) + (open ? "</white>" : "</dark_gray>")));
             }
         }
         meta.lore(lore); item.setItemMeta(meta);
@@ -136,9 +147,9 @@ public final class ItemService {
     private void appendAbility(List<Component> lore, WeaponDefinition.SkillDefinition ability, String label) {
         if (ability == null) return;
         lore.add(mini.deserialize("<gold>" + label + " — " + ability.name() + "</gold>"));
-        lore.add(mini.deserialize("<gray>" + ability.referenceStat() + " × " + ability.multiplier() + " / " + ability.element().japaneseName()
+        lore.add(mini.deserialize("<gray>" + displayName(ability.referenceStat().name()) + " × " + ability.multiplier() + " / " + ability.element().japaneseName()
                 + " / CT " + ability.cooldownSeconds() + "秒 / " + ability.charges() + "回 / 範囲 " + ability.radius() + "m</gray>"));
-        if (!ability.conditions().isEmpty()) lore.add(Component.text("条件: " + ability.conditions()));
+        ability.conditions().forEach((key, value) -> lore.add(Component.text(displayName(key) + ": " + displayName(String.valueOf(value)))));
     }
 
     private void appendEffects(List<Component> lore, ConfigurationSection section, String label) {
@@ -146,7 +157,7 @@ public final class ItemService {
         String template = definitions.snapshot().config("messages.yml").getString("item-lore.effect", "<gray><label>: <key> = <value></gray>");
         section.getValues(true).forEach((key, value) -> {
             if (!(value instanceof ConfigurationSection)) lore.add(mini.deserialize(template
-                    .replace("<label>", label).replace("<key>", key).replace("<value>", String.valueOf(value))));
+                    .replace("<label>", label).replace("<key>", displayName(key)).replace("<value>", value instanceof Number number && key.matches("[A-Z_]+") ? statValue(key, number.doubleValue()) : displayName(String.valueOf(value)))));
         });
     }
 

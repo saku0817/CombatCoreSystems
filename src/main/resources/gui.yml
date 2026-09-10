@@ -78,6 +78,8 @@ enhancement:
   upgrade-tier: "<yellow>数値10個 → 上級1個</yellow>"
   downgrade-tier: "<yellow>数値1個 → 下級10個</yellow>"
 equipment:
+  equipped: "<green>装備中 — タップで解除</green>"
+  failed: "<red>装備を変更できません。戦闘状態・所持品の空き・設定を確認してください。</red>"
   select: "<green>所持品から装備を選ぶ</green>"
   list-title: "<gold>タップして装備</gold>"
 encyclopedia:

@@ -42,6 +42,7 @@ public final class StatService implements Listener {
 
     public PlayerStats recalculate(Player player, PlayerData data) {
         PlayerStats stats = calculate(player, data);
+        synchronizeAttackAttribute(player, stats.atk());
         cache.put(player.getUniqueId(), stats);
         return stats;
     }
@@ -73,8 +74,8 @@ public final class StatService implements Listener {
             ItemInstance instance = items.instance(player.getInventory().getItem(slot)).orElse(null);
             WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
             if (weapon == null) continue;
-            if (level < weapon.minimumEquipLevel() || level > weapon.maximumEquipLevel()) continue;
-            weaponAtk += CoreMath.linear(weapon.attackAtLevel1(), weapon.attackAtLevel100(), instance.getLevel(), 100);
+            if (!weapon.canEquip(level)) continue;
+            weaponAtk += weapon.attackFor(level, instance.getLevel());
             if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
         }
         for (Map.Entry<EquipmentSlot, ItemInstance> equipped : data.getEquipment().entrySet()) {
@@ -82,7 +83,8 @@ public final class StatService implements Listener {
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
             if (equipment != null) {
                 add(modifiers, equipment.mainStat(), CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), item.getLevel(), equipment.maxLevel()));
-                item.getSubstats().forEach((key, value) -> {
+                item.getSubstats().entrySet().stream().limit(item.getUnlockedSubstats()).forEach(entry -> {
+                    String key = entry.getKey(); double value = entry.getValue();
                     try { add(modifiers, StatKey.valueOf(key), value); } catch (IllegalArgumentException ignored) {}
                 });
             }
@@ -96,7 +98,7 @@ public final class StatService implements Listener {
         AttributeInstance armor = player.getAttribute(Attribute.ARMOR);
         if (armor != null) vanillaArmor = armor.getValue();
         double hp = baseHp * (1 + modifiers.get(StatKey.HP_PERCENT)) + modifiers.get(StatKey.HP_FLAT);
-        double atk = (playerBaseAtk + weaponAtk) * (1 + modifiers.get(StatKey.ATK_PERCENT)) + modifiers.get(StatKey.ATK_FLAT);
+        double atk = CoreMath.attack(playerBaseAtk, weaponAtk, modifiers.get(StatKey.ATK_PERCENT), modifiers.get(StatKey.ATK_FLAT));
         double def = (baseDef + vanillaArmor) * (1 + modifiers.get(StatKey.DEF_PERCENT)) + modifiers.get(StatKey.DEF_FLAT);
         return new PlayerStats(level, hp, atk, def, modifiers);
     }
@@ -111,6 +113,22 @@ public final class StatService implements Listener {
         }
         double value = levels.getDouble("player.vanilla-weapons.attack-values." + held.getType().name(), 0);
         return Math.max(0, value * levels.getDouble("player.vanilla-weapons.conversion-multiplier", 1));
+    }
+
+    /** Native held-item modifiers must not be added a second time to CCS's final ATK. */
+    static void synchronizeAttackAttribute(Player player, double finalAttack) {
+        AttributeInstance attribute = player.getAttribute(Attribute.ATTACK_DAMAGE);
+        if (attribute == null) return;
+        double add = 0, scalar = 0, product = 1;
+        for (org.bukkit.attribute.AttributeModifier modifier : attribute.getModifiers()) {
+            switch (modifier.getOperation()) {
+                case ADD_NUMBER -> add += modifier.getAmount();
+                case ADD_SCALAR -> scalar += modifier.getAmount();
+                case MULTIPLY_SCALAR_1 -> product *= 1 + modifier.getAmount();
+            }
+        }
+        double factor = (1 + scalar) * product;
+        if (factor > 0 && Double.isFinite(factor)) attribute.setBaseValue(CoreMath.nativeAttackBase(finalAttack, add, scalar, product));
     }
 
     private EnumMap<StatKey, Double> defaults() {

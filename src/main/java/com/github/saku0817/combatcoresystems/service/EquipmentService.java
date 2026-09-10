@@ -116,9 +116,7 @@ public final class EquipmentService implements Listener {
         ItemStack stack = player.getInventory().getItem(inventorySlot);
         ItemInstance instance = items.instance(stack).orElse(null);
         if (instance == null) return false;
-        EquipmentDefinition definition = definitions.snapshot().equipment().get(instance.getDefinitionId());
-        EquipmentSlot slot = definition != null ? definition.slot() :
-                definitions.snapshot().config("divine_hearts.yml").contains("divine-hearts." + instance.getDefinitionId()) ? EquipmentSlot.DIVINE_HEART : null;
+        EquipmentSlot slot = slotOf(instance.getDefinitionId());
         if (slot == null) return false;
         int physical = physicalSlot(slot);
         if (physical >= 0) {
@@ -131,6 +129,13 @@ public final class EquipmentService implements Listener {
         }
         syncArmor(player);
         return true;
+    }
+
+    public EquipmentSlot slotOf(String id) {
+        if (id == null || id.isBlank()) return null;
+        EquipmentDefinition definition = definitions.snapshot().equipment().get(id);
+        if (definition != null) return definition.slot();
+        return definitions.snapshot().config("divine_hearts.yml").isConfigurationSection("divine-hearts." + id) ? EquipmentSlot.DIVINE_HEART : null;
     }
 
     public boolean unequip(Player player, EquipmentSlot slot) {

@@ -1,3 +1,25 @@
 data-version: 1
-# 神心追加例: divine-hearts.flame: {name: "<red>炎の神心</red>", material: NETHER_STAR, modifiers: {FIRE_DAMAGE: 0.2}}
+# 以下は divine-hearts: {} を置き換える例です。神の心はレベル・限界突破を持ちません。
+# divine-hearts:
+#   divine-heart-flame:
+#     name: "<red>炎の神心</red>"
+#     material: NETHER_STAR
+#     rarity: 4
+#     lore:
+#       - "<gray>炎を宿した心</gray>"
+#     modifiers:
+#       FIRE_DAMAGE: 0.20
+#     rules:
+#       normal-attack-attribute: FIRE
+#       skill:
+#         attribute: FIRE
+#         multiplier: 1.15
+#         radius-add: 1.0
+#       ultimate:
+#         attribute: FIRE
+#         multiplier: 1.25
+#         radius-add: 2.0
+# modifiers だけでも装備可能。rules は任意です。
+# 装備GUIの「神の心」枠→所持品の神心を選択。実物は所持品に残り、1個体を登録します。
+# 実物を手放すと装備登録が解除されます。戦闘中は着脱できません。
 divine-hearts: {}

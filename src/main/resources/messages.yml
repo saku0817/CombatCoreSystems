@@ -1,4 +1,15 @@
 data-version: 1
+# 表示名のみを変更します。設定キー・保存データは変更しません。
+# 例: FIRE_DAMAGE: "炎属性ダメージ"
+display-names: {}
+skill-failure:
+  loading: "<yellow>プレイヤーデータを読み込み中です。</yellow>"
+  weapon: "<red>スキルを設定したCCS武器を手に持ってください。</red>"
+  unknown-weapon: "<red>この武器の設定が読み込まれていません。</red>"
+  equip-level: "<red>武器の装備可能レベルを満たしていません。</red>"
+  undefined: "<red>この武器には使用する技が設定されていません。</red>"
+  conditions: "<red>技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。</red>"
+  target: "<red>対象が見つかりません。対象に照準を合わせてください。</red>"
 item-lore:
   # 神心ルール・セット効果。利用可能: <label>, <key>, <value>
   effect: "<gray><label>: <key> = <value></gray>"

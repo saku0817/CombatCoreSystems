@@ -84,8 +84,7 @@ public final class LevelService {
         var maxHealth = player.getAttribute(Attribute.MAX_HEALTH);
         double physicalMaximum = Math.min(value.maxHp(), Math.max(20, definitions.snapshot().config("levels.yml").getDouble("player.minecraft-max-health", 1024)));
         if (maxHealth != null) maxHealth.setBaseValue(physicalMaximum);
-        var attackDamage = player.getAttribute(Attribute.ATTACK_DAMAGE);
-        if (attackDamage != null) attackDamage.setBaseValue(value.atk());
+        StatService.synchronizeAttackAttribute(player, value.atk());
         var attackSpeed = player.getAttribute(Attribute.ATTACK_SPEED);
         if (attackSpeed != null) attackSpeed.setBaseValue(value.value(com.github.saku0817.combatcoresystems.model.StatKey.ATTACK_SPEED));
         player.setHealthScaled(true);

@@ -73,6 +73,20 @@ public final class DefinitionRegistry {
             yaml.put(name, config);
         }
 
+        // Accept the commonly used plural filename without replacing an existing definition.
+        File pluralEquipment = new File(plugin.getDataFolder(), "equipments.yml");
+        if (pluralEquipment.isFile()) {
+            YamlConfiguration alias = YamlConfiguration.loadConfiguration(pluralEquipment);
+            ConfigurationSection root = alias.getConfigurationSection("equipment");
+            if (root == null) root = alias.getConfigurationSection("equipments");
+            if (root == null) errors.add("equipments.yml must contain an equipment section");
+            else for (String id : root.getKeys(false)) {
+                String path = "equipment." + id;
+                if (yaml.get("equipment.yml").contains(path)) errors.add("Duplicate equipment ID in equipment.yml and equipments.yml: " + id);
+                else yaml.get("equipment.yml").set(path, root.getConfigurationSection(id));
+            }
+        }
+
         Map<String, ReactionDefinition> reactions = parseReactions(yaml.get("reactions.yml"), errors);
         Map<String, WeaponDefinition> weapons = parseWeapons(yaml.get("weapons.yml"), errors, warnings);
         Map<String, EquipmentDefinition> equipment = parseEquipment(yaml.get("equipment.yml"), errors, warnings);
@@ -138,7 +152,13 @@ public final class DefinitionRegistry {
             catch (IllegalArgumentException ex) { errors.add("weapon " + id + " has invalid type (MELEE or RANGED)"); continue; }
             int rarity = s.getInt("rarity", 1);
             if (rarity < 1 || rarity > 5) { errors.add("weapon " + id + " rarity must be 1..5"); continue; }
-            Element element = Element.parse(value(s, "attribute-bonus.type", "element-bonus.type")).orElse(Element.PHYSICAL);
+            String bonusType = value(s, "attribute-bonus.type", "element-bonus.type");
+            if (bonusType != null) bonusType = bonusType.toUpperCase(Locale.ROOT).replace('-', '_').replaceFirst("_DAMAGE$", "");
+            Element element = Element.parse(bonusType).orElse(Element.PHYSICAL);
+            ConfigurationSection breaks = s.getConfigurationSection("limit-breaks");
+            if (breaks != null) for (String stage : breaks.getKeys(false)) {
+                if (breaks.contains(stage + ".atk-percent")) warnings.add("weapon " + id + " limit-breaks." + stage + ".atk-percent is unsupported; no ATK bonus is applied");
+            }
             int min = Math.max(1, s.getInt("equip-level.min", 1));
             int max = Math.min(100, s.getInt("equip-level.max", 100));
             if (min > max) { errors.add("weapon " + id + " equip level range is invalid"); continue; }
@@ -153,7 +173,7 @@ public final class DefinitionRegistry {
     }
 
     private WeaponDefinition.SkillDefinition parseSkill(String fallbackId, ConfigurationSection s, List<String> warnings) {
-        if (s == null) return new WeaponDefinition.SkillDefinition(fallbackId, fallbackId, ReferenceStat.ATK, 1, Element.PHYSICAL, 0, 1, 0, "ENEMY", Map.of());
+        if (s == null) return null;
         ReferenceStat stat;
         try { stat = ReferenceStat.valueOf(s.getString("reference", "ATK").toUpperCase(Locale.ROOT)); }
         catch (IllegalArgumentException ex) { warnings.add(fallbackId + " uses ATK because reference is invalid"); stat = ReferenceStat.ATK; }
