@@ -97,6 +97,12 @@ party:
   confirm: "<green>実行する</green>"
   invited: "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>"
 hud:
+  # 複数スタックの技は戦闘外でも残数を表示します。
+  ability-actionbar: '<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>'
+  ability-ready: 発動可能
+  ability-undefined: 未設定
+  ability-cooldown: 'あと<seconds>秒'
+  ability-stacks: '<remaining>/<maximum> <status>'
   target-health: "<hp> / <max_hp>"
   # sidebar-linesで使用可能: <server>, <player>, <level>, <exp>, <required_exp>, <exp_remaining>, <hp>, <max_hp>, <atk>, <def>
   sidebar-title: "<gold><server></gold>"

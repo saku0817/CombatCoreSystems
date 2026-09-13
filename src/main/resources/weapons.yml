@@ -1,4 +1,95 @@
 data-version: 1
-# 独自武器追加例: type は MELEE（近距離）または RANGED（遠距離）です。旧 category キーも読み込めます。
-# weapons.flame_sword: {name: "炎剣", material: IRON_SWORD, type: MELEE, rarity: 4, base-atk: {level-1: 20, level-100: 200}, equip-level: {min: 1, max: 100}}
-weapons: {}
+# category/type: MELEE、RANGED、UNCATEGORIZED（同時所持制限なし）。type指定時はtypeを優先。
+# 下記は動作する実装例。既存サーバーでは buffs.yml の2つの定義も一緒に追加してください。
+# 倍率・割合: 0.3=30%、2.0=200%。descriptionは説明のみ、効果は別キーで設定します。
+weapons:
+  guiding_star:
+    name: '<red><bold>夜を照らす導きの星</bold></red>'
+    material: DIAMOND_SWORD
+    category: MELEE
+    rarity: 5
+    base-atk:
+      level-1: 100
+      level-100: 100
+    attribute-bonus:
+      type: FIRE
+      value: 0.15
+    equip-level:
+      min: 1
+      max: 100
+    normal-attack:
+      attribute: FIRE
+      visual:
+        particle: FLAME
+        count: 12
+        spread: 0.4
+    talent:
+      name: '<red>ナビゲーター</red>'
+      description:
+        - 'この武器を利き手に所持しているとき、常に自身の最大HP<yellow><u>+50%</u></yellow>。'
+      # MAIN_HAND / OFF_HAND / EITHER_HAND。multiplierはmodifiers全体に掛けます。
+      hand: MAIN_HAND
+      multiplier: 1.0
+      modifiers:
+        HP_PERCENT: 0.5
+    skill:
+      id: departure
+      name: '<red>出航</red>'
+      description:
+        - '現在の<yellow><u>HP30%</u></yellow>を消費し、自身に会心ダメージ<yellow><u>+48%</u></yellow>のバフを<yellow><u>30</u></yellow>秒間付与する。'
+        - '現在のHPが最大HPの<yellow><u>30%</u></yellow>を下回っている場合は発動できない。CT<yellow><u>30</u></yellow>秒。'
+      target: SELF
+      damage-enabled: false
+      reference: ATK
+      multiplier: 1.0
+      cooldown-seconds: 30
+      charges: 1
+      conditions:
+        min-hp-percent: 0.3
+      cost:
+        current-hp-percent: 0.3
+      self-effects: [departure_crit]
+      visual:
+        particle: ENCHANT
+        count: 40
+        spread: 0.8
+        sound: minecraft:entity.player.levelup
+        volume: 0.7
+        pitch: 1.2
+    ultimate:
+      id: morning_star
+      name: '<red>今宵、明けの明星が墜ちる</red>'
+      description:
+        - '攻撃した敵単体に<yellow><u>攻撃力200%</u></yellow>＋<yellow><u>攻撃力100%に炎属性補正を適用した値</u></yellow>の炎属性ダメージを与える。'
+        - 'デバフ「落日」を<yellow><u>3</u></yellow>秒間付与する。CT<yellow><u>80</u></yellow>秒。'
+      target: ENEMY
+      radius: 0
+      attribute: FIRE
+      reference: ATK
+      # damage-components指定時は、各項の合計にこのmultiplierを掛けます。
+      multiplier: 1.0
+      damage-components:
+        - reference: ATK
+          multiplier: 2.0
+          # PHYSICAL = この項には属性ダメージ補正を掛けない。
+          bonus-attribute: PHYSICAL
+        - reference: ATK
+          multiplier: 1.0
+          bonus-attribute: FIRE
+      cooldown-seconds: 80
+      charges: 1
+      conditions:
+        requires-target: true
+        max-distance: 16
+      target-effects: [sunset]
+      visual:
+        particle: FLAME
+        count: 80
+        spread: 1.0
+        sound: minecraft:entity.blaze.shoot
+        volume: 1.0
+        pitch: 0.8
+    lore:
+      - '<gray>「開拓の旅は、今この瞬間から始まる」</gray>'
+      - '<gray>列車は広大な宇宙を駆け抜け、ナビゲーターと仲間たちが肩を並べて進んだ旅の奇跡は、揺るがぬ強固なレールとなる。</gray>'
+      - '<gray>「一緒に、群星が照らす未来へ向かいましょう！」</gray>'

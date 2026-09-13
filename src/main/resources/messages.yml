@@ -1,4 +1,29 @@
 data-version: 1
+# v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
+weapon-tooltip:
+  # description未指定の既存武器に表示する要約です。
+  ability-summary: '<white><reference> × <multiplier> / <attribute> / CT <cooldown>秒 / <charges>スタック</white>'
+  categories:
+    MELEE: 近接
+    RANGED: 遠距離
+    UNCATEGORIZED: 未指定
+  colors:
+    FIRE: '#ff0000'
+    WATER: '#55aaff'
+    WIND: '#55ffaa'
+    THUNDER: '#cc88ff'
+    MOON: '#ddddff'
+    PHYSICAL: '#ffffff'
+  header:
+    - '<white>カテゴリ：<u><category></u></white>'
+    - "<hover:show_text:'<white>次のレベルまであと <yellow><exp_remaining></yellow></white>'><white>Lv.<yellow><level></yellow> / <yellow>100</yellow></white></hover>"
+    - '<white>限界突破段階：<yellow><break></yellow> / <yellow>5</yellow></white>'
+    - '<white>武器攻撃力: <yellow><attack></yellow></white>'
+    - '<attribute_color><attribute></attribute_color><white>ダメージ <yellow><bonus>%</yellow></white>'
+    - '<white>装備可能レベル: <yellow><min_level></yellow> ~ <yellow><max_level></yellow></white>'
+  talent-title: '<#adff2f>➽ 天賦 <u><b><name></b></u></#adff2f>'
+  skill-title: '<#adff2f>➽ スキル <u><b><name></b></u></#adff2f>'
+  ultimate-title: '<#adff2f>➽ 必殺技 <u><b><name></b></u></#adff2f>'
 # 表示名のみを変更します。設定キー・保存データは変更しません。
 # 例: FIRE_DAMAGE: "炎属性ダメージ"
 display-names: {}

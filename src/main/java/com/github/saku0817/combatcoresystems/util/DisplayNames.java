@@ -27,6 +27,8 @@ public final class DisplayNames {
             case "COOLDOWN" -> "クールタイム短縮";
             case "ATTACK_SPEED" -> "攻撃速度";
             case "DEF_DOWN" -> "防御力低下";
+            case "DEF_IGNORED_WHEN_HIT" -> "被攻撃時の防御力無視割合";
+            case "UNCATEGORIZED" -> "未指定";
             case "HEAD" -> "頭";
             case "CHEST" -> "胴";
             case "LEGS" -> "脚";

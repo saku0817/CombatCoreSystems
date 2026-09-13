@@ -7,7 +7,11 @@ import java.util.UUID;
 
 public record DamageRequest(UUID attacker, UUID target, ReferenceStat referenceStat, double multiplier,
                             Element element, boolean canCritical, boolean fixedDamage, double fixedAmount,
-                            String source) {
+                            String source, java.util.List<com.github.saku0817.combatcoresystems.model.WeaponOptions.Component> components) {
+    public DamageRequest(UUID attacker, UUID target, ReferenceStat referenceStat, double multiplier,
+                         Element element, boolean canCritical, boolean fixedDamage, double fixedAmount, String source) {
+        this(attacker, target, referenceStat, multiplier, element, canCritical, fixedDamage, fixedAmount, source, java.util.List.of());
+    }
     public DamageRequest {
         if (target == null) throw new IllegalArgumentException("target is required");
         referenceStat = referenceStat == null ? ReferenceStat.ATK : referenceStat;
@@ -15,5 +19,6 @@ public record DamageRequest(UUID attacker, UUID target, ReferenceStat referenceS
         multiplier = Math.max(0, multiplier);
         fixedAmount = Math.max(0, fixedAmount);
         source = source == null ? "external" : source;
+        components = components == null ? java.util.List.of() : java.util.List.copyOf(components);
     }
 }

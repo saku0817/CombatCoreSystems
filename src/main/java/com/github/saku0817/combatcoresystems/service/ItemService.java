@@ -109,7 +109,11 @@ public final class ItemService {
         List<Component> lore = new ArrayList<>();
         WeaponDefinition weapon = definitions.snapshot().weapons().get(instance.getDefinitionId());
         EquipmentDefinition equipment = definitions.snapshot().equipment().get(instance.getDefinitionId());
-        if (weapon != null) weapon.lore().forEach(line -> lore.add(mini.deserialize(line)));
+        if (weapon != null) {
+            meta.itemName(mini.deserialize(weapon.name()));
+            appendWeapon(lore, weapon, instance);
+            meta.lore(lore); item.setItemMeta(meta); return;
+        }
         if (equipment != null) equipment.lore().forEach(line -> lore.add(mini.deserialize(line)));
         ConfigurationSection heart = definitions.snapshot().config("divine_hearts.yml").getConfigurationSection("divine-hearts." + instance.getDefinitionId());
         if (heart != null) {
@@ -150,6 +154,54 @@ public final class ItemService {
         lore.add(mini.deserialize("<gray>" + displayName(ability.referenceStat().name()) + " × " + ability.multiplier() + " / " + ability.element().japaneseName()
                 + " / CT " + ability.cooldownSeconds() + "秒 / " + ability.charges() + "回 / 範囲 " + ability.radius() + "m</gray>"));
         ability.conditions().forEach((key, value) -> lore.add(Component.text(displayName(key) + ": " + displayName(String.valueOf(value)))));
+    }
+
+    private void appendWeapon(List<Component> lore, WeaponDefinition weapon, ItemInstance instance) {
+        var config = definitions.snapshot().config("messages.yml");
+        var exp = definitions.snapshot().config("levels.yml");
+        long required = exp.getString("weapon-exp.mode", "QUADRATIC").equalsIgnoreCase("TABLE")
+                ? exp.getLong("weapon-exp.table." + instance.getLevel(), Long.MAX_VALUE)
+                : com.github.saku0817.combatcoresystems.util.CoreMath.quadraticExp(exp.getLong("weapon-exp.base", 100), exp.getLong("weapon-exp.growth", 25), instance.getLevel());
+        long remaining = instance.getLevel() >= 100 ? 0 : Math.max(0, required - instance.getExp());
+        String category = config.getString("weapon-tooltip.categories." + weapon.category().name(), switch (weapon.category()) {
+            case MELEE -> "近接"; case RANGED -> "遠距離"; case UNCATEGORIZED -> "未指定";
+        });
+        String color = config.getString("weapon-tooltip.colors." + weapon.bonusElement().name(), switch (weapon.bonusElement()) {
+            case FIRE -> "#ff0000"; case WATER -> "#55aaff"; case WIND -> "#55ffaa"; case THUNDER -> "#cc88ff"; case MOON -> "#ddddff"; case PHYSICAL -> "#ffffff";
+        });
+        List<String> defaults = List.of("<white>カテゴリ：<u><category></u></white>",
+                "<hover:show_text:'<white>次のレベルまであと <yellow><exp_remaining></yellow></white>'><white>Lv.<yellow><level></yellow> / <yellow>100</yellow></white></hover>",
+                "<white>限界突破段階：<yellow><break></yellow> / <yellow>5</yellow></white>",
+                "<white>武器攻撃力: <yellow><attack></yellow></white>",
+                "<attribute_color><attribute></attribute_color><white>ダメージ <yellow><bonus>%</yellow></white>",
+                "<white>装備可能レベル: <yellow><min_level></yellow> ~ <yellow><max_level></yellow></white>");
+        List<String> header = config.isList("weapon-tooltip.header") ? config.getStringList("weapon-tooltip.header") : defaults;
+        for (String line : header) lore.add(mini.deserialize(line.replace("<category>", category)
+                .replace("<exp_remaining>", Long.toString(remaining)).replace("<level>", Integer.toString(instance.getLevel()))
+                .replace("<break>", Integer.toString(instance.getLimitBreak())).replace("<attack>", Long.toString(Math.round(weapon.attackAt(instance.getLevel()))))
+                .replace("<attribute_color>", "<" + color + ">").replace("</attribute_color>", "</" + color + ">")
+                .replace("<attribute>", weapon.bonusElement() == Element.PHYSICAL ? "無属性" : weapon.bonusElement().japaneseName() + "属性")
+                .replace("<bonus>", String.format(java.util.Locale.ROOT, "%+.0f", weapon.elementBonus() * 100))
+                .replace("<min_level>", Integer.toString(weapon.minimumEquipLevel())).replace("<max_level>", Integer.toString(weapon.maximumEquipLevel()))));
+        var talent = weapon.options().talent();
+        if (talent != null) appendDescription(lore, "talent", "天賦", talent.name(), talent.description());
+        if (weapon.skill() != null) appendDescription(lore, "skill", "スキル", weapon.skill().name(), abilityDescription(weapon.skill()));
+        if (weapon.ultimate() != null) appendDescription(lore, "ultimate", "必殺技", weapon.ultimate().name(), abilityDescription(weapon.ultimate()));
+        if (!weapon.lore().isEmpty()) { lore.add(Component.empty()); weapon.lore().forEach(line -> lore.add(mini.deserialize(line))); }
+    }
+
+    private List<String> abilityDescription(WeaponDefinition.SkillDefinition ability) {
+        if (!ability.options().description().isEmpty()) return ability.options().description();
+        return List.of(definitions.snapshot().config("messages.yml").getString("weapon-tooltip.ability-summary", "<white><reference> × <multiplier> / <attribute> / CT <cooldown>秒 / <charges>スタック</white>")
+                .replace("<reference>", displayName(ability.referenceStat().name())).replace("<multiplier>", Double.toString(ability.multiplier()))
+                .replace("<attribute>", ability.element().japaneseName()).replace("<cooldown>", Double.toString(ability.cooldownSeconds()))
+                .replace("<charges>", Integer.toString(ability.charges())));
+    }
+
+    private void appendDescription(List<Component> lore, String key, String label, String name, List<String> description) {
+        var config = definitions.snapshot().config("messages.yml");
+        lore.add(mini.deserialize(config.getString("weapon-tooltip." + key + "-title", "<#adff2f>➽ " + label + " <u><b><name></b></u></#adff2f>").replace("<name>", name)));
+        description.forEach(line -> lore.add(mini.deserialize("<white>" + line + "</white>")));
     }
 
     private void appendEffects(List<Component> lore, ConfigurationSection section, String label) {

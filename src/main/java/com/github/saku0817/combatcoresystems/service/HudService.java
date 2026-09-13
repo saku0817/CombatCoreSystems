@@ -113,15 +113,19 @@ public final class HudService {
     private void updateActionBar(Player player) {
         long combatRemaining = combat.remainingMillis(player.getUniqueId());
         Map<Element, Long> attached = elements.remaining(player.getUniqueId());
-        if (combatRemaining <= 0 && attached.isEmpty()) return;
+        SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
+        boolean stacked = skill.maximumCharges() > 1 || ultimate.maximumCharges() > 1;
+        if (combatRemaining <= 0 && attached.isEmpty() && !stacked) return;
         StringBuilder text = new StringBuilder();
         if (combatRemaining > 0) {
-            SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
             String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0);
             String template = definitions.snapshot().config("gui.yml").getString("hud.combat-actionbar", "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>");
             text.append(template.replace("<combat_remaining>", remaining)
-                    .replace("<skill_status>", skill.ready() ? "発動可能" : "あと" + format(skill.remainingSeconds()) + "秒")
-                    .replace("<ultimate_status>", ultimate.ready() ? "発動可能" : "あと" + format(ultimate.remainingSeconds()) + "秒"));
+                    .replace("<skill_status>", abilityStatus(skill))
+                    .replace("<ultimate_status>", abilityStatus(ultimate)));
+        } else if (stacked) {
+            text.append(definitions.snapshot().config("gui.yml").getString("hud.ability-actionbar", "<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>")
+                    .replace("<skill_status>", abilityStatus(skill)).replace("<ultimate_status>", abilityStatus(ultimate)));
         }
         if (!attached.isEmpty()) {
             if (!text.isEmpty()) text.append(" <gray>|</gray> ");
@@ -130,6 +134,15 @@ public final class HudService {
             text.append(template.replace("<attributes>", attributes));
         }
         player.sendActionBar(mini.deserialize(text.toString()));
+    }
+
+    private String abilityStatus(SkillService.Status status) {
+        var config = definitions.snapshot().config("gui.yml");
+        if (status.maximumCharges() == 0) return config.getString("hud.ability-undefined", "未設定");
+        String text = status.ready() ? config.getString("hud.ability-ready", "発動可能")
+                : config.getString("hud.ability-cooldown", "あと<seconds>秒").replace("<seconds>", format(status.remainingSeconds()));
+        return status.maximumCharges() > 1 ? config.getString("hud.ability-stacks", "<remaining>/<maximum> <status>")
+                .replace("<remaining>", Integer.toString(status.charges())).replace("<maximum>", Integer.toString(status.maximumCharges())).replace("<status>", text) : text;
     }
 
     private String replace(String input, Player player, PlayerData data, PlayerStats value) {

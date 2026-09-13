@@ -1,3 +1,26 @@
 data-version: 1
 # Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
-buffs: {}
+# 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
+buffs:
+  departure_crit:
+    name: 出航
+    kind: BUFF
+    target: SELF
+    duration: 30
+    max-stacks: 1
+    reapply: REFRESH
+    modifiers:
+      flat:
+        CRIT_DAMAGE: 0.48
+  sunset:
+    name: 落日
+    kind: DEBUFF
+    target: ENEMY
+    duration: 3
+    max-stacks: 1
+    reapply: REFRESH
+    modifiers:
+      percent:
+        ATK_PERCENT: -0.3
+        # 対象が攻撃を受ける際、その時点の有効防御力の40%を無視します。
+        DEF_IGNORED_WHEN_HIT: 0.4

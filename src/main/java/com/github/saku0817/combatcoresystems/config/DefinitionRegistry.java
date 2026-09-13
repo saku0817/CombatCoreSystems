@@ -94,6 +94,13 @@ public final class DefinitionRegistry {
         Map<String, MobDefinition> vanillaMobs = parseMobs(yaml.get("mobs.yml"), "vanilla-mobs", false, true, errors);
         Map<String, MobDefinition> bosses = parseMobs(yaml.get("bosses.yml"), "bosses", true, false, errors);
         Map<String, BuffDefinition> buffs = parseBuffs(yaml.get("buffs.yml"), errors);
+        for (WeaponDefinition weapon : weapons.values()) {
+            for (var ability : Arrays.asList(weapon.skill(), weapon.ultimate())) {
+                if (ability == null) continue;
+                for (String id : java.util.stream.Stream.concat(ability.options().selfEffects().stream(), ability.options().targetEffects().stream()).toList())
+                    if (!buffs.containsKey(id)) errors.add("weapon " + weapon.id() + " references missing buff/debuff " + id);
+            }
+        }
         Map<String, RegionDefinition> regions = parseRegions(yaml.get("regions.yml"), errors);
 
         for (EquipmentDefinition definition : equipment.values()) {
@@ -149,7 +156,7 @@ public final class DefinitionRegistry {
             WeaponDefinition.Category category;
             String categoryName = s.contains("type") ? s.getString("type", "") : s.getString("category", "");
             try { category = WeaponDefinition.Category.valueOf(categoryName.toUpperCase(Locale.ROOT)); }
-            catch (IllegalArgumentException ex) { errors.add("weapon " + id + " has invalid type (MELEE or RANGED)"); continue; }
+            catch (IllegalArgumentException ex) { errors.add("weapon " + id + " has invalid type (MELEE, RANGED or UNCATEGORIZED)"); continue; }
             int rarity = s.getInt("rarity", 1);
             if (rarity < 1 || rarity > 5) { errors.add("weapon " + id + " rarity must be 1..5"); continue; }
             String bonusType = value(s, "attribute-bonus.type", "element-bonus.type");
@@ -162,12 +169,13 @@ public final class DefinitionRegistry {
             int min = Math.max(1, s.getInt("equip-level.min", 1));
             int max = Math.min(100, s.getInt("equip-level.max", 100));
             if (min > max) { errors.add("weapon " + id + " equip level range is invalid"); continue; }
-            result.put(id, new WeaponDefinition(id, s.getString("name", id), material.name(), category, rarity,
+            try { result.put(id, new WeaponDefinition(id, s.getString("name", id), material.name(), category, rarity,
                     s.getDouble("base-atk.level-1"), s.getDouble("base-atk.level-100"), element,
                     decimal(s, "attribute-bonus.value", "element-bonus.value"), min, max,
                     s.contains("custom-model-data") ? s.getInt("custom-model-data") : null, s.getStringList("lore"),
                     parseSkill(id + ":skill", s.getConfigurationSection("skill"), warnings),
-                    parseSkill(id + ":ultimate", s.getConfigurationSection("ultimate"), warnings), readLimitBreaks(s.getConfigurationSection("limit-breaks"))));
+                    parseSkill(id + ":ultimate", s.getConfigurationSection("ultimate"), warnings), readLimitBreaks(s.getConfigurationSection("limit-breaks")), WeaponOptionsParser.weapon(s)));
+            } catch (IllegalArgumentException ex) { errors.add("weapon " + id + ": " + ex.getMessage()); }
         }
         return Map.copyOf(result);
     }
@@ -181,7 +189,7 @@ public final class DefinitionRegistry {
                 s.getDouble("multiplier", 1), Element.parse(value(s, "attribute", "element")).orElse(Element.PHYSICAL),
                 Math.max(0, s.getDouble("cooldown-seconds", s.getDouble("cooldown", 0))), Math.max(1, s.getInt("charges", 1)),
                 Math.max(0, s.getDouble("radius", 0)), s.getString("target", "ENEMY"),
-                s.getConfigurationSection("conditions") == null ? Map.of() : Map.copyOf(s.getConfigurationSection("conditions").getValues(false)));
+                s.getConfigurationSection("conditions") == null ? Map.of() : Map.copyOf(s.getConfigurationSection("conditions").getValues(false)), WeaponOptionsParser.ability(s));
     }
 
     private Map<Integer, Map<String, Object>> readLimitBreaks(ConfigurationSection root) {

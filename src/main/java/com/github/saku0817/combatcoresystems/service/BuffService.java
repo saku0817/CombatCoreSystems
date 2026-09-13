@@ -5,6 +5,7 @@ import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
 import com.github.saku0817.combatcoresystems.model.BuffDefinition;
 import com.github.saku0817.combatcoresystems.model.PlayerData;
 import com.github.saku0817.combatcoresystems.model.TimedEffect;
+import com.github.saku0817.combatcoresystems.model.StatKey;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
@@ -22,6 +23,7 @@ public final class BuffService {
     private final DamageService damage;
     private final HealService healing;
     private final Map<String, Long> nextTicks = new ConcurrentHashMap<>();
+    private final Map<UUID, List<TimedEffect>> entityEffects = new HashMap<>();
 
     public BuffService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                        DamageService damage, HealService healing) {
@@ -32,10 +34,17 @@ public final class BuffService {
     public void start() { Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 5L, 5L); }
 
     public boolean apply(Player target, String id, UUID source) {
+        return apply((LivingEntity) target, id, source);
+    }
+
+    public boolean apply(LivingEntity target, String id, UUID source) {
         BuffDefinition definition = definitions.snapshot().buffs().get(id);
-        if (definition == null) return false;
-        PlayerData data = players.require(target);
-        List<TimedEffect> effects = definition.kind() == BuffDefinition.Kind.BUFF ? data.getBuffs() : data.getDebuffs();
+        if (definition == null || target.isDead()) return false;
+        List<TimedEffect> effects;
+        if (target instanceof Player player) {
+            PlayerData data = players.require(player);
+            effects = definition.kind() == BuffDefinition.Kind.BUFF ? data.getBuffs() : data.getDebuffs();
+        } else effects = entityEffects.computeIfAbsent(target.getUniqueId(), ignored -> new ArrayList<>());
         TimedEffect existing = effects.stream().filter(effect -> effect.getId().equals(id)).findFirst().orElse(null);
         long duration = (long) (definition.durationSeconds() * 1000);
         if (existing == null) effects.add(new TimedEffect(id, source, 1, duration, definition.permanent()));
@@ -47,6 +56,22 @@ public final class BuffService {
         }
         stats.invalidate(target.getUniqueId());
         return true;
+    }
+
+    public double modifier(LivingEntity target, StatKey key) {
+        List<TimedEffect> effects;
+        if (target instanceof Player player) {
+            PlayerData data = players.find(player.getUniqueId()).orElse(null);
+            if (data == null) return 0;
+            effects = java.util.stream.Stream.concat(data.getBuffs().stream(), data.getDebuffs().stream()).toList();
+        } else effects = entityEffects.getOrDefault(target.getUniqueId(), List.of());
+        double result = 0;
+        for (TimedEffect effect : effects) {
+            BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
+            if (definition != null && (effect.isPermanent() || effect.getRemainingMillis() > 0))
+                result += (definition.flatModifiers().getOrDefault(key, 0.0) + definition.percentModifiers().getOrDefault(key, 0.0)) * effect.getStacks();
+        }
+        return result;
     }
 
     public boolean remove(Player target, String id) {
@@ -65,6 +90,17 @@ public final class BuffService {
 
     private void tick() {
         long elapsed = 250;
+        var entities = entityEffects.entrySet().iterator();
+        while (entities.hasNext()) {
+            var entry = entities.next();
+            Entity raw = Bukkit.getEntity(entry.getKey());
+            if (!(raw instanceof LivingEntity living) || !living.isValid() || living.isDead()) {
+                String prefix = entry.getKey() + ":"; nextTicks.keySet().removeIf(key -> key.startsWith(prefix));
+                entities.remove(); continue;
+            }
+            updateList(living, entry.getValue(), elapsed);
+            if (entry.getValue().isEmpty()) entities.remove();
+        }
         for (Player player : Bukkit.getOnlinePlayers()) {
             PlayerData data = players.find(player.getUniqueId()).orElse(null);
             if (data == null) continue;
@@ -74,23 +110,23 @@ public final class BuffService {
         }
     }
 
-    private boolean updateList(Player target, List<TimedEffect> effects, long elapsed) {
+    private boolean updateList(LivingEntity target, List<TimedEffect> effects, long elapsed) {
         boolean changed = false;
         Iterator<TimedEffect> iterator = effects.iterator();
         while (iterator.hasNext()) {
             TimedEffect effect = iterator.next();
             BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
-            if (definition == null) { iterator.remove(); changed = true; continue; }
+            if (definition == null) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); iterator.remove(); changed = true; continue; }
             if (!effect.isPermanent()) {
                 effect.setRemainingMillis(Math.max(0, effect.getRemainingMillis() - elapsed));
-                if (effect.getRemainingMillis() == 0) { iterator.remove(); changed = true; continue; }
+                if (effect.getRemainingMillis() == 0) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); iterator.remove(); changed = true; continue; }
             }
             if (definition.tickEffect() != null) runTickEffect(target, effect, definition);
         }
         return changed;
     }
 
-    private void runTickEffect(Player target, TimedEffect effect, BuffDefinition definition) {
+    private void runTickEffect(LivingEntity target, TimedEffect effect, BuffDefinition definition) {
         String key = target.getUniqueId() + ":" + effect.getId();
         long now = System.currentTimeMillis();
         if (nextTicks.getOrDefault(key, 0L) > now) return;

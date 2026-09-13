@@ -66,7 +66,7 @@ public final class GuiService implements Listener {
                 "<gray>新生回帰: " + data.getRebirthCount() + "</gray>", "<gray>スキルポイント: " + data.getSkillPoints() + "</gray>")));
         inv.setItem(12, item("REDSTONE", "<red>HP " + round(value.maxHp()) + "</red>", List.of()));
         List<String> attackLore = new ArrayList<>();
-        for (int i = 0; i < 9; i++) {
+        for (int i : new int[]{player.getInventory().getHeldItemSlot(), 40}) {
             ItemInstance instance = items.instance(player.getInventory().getItem(i)).orElse(null);
             WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
             if (weapon == null) continue;
@@ -89,7 +89,7 @@ public final class GuiService implements Listener {
         PlayerData data = players.require(player);
         Inventory inv = inventory(player, Screen.EQUIPMENT, "<gold>装備</gold>", 54, "", 0, "");
         int weaponIcon = 10;
-        for (int i = 0; i < 9; i++) {
+        for (int i : new int[]{player.getInventory().getHeldItemSlot(), 40}) {
             ItemStack stack = player.getInventory().getItem(i);
             if (definitions.snapshot().weapons().containsKey(items.id(stack).orElse("")) && weaponIcon < 18) inv.setItem(weaponIcon++, stack.clone());
         }

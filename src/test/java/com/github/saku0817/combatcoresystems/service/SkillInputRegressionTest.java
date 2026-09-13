@@ -12,6 +12,7 @@ class SkillInputRegressionTest {
         assertEquals(EventPriority.LOW, attack.priority());
         assertTrue(attack.ignoreCancelled());
         assertNotNull(SkillService.class.getMethod("onSneakUse", org.bukkit.event.player.PlayerInteractEvent.class).getAnnotation(EventHandler.class));
-        assertNotNull(SkillService.class.getMethod("onSneakEntityUse", org.bukkit.event.player.PlayerInteractEntityEvent.class).getAnnotation(EventHandler.class));
+        assertNotNull(SkillService.class.getMethod("onHandDrop", org.bukkit.event.player.PlayerDropItemEvent.class).getAnnotation(EventHandler.class));
+        assertNotNull(SkillService.class.getMethod("onInventoryDrop", org.bukkit.event.inventory.InventoryClickEvent.class).getAnnotation(EventHandler.class));
     }
 }

@@ -52,7 +52,10 @@ public final class CombatCoreSystems extends JavaPlugin {
         HealService healing = new HealService(players, stats, displays, levels);
         BuffService buffs = new BuffService(this, definitions, players, stats, damage, healing);
         EquipmentService equipment = new EquipmentService(this, definitions, players, stats, combat, items);
+        equipment.bindLevels(levels);
         SkillService skills = new SkillService(this, definitions, players, stats, combat, damage, items);
+        skills.bindEffects(buffs, levels);
+        damage.bindBuffs(buffs);
         SkillTreeService skillTrees = new SkillTreeService(definitions, players, stats);
         EnhancementService enhancement = new EnhancementService(definitions, players, stats, items);
         EncyclopediaService encyclopedia = new EncyclopediaService(players, mobs, definitions);

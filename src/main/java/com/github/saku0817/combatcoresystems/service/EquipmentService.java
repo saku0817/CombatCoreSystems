@@ -33,6 +33,9 @@ public final class EquipmentService implements Listener {
     private final StatService stats;
     private final CombatStateService combat;
     private final ItemService items;
+    private LevelService levels;
+    private final Map<UUID, Double> synchronizedMaximum = new HashMap<>();
+    public void bindLevels(LevelService levels) { this.levels = levels; }
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final Map<UUID, EnumMap<com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category, String>> lastUsed = new HashMap<>();
 
@@ -192,10 +195,20 @@ public final class EquipmentService implements Listener {
         stats.invalidate(player.getUniqueId());
     }
 
-    private void auditLater(Player player) { Bukkit.getScheduler().runTask(plugin, () -> { if (player.isOnline()) syncArmor(player); }); }
+    private void auditLater(Player player) { Bukkit.getScheduler().runTask(plugin, () -> {
+        if (!player.isOnline() || player.isDead()) return;
+        syncArmor(player);
+        if (levels != null) players.find(player.getUniqueId()).ifPresent(data -> {
+            double maximum = stats.get(player, data).maxHp();
+            Double previous = synchronizedMaximum.put(player.getUniqueId(), maximum);
+            if (previous == null || Double.compare(previous, maximum) != 0) levels.apply(player, data, false);
+        });
+    }); }
+    @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) { synchronizedMaximum.remove(event.getPlayer().getUniqueId()); }
     private void collect(Map<com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category, List<WeaponSlot>> grouped, WeaponSlot slot) {
         ItemInstance instance = items.instance(slot.item).orElse(null); if (instance == null) return;
         var definition = definitions.snapshot().weapons().get(instance.getDefinitionId()); if (definition == null) return;
+        if (definition.category() == com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category.UNCATEGORIZED) return;
         grouped.computeIfAbsent(definition.category(), ignored -> new ArrayList<>()).add(new WeaponSlot(slot.slot, slot.item, instance.getInstanceId()));
     }
     private int emptyStorageSlot(Player player) { for (int slot = 9; slot <= 35; slot++) { ItemStack item = player.getInventory().getItem(slot); if (item == null || item.getType().isAir()) return slot; } return -1; }

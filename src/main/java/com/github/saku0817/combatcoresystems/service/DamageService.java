@@ -40,6 +40,8 @@ public final class DamageService implements DamageApi, Listener {
     private final NamespacedKey itemIdKey;
     private final NamespacedKey projectileWeaponKey;
     private final Map<UUID, AttackCharge> attackCharges = new HashMap<>();
+    private BuffService buffs;
+    public void bindBuffs(BuffService buffs) { this.buffs = buffs; }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBeforeAttack(io.papermc.paper.event.player.PrePlayerAttackEntityEvent event) {
@@ -103,6 +105,8 @@ public final class DamageService implements DamageApi, Listener {
         }
         Element element = mobs.definition(attacker).map(MobDefinition::nativeElement).orElse(Element.PHYSICAL);
         if (attacker instanceof Player player) {
+            WeaponDefinition weapon = definitions.snapshot().weapons().get(weaponId);
+            if (weapon != null && weapon.canEquip(players.require(player).getLevel())) element = weapon.options().normalElement();
             PlayerData data = players.require(player); ItemInstance heart = data.getEquipment().get(EquipmentSlot.DIVINE_HEART);
             if (heart != null) {
                 var heartConfig = definitions.snapshot().config("divine_hearts.yml");
@@ -116,9 +120,14 @@ public final class DamageService implements DamageApi, Listener {
         event.setCancelled(true);
         DamageResult result = apply(request);
         if (!result.applied()) return;
+        WeaponDefinition activeWeapon = definitions.snapshot().weapons().get(weaponId);
+        if (attacker instanceof Player player && activeWeapon != null && activeWeapon.canEquip(players.require(player).getLevel()))
+            WeaponVisuals.play(target, activeWeapon.options().visual());
         event.setCancelled(true);
         if (result.finalDamage() > 0) applyStandardKnockback(attacker, target);
     }
+
+    public boolean canAffect(LivingEntity attacker, LivingEntity target) { return !target.isDead() && allowed(attacker, target); }
 
     private boolean allowed(LivingEntity attacker, LivingEntity target) {
         if (attacker instanceof Player first && target instanceof Player second) {
@@ -202,7 +211,13 @@ public final class DamageService implements DamageApi, Listener {
         CombatantStats defender = combatant(target);
         double reference = switch (request.referenceStat()) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
         double base = Math.max(0, reference * request.multiplier());
-        double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown);
+        if (!request.components().isEmpty()) {
+            base = request.multiplier() * request.components().stream().mapToDouble(c ->
+                    componentAmount(c, source.hp, source.atk, source.def, source.elementDamage(c.bonusElement()))).sum();
+        }
+        double ignored = defender.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORED_WHEN_HIT)
+                : buffs == null ? 0 : buffs.modifier(target, StatKey.DEF_IGNORED_WHEN_HIT);
+        double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown) * (1 - Math.clamp(ignored, 0, 1));
         double defenseCoefficient = CoreMath.defenseCoefficient(source.level, defender.level, effectiveDef);
         double damage = base * defenseCoefficient;
         damage *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
@@ -212,13 +227,18 @@ public final class DamageService implements DamageApi, Listener {
             else {
                 resistance = CoreMath.finalResistance(defender.resistance(request.element()),
                         defender.resistanceDown(request.element()) + elements.resistanceDown(target.getUniqueId(), request.element()));
-                damage *= (1 + source.elementDamage(request.element())) * (1 - resistance);
+                damage *= (request.components().isEmpty() ? 1 + source.elementDamage(request.element()) : 1) * (1 - resistance);
             }
         }
         boolean critical = request.canCritical() && ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
         if (critical) damage *= 1 + source.critDamage;
         return new DamageResult(true, CoreMath.roundedDamage(damage), critical, request.element(), base,
                 defenseCoefficient, resistance, request.source(), "");
+    }
+
+    static double componentAmount(WeaponOptions.Component component, double hp, double atk, double def, double bonus) {
+        double reference = switch (component.reference()) { case HP -> hp; case ATK -> atk; case DEF -> def; };
+        return Math.max(0, reference * component.multiplier() * (component.bonusElement() == Element.PHYSICAL ? 1 : Math.max(0, 1 + bonus)));
     }
 
     private void applyReaction(LivingEntity attacker, LivingEntity central, ReferenceStat referenceStat, ElementService.ReactionTrigger trigger) {
@@ -269,7 +289,11 @@ public final class DamageService implements DamageApi, Listener {
         double hp = attribute(entity, Attribute.MAX_HEALTH, entity.getHealth());
         double atk = attribute(entity, Attribute.ATTACK_DAMAGE, 2);
         double def = definition == null ? 0 : mobs.defense(entity, definition, level);
-        return new CombatantStats(level, hp, atk, def, 0.05, 0.5, 0, definition);
+        if (buffs != null) {
+            atk = CoreMath.attack(atk, 0, buffs.modifier(entity, StatKey.ATK_PERCENT), buffs.modifier(entity, StatKey.ATK_FLAT));
+            def = Math.max(0, def * (1 + buffs.modifier(entity, StatKey.DEF_PERCENT)) + buffs.modifier(entity, StatKey.DEF_FLAT));
+        }
+        return new CombatantStats(level, hp, atk, def, 0.05, 0.5, buffs == null ? 0 : buffs.modifier(entity, StatKey.DEF_DOWN), definition);
     }
 
     private double attribute(LivingEntity entity, Attribute attribute, double fallback) {

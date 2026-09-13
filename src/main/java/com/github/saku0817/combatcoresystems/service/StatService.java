@@ -70,13 +70,19 @@ public final class StatService implements Listener {
 
         EnumMap<StatKey, Double> modifiers = defaults();
         double weaponAtk = vanillaWeaponAttack(player, levels);
-        for (int slot = 0; slot <= 8; slot++) {
-            ItemInstance instance = items.instance(player.getInventory().getItem(slot)).orElse(null);
+        for (boolean mainHand : new boolean[]{true, false}) {
+            ItemInstance instance = items.instance(mainHand ? player.getInventory().getItemInMainHand() : player.getInventory().getItemInOffHand()).orElse(null);
             WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
             if (weapon == null) continue;
             if (!weapon.canEquip(level)) continue;
             weaponAtk += weapon.attackFor(level, instance.getLevel());
             if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
+            WeaponOptions.Talent talent = weapon.options().talent();
+            if (talent != null && (talent.hand() == WeaponOptions.Hand.EITHER_HAND
+                    || mainHand && talent.hand() == WeaponOptions.Hand.MAIN_HAND
+                    || !mainHand && talent.hand() == WeaponOptions.Hand.OFF_HAND)) {
+                talent.modifiers().forEach((key, value) -> add(modifiers, key, value * talent.multiplier()));
+            }
         }
         for (Map.Entry<EquipmentSlot, ItemInstance> equipped : data.getEquipment().entrySet()) {
             ItemInstance item = equipped.getValue();

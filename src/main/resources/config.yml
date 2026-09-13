@@ -1,7 +1,9 @@
 data-version: 1
 controls:
-  # true: しゃがみ＋攻撃でスキル、しゃがみ＋使用で必殺技。コマンドは常に併用可能。
-  sneak-inputs: true
+  # 手持ちCCS武器をドロップしようとすると、落とさずにスキルを発動。インベントリからの破棄は除外。
+  drop-skill: true
+  # しゃがみ＋攻撃で必殺技。通常攻撃はキャンセル。コマンドは引き続き併用可能。
+  sneak-attack-ultimate: true
 # 基本設定例: combat-duration-seconds: 15 とすると戦闘状態が15秒続きます。
 server-name: "<gold>CombatCoreSystems</gold>"
 pvp-enabled: true
