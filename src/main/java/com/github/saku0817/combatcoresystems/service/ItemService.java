@@ -58,7 +58,14 @@ public final class ItemService {
         meta.itemName(mini.deserialize(name));
         List<Component> lines = new ArrayList<>();
         lore.forEach(line -> lines.add(mini.deserialize(line)));
+        if (type.equals("MATERIAL")) {
+            String target = definitions.snapshot().config("levels.yml").getString("materials." + id + ".type", "PLAYER");
+            String label = definitions.snapshot().config("messages.yml").getString("material-tooltip.targets." + target,
+                    switch (target) { case "WEAPON" -> "武器"; case "EQUIPMENT" -> "装備"; default -> "プレイヤー"; });
+            lines.add(mini.deserialize(definitions.snapshot().config("messages.yml").getString("material-tooltip.usage", "<gray>用途：<yellow><target>強化用</yellow></gray>").replace("<target>", label)));
+        }
         meta.lore(lines);
+        meta.setEnchantmentGlintOverride(glint(id));
         meta.setUnbreakable(true);
         if (instance) meta.setAttributeModifiers(ImmutableMultimap.of());
         meta.addItemFlags(ItemFlag.HIDE_UNBREAKABLE, ItemFlag.HIDE_ENCHANTS, ItemFlag.HIDE_ATTRIBUTES);
@@ -92,6 +99,22 @@ public final class ItemService {
 
     public NamespacedKey idKey() { return idKey; }
 
+    public boolean glint(String id) {
+        for (String file : List.of("weapons.yml", "equipments.yml", "equipment.yml", "divine_hearts.yml", "levels.yml")) {
+            String root = switch (file) { case "weapons.yml" -> "weapons"; case "divine_hearts.yml" -> "divine-hearts"; case "levels.yml" -> "materials"; default -> "equipment"; };
+            var config = definitions.snapshot().config(file);
+            if (config != null && config.contains(root + "." + id + ".enchantment-glint"))
+                return config.getBoolean(root + "." + id + ".enchantment-glint");
+        }
+        return false;
+    }
+
+    public String rarityLine(int rarity) {
+        String fallback = switch (rarity) { case 1 -> "#aaaaaa"; case 2 -> "#55ff55"; case 3 -> "#55aaff"; case 4 -> "#cc88ff"; default -> "#ffaa00"; };
+        String color = definitions.snapshot().config("config.yml").getString("rarity-colors." + rarity, fallback);
+        return "<" + color + ">" + "★".repeat(Math.max(1, Math.min(10, rarity))) + "</" + color + ">";
+    }
+
     public String displayName(String key) {
         return definitions.snapshot().config("messages.yml").getString("display-names." + key,
                 com.github.saku0817.combatcoresystems.util.DisplayNames.japanese(key));
@@ -105,6 +128,7 @@ public final class ItemService {
     public void writeInstance(ItemStack item, ItemInstance instance) {
         if (item == null || !item.hasItemMeta()) return;
         ItemMeta meta = item.getItemMeta();
+        meta.setEnchantmentGlintOverride(glint(instance.getDefinitionId()));
         meta.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, gson.toJson(instance));
         List<Component> lore = new ArrayList<>();
         WeaponDefinition weapon = definitions.snapshot().weapons().get(instance.getDefinitionId());
@@ -112,7 +136,9 @@ public final class ItemService {
         if (weapon != null) {
             meta.itemName(mini.deserialize(weapon.name()));
             appendWeapon(lore, weapon, instance);
-            meta.lore(lore); item.setItemMeta(meta); return;
+            meta.lore(lore);
+            if (!meta.equals(item.getItemMeta())) item.setItemMeta(meta);
+            return;
         }
         if (equipment != null) equipment.lore().forEach(line -> lore.add(mini.deserialize(line)));
         ConfigurationSection heart = definitions.snapshot().config("divine_hearts.yml").getConfigurationSection("divine-hearts." + instance.getDefinitionId());
@@ -145,7 +171,8 @@ public final class ItemService {
                 lore.add(mini.deserialize((open ? "<white>" : "<dark_gray>[未開放] ") + displayName(entry.getKey()) + " +" + statValue(entry.getKey(), entry.getValue()) + (open ? "</white>" : "</dark_gray>")));
             }
         }
-        meta.lore(lore); item.setItemMeta(meta);
+        meta.lore(lore);
+        if (!meta.equals(item.getItemMeta())) item.setItemMeta(meta);
     }
 
     private void appendAbility(List<Component> lore, WeaponDefinition.SkillDefinition ability, String label) {
@@ -157,6 +184,7 @@ public final class ItemService {
     }
 
     private void appendWeapon(List<Component> lore, WeaponDefinition weapon, ItemInstance instance) {
+        lore.add(mini.deserialize(rarityLine(weapon.rarity())));
         var config = definitions.snapshot().config("messages.yml");
         var exp = definitions.snapshot().config("levels.yml");
         long required = exp.getString("weapon-exp.mode", "QUADRATIC").equalsIgnoreCase("TABLE")
@@ -169,6 +197,7 @@ public final class ItemService {
         String color = config.getString("weapon-tooltip.colors." + weapon.bonusElement().name(), switch (weapon.bonusElement()) {
             case FIRE -> "#ff0000"; case WATER -> "#55aaff"; case WIND -> "#55ffaa"; case THUNDER -> "#cc88ff"; case MOON -> "#ddddff"; case PHYSICAL -> "#ffffff";
         });
+        color = definitions.snapshot().config("config.yml").getString("attribute-colors." + weapon.bonusElement().name(), color);
         List<String> defaults = List.of("<white>カテゴリ：<u><category></u></white>",
                 "<hover:show_text:'<white>次のレベルまであと <yellow><exp_remaining></yellow></white>'><white>Lv.<yellow><level></yellow> / <yellow>100</yellow></white></hover>",
                 "<white>限界突破段階：<yellow><break></yellow> / <yellow>5</yellow></white>",
@@ -190,7 +219,7 @@ public final class ItemService {
         if (!weapon.lore().isEmpty()) { lore.add(Component.empty()); weapon.lore().forEach(line -> lore.add(mini.deserialize(line))); }
     }
 
-    private List<String> abilityDescription(WeaponDefinition.SkillDefinition ability) {
+    public List<String> abilityDescription(WeaponDefinition.SkillDefinition ability) {
         if (!ability.options().description().isEmpty()) return ability.options().description();
         return List.of(definitions.snapshot().config("messages.yml").getString("weapon-tooltip.ability-summary", "<white><reference> × <multiplier> / <attribute> / CT <cooldown>秒 / <charges>スタック</white>")
                 .replace("<reference>", displayName(ability.referenceStat().name())).replace("<multiplier>", Double.toString(ability.multiplier()))

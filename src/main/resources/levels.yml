@@ -1,4 +1,5 @@
 data-version: 1
+# materials.<ID>.enchantment-glint: true / false で素材の光を指定（省略時false）。
 # 独自レベル設定例: mode は QUADRATIC / LINEAR / FIXED / TABLE を指定できます。
 player:
   max-level: 100

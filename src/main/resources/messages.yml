@@ -1,4 +1,15 @@
 data-version: 1
+# 空文字にすると発動通知を省略できます（天賦は所持条件を満たした時だけ通知）。
+ability-announcement:
+  skill: "<aqua>スキル発動：<name></aqua>"
+  ultimate: "<gold>必殺技発動：<name></gold>"
+  talent: "<green>天賦発動：<name></green>"
+material-tooltip:
+  usage: "<gray>用途：<yellow><target>強化用</yellow></gray>"
+  targets:
+    PLAYER: プレイヤー
+    WEAPON: 武器
+    EQUIPMENT: 装備
 # v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
 weapon-tooltip:
   # description未指定の既存武器に表示する要約です。

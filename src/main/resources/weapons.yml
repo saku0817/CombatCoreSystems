@@ -1,4 +1,5 @@
 data-version: 1
+# 各武器内に enchantment-glint: true / false を指定できます（省略時false）。
 # category/type: MELEE、RANGED、UNCATEGORIZED（同時所持制限なし）。type指定時はtypeを優先。
 # 下記は動作する実装例。既存サーバーでは buffs.yml の2つの定義も一緒に追加してください。
 # 倍率・割合: 0.3=30%、2.0=200%。descriptionは説明のみ、効果は別キーで設定します。

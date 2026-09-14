@@ -1,6 +1,7 @@
 package com.github.saku0817.combatcoresystems.service;
 
 import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
+import com.github.saku0817.combatcoresystems.model.Element;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
@@ -35,11 +36,18 @@ public final class DamageDisplayService {
     }
 
     public void damage(UUID owner, LivingEntity target, long amount, boolean critical, String reaction, boolean small, long overdamage) {
+        damage(owner, target, amount, critical, reaction, small, overdamage, null, null);
+    }
+
+    public void damage(UUID owner, LivingEntity target, long amount, boolean critical, String reaction, boolean small, long overdamage, Element element, Element second) {
         if (!definitions.snapshot().config("config.yml").getBoolean("text-display.enabled", true)) return;
         String path = reaction != null ? "damage-display.reaction" : critical ? "damage-display.critical" : "damage-display.normal";
         String fallback = reaction != null ? "<aqua><reaction> <damage></aqua>" : critical ? "<gold>CRIT <damage></gold>" : "<white><damage></white>";
+        String number = Long.toString(amount);
+        if (element != null) number = second == null ? "<" + color(element) + ">" + number + "</" + color(element) + ">"
+                : "<gradient:" + color(element) + ":" + color(second) + ">" + number + "</gradient>";
         Component text = mini.deserialize(template(path, fallback).replace("<reaction>", reaction == null ? "" : reaction)
-                .replace("<damage>", Long.toString(amount)).replace("<overdamage>", Long.toString(overdamage)));
+                .replace("<damage>", number).replace("<overdamage>", Long.toString(overdamage)));
         spawn(owner, target, text, critical ? 1.35f : small ? 0.7f : 1.0f);
     }
 
@@ -48,12 +56,13 @@ public final class DamageDisplayService {
     }
 
     private void spawn(UUID owner, LivingEntity target, Component text, float scale) {
-        int limit = definitions.snapshot().config("config.yml").getInt("text-display.max-per-player", 20);
+        int limit = Math.max(1, definitions.snapshot().config("config.yml").getInt("text-display.max-per-player", 20));
         Deque<DisplayEntry> owned = byOwner.computeIfAbsent(owner, ignored -> new ArrayDeque<>());
         while (owned.size() >= limit) remove(owned.removeFirst());
         Location location = target.getLocation().add(ThreadLocalRandom.current().nextDouble(-0.35, 0.35), target.getHeight() + 0.35,
                 ThreadLocalRandom.current().nextDouble(-0.35, 0.35));
         TextDisplay display = target.getWorld().spawn(location, TextDisplay.class, entity -> {
+            entity.setPersistent(false);
             entity.text(text);
             entity.setBillboard(Display.Billboard.CENTER);
             entity.setSeeThrough(true);
@@ -76,7 +85,10 @@ public final class DamageDisplayService {
             if (!entry.display.isValid() || Bukkit.getCurrentTick() >= entry.removeTick) {
                 entry.display.remove();
                 Deque<DisplayEntry> owned = byOwner.get(entry.owner);
-                if (owned != null) owned.remove(entry);
+                if (owned != null) {
+                    owned.remove(entry);
+                    if (owned.isEmpty()) byOwner.remove(entry.owner);
+                }
                 iterator.remove();
                 continue;
             }
@@ -90,6 +102,17 @@ public final class DamageDisplayService {
     }
 
     private String template(String path, String fallback) { return definitions.snapshot().config("messages.yml").getString(path, fallback); }
+
+    private String color(Element element) {
+        return definitions.snapshot().config("config.yml").getString("attribute-colors." + element.name(), template("weapon-tooltip.colors." + element.name(), switch (element) {
+            case FIRE -> "#ff5555";
+            case WATER -> "#55aaff";
+            case WIND -> "#55ffaa";
+            case THUNDER -> "#cc88ff";
+            case MOON -> "#ffffaa";
+            case PHYSICAL -> "#ffffff";
+        }));
+    }
 
     private record DisplayEntry(UUID owner, TextDisplay display, long removeTick) {}
 }

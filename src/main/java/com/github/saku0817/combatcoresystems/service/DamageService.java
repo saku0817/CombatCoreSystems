@@ -187,7 +187,7 @@ public final class DamageService implements DamageApi, Listener {
         long overdamage = overdamage(target, result.finalDamage());
         subtractHealth(target, result.finalDamage());
         UUID owner = attacker == null ? target.getUniqueId() : attacker.getUniqueId();
-        displays.damage(owner, target, result.finalDamage(), result.critical(), null, false, overdamage);
+        displays.damage(owner, target, result.finalDamage(), result.critical(), null, false, overdamage, request.element(), null);
         Bukkit.getPluginManager().callEvent(new AfterDamageEvent(request, result));
 
         if (!request.fixedDamage() && request.element() != Element.PHYSICAL && !mobs.immune(target, request.element()) && attacker != null && !target.isDead()) {
@@ -268,7 +268,7 @@ public final class DamageService implements DamageApi, Listener {
             if (rounded > 0 && attacker instanceof Player player) target.setKiller(player);
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
-            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage);
+            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage, trigger.existing(), trigger.incoming());
             if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
             if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
                     trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());

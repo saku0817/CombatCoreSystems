@@ -53,18 +53,26 @@ public final class GuiService implements Listener {
         ConfigurationSection entries = config.getConfigurationSection("main-menu.entries");
         if (entries != null) for (String id : entries.getKeys(false)) {
             ConfigurationSection entry = entries.getConfigurationSection(id);
-            if (entry != null) inventory.setItem(entry.getInt("slot"), item(entry.getString("icon", "STONE"), entry.getString("name", id), List.of()));
+            if (entry != null) {
+                ItemStack icon = item(entry.getString("icon", "STONE"), entry.getString("name", id), List.of());
+                if (entry.contains("enchantment-glint")) {
+                    ItemMeta meta = icon.getItemMeta(); meta.setEnchantmentGlintOverride(entry.getBoolean("enchantment-glint")); icon.setItemMeta(meta);
+                }
+                inventory.setItem(entry.getInt("slot"), icon);
+            }
         }
         player.openInventory(inventory);
     }
 
     public void openStats(Player player) {
         PlayerData data = players.require(player); PlayerStats value = stats.get(player, data);
-        Inventory inv = inventory(player, Screen.STATS, "<aqua>ステータス</aqua>", 54, "", 0, "");
-        inv.setItem(10, item("PLAYER_HEAD", "<yellow>Lv." + data.getLevel() + "</yellow>", List.of(
+        Inventory inv = inventory(player, Screen.STATS, gui("stats.title", "<dark_aqua>✦ ステータス ✦</dark_aqua>"), 54, "", 0, "");
+        for (int border : new int[]{0,1,2,3,5,6,7,8,9,17,18,26,27,35,36,44,45,46,47,48,49,50,51,52})
+            inv.setItem(border, item(gui("stats.border-material", "GRAY_STAINED_GLASS_PANE"), " ", List.of()));
+        inv.setItem(4, item("PLAYER_HEAD", "<yellow>" + player.getName() + " · Lv." + data.getLevel() + "</yellow>", List.of(
                 "<gray>EXP: " + data.getExp() + " / " + (data.getLevel() >= 100 ? 0 : levels.requiredExp(data.getLevel())) + "</gray>",
                 "<gray>新生回帰: " + data.getRebirthCount() + "</gray>", "<gray>スキルポイント: " + data.getSkillPoints() + "</gray>")));
-        inv.setItem(12, item("REDSTONE", "<red>HP " + round(value.maxHp()) + "</red>", List.of()));
+        inv.setItem(20, item("REDSTONE", gui("stats.health-name", "<red>♥ 体力</red>"), List.of("<white>" + round(data.getHealth()) + " <gray>/</gray> " + round(value.maxHp()) + "</white>")));
         List<String> attackLore = new ArrayList<>();
         for (int i : new int[]{player.getInventory().getHeldItemSlot(), 40}) {
             ItemInstance instance = items.instance(player.getInventory().getItem(i)).orElse(null);
@@ -73,10 +81,10 @@ public final class GuiService implements Listener {
             attackLore.add("<gray>" + weapon.name() + " 武器Lv." + instance.getLevel() + "：+" + round(weapon.attackFor(data.getLevel(), instance.getLevel())) + "</gray>");
             if (!weapon.canEquip(data.getLevel())) attackLore.add("<red>必要プレイヤーLv." + weapon.minimumEquipLevel() + "～" + weapon.maximumEquipLevel() + "（現在は無効）</red>");
         }
-        inv.setItem(13, item("IRON_SWORD", "<white>攻撃力 " + round(value.atk()) + "</white>", attackLore));
-        inv.setItem(14, item("SHIELD", "<gray>DEF " + round(value.def()) + "</gray>", List.of()));
-        inv.setItem(20, item("AMETHYST_SHARD", "<light_purple>会心</light_purple>", List.of("<gray>率: " + percent(value.value(StatKey.CRIT_RATE)), "<gray>ダメージ: " + percent(value.value(StatKey.CRIT_DAMAGE)))));
-        int slot = 28;
+        inv.setItem(22, item("IRON_SWORD", gui("stats.attack-name", "<gold>⚔ 攻撃力</gold>") + " <white>" + round(value.atk()) + "</white>", attackLore));
+        inv.setItem(24, item("SHIELD", gui("stats.defense-name", "<aqua>◆ 防御力</aqua>") + " <white>" + round(value.def()) + "</white>", List.of()));
+        inv.setItem(31, item("AMETHYST_SHARD", gui("stats.critical-name", "<light_purple>✧ 会心</light_purple>"), List.of("<gray>率: " + percent(value.value(StatKey.CRIT_RATE)), "<gray>ダメージ: " + percent(value.value(StatKey.CRIT_DAMAGE)))));
+        int slot = 38;
         for (Element element : List.of(Element.FIRE, Element.WATER, Element.WIND, Element.THUNDER, Element.MOON)) {
             inv.setItem(slot++, item("PRISMARINE_SHARD", "<white>" + element.japaneseName() + "</white>", List.of(
                     "<gray>ダメージ: " + percent(value.elementDamage(element)), "<gray>耐性: " + percent(value.resistance(element)))));
@@ -380,7 +388,7 @@ public final class GuiService implements Listener {
                 if (query.isBlank() || (known && value.name().toLowerCase(Locale.ROOT).contains(query.toLowerCase(Locale.ROOT))))
                     entries.add(new Entry(value.id(), known ? value.name() : "？？？", known ? value.entityType() : "BARRIER", known ? List.of("<gray>ID: " + value.id() + "</gray>", "<gray>Lv." + value.minLevel() + "-" + value.maxLevel() + "</gray>") : List.of()));
             });
-        } else if (category.equals("weapons")) definitions.snapshot().weapons().values().forEach(value -> entries.add(new Entry(value.id(), value.name(), value.material(), List.of("<gray>★" + value.rarity() + "</gray>"))));
+        } else if (category.equals("weapons")) definitions.snapshot().weapons().values().forEach(value -> entries.add(new Entry(value.id(), value.name(), value.material(), List.of(items.rarityLine(value.rarity())))));
         else if (category.equals("equipment")) definitions.snapshot().equipment().values().forEach(value -> entries.add(new Entry(value.id(), value.name(), value.material(), List.of("<gray>★" + value.rarity() + " " + items.displayName(value.slot().name()) + "</gray>"))));
         else if (category.equals("materials")) {
             ConfigurationSection root = definitions.snapshot().config("levels.yml").getConfigurationSection("materials");
@@ -393,6 +401,10 @@ public final class GuiService implements Listener {
         int start = Math.max(0, page) * 45;
         for (int i = start; i < Math.min(start + 45, entries.size()); i++) {
             Entry entry = entries.get(i); inv.setItem(i - start, item(entry.material, entry.name, entry.lore));
+            if (category.equals("weapons")) {
+                ItemStack weaponIcon = inv.getItem(i - start);
+                ItemMeta meta = weaponIcon.getItemMeta(); meta.setEnchantmentGlintOverride(items.glint(entry.id)); weaponIcon.setItemMeta(meta);
+            }
             if (!entry.name.equals("？？？")) ((Holder) inv.getHolder()).actions.put(i - start, entry.id);
         }
     }
@@ -400,7 +412,15 @@ public final class GuiService implements Listener {
     private void openEncyclopediaDetail(Player player, Holder parent, String id) {
         Inventory inv = inventory(player, Screen.ENCYCLOPEDIA_DETAIL, gui("encyclopedia.detail-title", "<aqua>図鑑・詳細</aqua>"), 54, parent.context, parent.page, parent.query);
         ItemStack icon = items.create(id, 1).orElse(null);
-        if (icon != null) inv.setItem(13, icon);
+        WeaponDefinition weapon = definitions.snapshot().weapons().get(id);
+        if (weapon != null) {
+            inv.setItem(4, item(weapon.material(), weapon.name(), List.of(items.rarityLine(weapon.rarity()))));
+            var talent = weapon.options().talent();
+            inv.setItem(20, item("NETHER_STAR", gui("encyclopedia.talent", "<green>天賦</green>") + " — " + (talent == null ? gui("encyclopedia.undefined", "未設定") : talent.name()), talent == null ? List.of() : talent.description()));
+            inv.setItem(22, abilityIcon(weapon.skill(), "skill", "スキル"));
+            inv.setItem(24, abilityIcon(weapon.ultimate(), "ultimate", "必殺技"));
+            inv.setItem(40, item("WRITABLE_BOOK", gui("encyclopedia.description", "<gold>武器の説明</gold>"), weapon.lore()));
+        } else if (icon != null) inv.setItem(13, icon);
         else {
             MobDefinition mob = definitions.snapshot().bosses().get(id);
             if (mob == null) mob = definitions.snapshot().mobs().get(id);
@@ -602,7 +622,31 @@ public final class GuiService implements Listener {
     private long physicalCount(Player player, String id) { long count = 0; for (ItemStack stack : player.getInventory().getContents()) if (id.equals(items.id(stack).orElse(""))) count += stack.getAmount(); return count; }
     private ItemStack item(String materialName, String name, List<String> lore) {
         Material material = Material.matchMaterial(materialName); ItemStack item = new ItemStack(material == null ? Material.BARRIER : material); ItemMeta meta = item.getItemMeta();
+        meta.setEnchantmentGlintOverride(definitions.snapshot().config("gui.yml").getBoolean("enchantment-glint", false));
+        meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES, org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
         meta.itemName(mini.deserialize(name)); meta.lore(lore.stream().map(mini::deserialize).toList()); item.setItemMeta(meta); return item;
+    }
+
+    private ItemStack abilityIcon(WeaponDefinition.SkillDefinition ability, String key, String label) {
+        return item("ENCHANTED_BOOK", gui("encyclopedia." + key, "<aqua>" + label + "</aqua>") + " — "
+                + (ability == null ? gui("encyclopedia.undefined", "未設定") : ability.name()),
+                ability == null ? List.of() : items.abilityDescription(ability));
+    }
+
+    @EventHandler
+    public void onOpen(org.bukkit.event.inventory.InventoryOpenEvent event) {
+        if (!(event.getInventory().getHolder() instanceof Holder holder)) return;
+        for (int slot = 0; slot < event.getInventory().getSize(); slot++) {
+            ItemStack stack = event.getInventory().getItem(slot);
+            if (stack == null || !(stack.getItemMeta() instanceof org.bukkit.inventory.meta.SkullMeta meta)) continue;
+            UUID owner = event.getPlayer().getUniqueId();
+            if (holder.screen == Screen.PARTY || holder.screen == Screen.PARTY_ACTION) {
+                String member = holder.actions.get(slot);
+                if (member != null) try { owner = UUID.fromString(member); } catch (IllegalArgumentException ignored) { }
+            }
+            meta.setOwningPlayer(Bukkit.getOfflinePlayer(owner));
+            stack.setItemMeta(meta);
+        }
     }
     private Map<EquipmentSlot, Integer> equipmentSlots() { return Map.of(EquipmentSlot.HEAD, 19, EquipmentSlot.CHEST, 21, EquipmentSlot.LEGS, 23, EquipmentSlot.FEET, 25, EquipmentSlot.RESONANCE, 30, EquipmentSlot.DIVINE_HEART, 32); }
     private long round(double value) { return Math.round(value); } private String percent(double value) { return String.format(Locale.ROOT, "%.1f%%", value * 100); } private String onOff(boolean value) { return value ? "ON" : "OFF"; }

@@ -1,4 +1,5 @@
 data-version: 1
+# 各神の心内に enchantment-glint: true / false を指定できます（省略時false）。
 # 以下は divine-hearts: {} を置き換える例です。神の心はレベル・限界突破を持ちません。
 # divine-hearts:
 #   divine-heart-flame:

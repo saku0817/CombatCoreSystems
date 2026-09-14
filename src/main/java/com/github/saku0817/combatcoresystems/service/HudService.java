@@ -62,8 +62,8 @@ public final class HudService {
         if (config.getBoolean("hud.target-bossbar-enabled", true)) {
             var hit = player.getWorld().rayTraceEntities(player.getEyeLocation(), player.getEyeLocation().getDirection(),
                     Math.max(1, config.getDouble("hud.target-range", 24)), 0.25,
-                    entity -> entity instanceof org.bukkit.entity.Mob && !entity.isDead() && player.hasLineOfSight(entity));
-            if (hit != null && hit.getHitEntity() instanceof org.bukkit.entity.LivingEntity living) target = living;
+                    entity -> entity instanceof org.bukkit.entity.Mob && !entity.isDead());
+            if (hit != null && hit.getHitEntity() instanceof org.bukkit.entity.LivingEntity living && player.hasLineOfSight(living)) target = living;
         }
         if (target == null) {
             var previous = targetBars.remove(player.getUniqueId());
@@ -88,7 +88,11 @@ public final class HudService {
         List<String> templates = definitions.snapshot().config("gui.yml").getStringList("hud.sidebar-lines");
         List<Component> rendered = templates.stream().map(line -> mini.deserialize(replace(line, player, data, value))).toList();
         Component title = mini.deserialize(replace(definitions.snapshot().config("gui.yml").getString("hud.sidebar-title", "<gold>CCS</gold>"), player, data, value));
-        Board board = boards.computeIfAbsent(player.getUniqueId(), ignored -> createBoard(player, title, rendered.size()));
+        Board board = boards.get(player.getUniqueId());
+        if (board == null || board.lines.size() != rendered.size()) {
+            board = createBoard(player, title, rendered.size());
+            boards.put(player.getUniqueId(), board);
+        }
         if (!board.title.equals(title)) { board.objective.displayName(title); board.title = title; }
         for (int i = 0; i < rendered.size(); i++) if (!rendered.get(i).equals(board.lines.get(i))) {
             board.teams.get(i).prefix(rendered.get(i)); board.lines.set(i, rendered.get(i));
@@ -114,8 +118,6 @@ public final class HudService {
         long combatRemaining = combat.remainingMillis(player.getUniqueId());
         Map<Element, Long> attached = elements.remaining(player.getUniqueId());
         SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
-        boolean stacked = skill.maximumCharges() > 1 || ultimate.maximumCharges() > 1;
-        if (combatRemaining <= 0 && attached.isEmpty() && !stacked) return;
         StringBuilder text = new StringBuilder();
         if (combatRemaining > 0) {
             String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0);
@@ -123,7 +125,7 @@ public final class HudService {
             text.append(template.replace("<combat_remaining>", remaining)
                     .replace("<skill_status>", abilityStatus(skill))
                     .replace("<ultimate_status>", abilityStatus(ultimate)));
-        } else if (stacked) {
+        } else {
             text.append(definitions.snapshot().config("gui.yml").getString("hud.ability-actionbar", "<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>")
                     .replace("<skill_status>", abilityStatus(skill)).replace("<ultimate_status>", abilityStatus(ultimate)));
         }

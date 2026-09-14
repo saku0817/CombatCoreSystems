@@ -60,13 +60,29 @@ public final class SkillService implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onInventoryDrop(org.bukkit.event.inventory.InventoryClickEvent event) {
-        if (event.getAction().name().startsWith("DROP_")) markInventoryDrop(event.getWhoClicked().getUniqueId());
+        if (event.getAction().name().startsWith("DROP_")) {
+            markInventoryDrop(event.getWhoClicked().getUniqueId());
+            if (definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false))
+                plugin.getLogger().info("[skill-input] " + event.getWhoClicked().getName() + " inventory=" + event.getAction() + " slot=" + event.getSlot());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void traceDrop(org.bukkit.event.player.PlayerDropItemEvent event) {
+        if (!definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false)) return;
+        Player player = event.getPlayer();
+        plugin.getLogger().info("[skill-input] " + player.getName() + " drop cancelled=" + event.isCancelled()
+                + " inventoryDrop=" + inventoryDrops.containsKey(player.getUniqueId()) + " view=" + player.getOpenInventory().getType()
+                + " permission=" + player.hasPermission("combatcoresystems.command.skill")
+                + " weapon=" + items.id(event.getItemDrop().getItemStack()).orElse("none"));
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onInventoryClose(org.bukkit.event.inventory.InventoryCloseEvent event) {
-        // A cursor item may be dropped as the inventory closes.
-        markInventoryDrop(event.getPlayer().getUniqueId());
+        // Only a real cursor item can become a close-time inventory drop.
+        // Geyser may close a view immediately before a normal hand-drop packet.
+        var cursor = event.getPlayer().getItemOnCursor();
+        if (!cursor.getType().isAir()) markInventoryDrop(event.getPlayer().getUniqueId());
     }
 
     private void markInventoryDrop(UUID id) {
@@ -89,9 +105,14 @@ public final class SkillService implements Listener {
         event.setCancelled(true);
         // Cancellation restores the removed item after dispatch; never cast using an empty hand.
         org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline() || player.getInventory().getHeldItemSlot() != slot) return;
+            if (!player.isOnline()) return;
+            if (player.getInventory().getHeldItemSlot() != slot) {
+                fail(player, "hand-changed", "ドロップ操作中に持ち替えたため、スキルを中止しました。");
+                return;
+            }
             ItemInstance restored = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
             if (restored != null && restored.getInstanceId().equals(dropped.getInstanceId())) activate(player, false);
+            else fail(player, "hand-restore", "武器の手持ち復元を確認できませんでした。持ち直してから再試行してください。");
         });
     }
 
@@ -167,6 +188,9 @@ public final class SkillService implements Listener {
             return true;
         }
         combat.touch(player, weaponId);
+        String announcement = definitions.snapshot().config("messages.yml").getString(
+                "ability-announcement." + (ultimate ? "ultimate" : "skill"), "<aqua>発動：<name></aqua>");
+        if (!announcement.isBlank()) player.sendMessage(mini.deserialize(announcement.replace("<name>", ability.name())));
         if (ability.options().currentHpCost() > 0 && levels != null)
             levels.setVirtualHealth(player, data, data.getHealth() * (1 - ability.options().currentHpCost()));
         if (buffs != null) for (String id : ability.options().selfEffects()) buffs.apply(player, id, player.getUniqueId());
@@ -200,7 +224,9 @@ public final class SkillService implements Listener {
     }
 
     private boolean fail(Player player, String key, String fallback) {
-        player.sendActionBar(mini.deserialize(definitions.snapshot().config("messages.yml").getString("skill-failure." + key, "<red>" + fallback + "</red>")));
+        var message = mini.deserialize(definitions.snapshot().config("messages.yml").getString("skill-failure." + key, "<red>" + fallback + "</red>"));
+        player.sendActionBar(message);
+        if (definitions.snapshot().config("config.yml").getBoolean("controls.failure-chat", true)) player.sendMessage(message);
         return false;
     }
 

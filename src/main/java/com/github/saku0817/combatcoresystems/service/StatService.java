@@ -26,6 +26,7 @@ public final class StatService implements Listener {
     private final ItemService items;
     private final NamespacedKey itemIdKey;
     private final Map<UUID, PlayerStats> cache = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<String>> activeTalents = new HashMap<>();
 
     public StatService(JavaPlugin plugin, DefinitionRegistry definitions, CombatStateService combat, ItemService items) {
         this.plugin = plugin;
@@ -49,6 +50,11 @@ public final class StatService implements Listener {
 
     public void invalidate(UUID uuid) { cache.remove(uuid); }
 
+    @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        cache.remove(event.getPlayer().getUniqueId());
+        activeTalents.remove(event.getPlayer().getUniqueId());
+    }
+
     @EventHandler public void onHeldItem(PlayerItemHeldEvent event) {
         plugin.getServer().getScheduler().runTask(plugin, () -> invalidate(event.getPlayer().getUniqueId()));
     }
@@ -70,6 +76,8 @@ public final class StatService implements Listener {
 
         EnumMap<StatKey, Double> modifiers = defaults();
         double weaponAtk = vanillaWeaponAttack(player, levels);
+        Set<String> currentTalents = new HashSet<>();
+        Set<String> previousTalents = activeTalents.getOrDefault(player.getUniqueId(), Set.of());
         for (boolean mainHand : new boolean[]{true, false}) {
             ItemInstance instance = items.instance(mainHand ? player.getInventory().getItemInMainHand() : player.getInventory().getItemInOffHand()).orElse(null);
             WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
@@ -82,8 +90,15 @@ public final class StatService implements Listener {
                     || mainHand && talent.hand() == WeaponOptions.Hand.MAIN_HAND
                     || !mainHand && talent.hand() == WeaponOptions.Hand.OFF_HAND)) {
                 talent.modifiers().forEach((key, value) -> add(modifiers, key, value * talent.multiplier()));
+                String activation = instance.getInstanceId() + ":" + mainHand;
+                currentTalents.add(activation);
+                if (!previousTalents.contains(activation)) {
+                    String message = definitions.snapshot().config("messages.yml").getString("ability-announcement.talent", "<green>天賦発動：<name></green>");
+                    if (!message.isBlank()) player.sendMessage(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(message.replace("<name>", talent.name())));
+                }
             }
         }
+        activeTalents.put(player.getUniqueId(), currentTalents);
         for (Map.Entry<EquipmentSlot, ItemInstance> equipped : data.getEquipment().entrySet()) {
             ItemInstance item = equipped.getValue();
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
@@ -134,7 +149,10 @@ public final class StatService implements Listener {
             }
         }
         double factor = (1 + scalar) * product;
-        if (factor > 0 && Double.isFinite(factor)) attribute.setBaseValue(CoreMath.nativeAttackBase(finalAttack, add, scalar, product));
+        if (factor > 0 && Double.isFinite(factor)) {
+            double base = CoreMath.nativeAttackBase(finalAttack, add, scalar, product);
+            if (Double.compare(attribute.getBaseValue(), base) != 0) attribute.setBaseValue(base);
+        }
     }
 
     private EnumMap<StatKey, Double> defaults() {

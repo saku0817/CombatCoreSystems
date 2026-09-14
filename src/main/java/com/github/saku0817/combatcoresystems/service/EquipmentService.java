@@ -35,6 +35,7 @@ public final class EquipmentService implements Listener {
     private final ItemService items;
     private LevelService levels;
     private final Map<UUID, Double> synchronizedMaximum = new HashMap<>();
+    private final Set<UUID> pendingAudits = new HashSet<>();
     public void bindLevels(LevelService levels) { this.levels = levels; }
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final Map<UUID, EnumMap<com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category, String>> lastUsed = new HashMap<>();
@@ -195,7 +196,10 @@ public final class EquipmentService implements Listener {
         stats.invalidate(player.getUniqueId());
     }
 
-    private void auditLater(Player player) { Bukkit.getScheduler().runTask(plugin, () -> {
+    private void auditLater(Player player) {
+        if (!pendingAudits.add(player.getUniqueId())) return;
+        Bukkit.getScheduler().runTask(plugin, () -> {
+        pendingAudits.remove(player.getUniqueId());
         if (!player.isOnline() || player.isDead()) return;
         syncArmor(player);
         if (levels != null) players.find(player.getUniqueId()).ifPresent(data -> {

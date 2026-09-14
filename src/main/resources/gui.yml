@@ -1,4 +1,13 @@
 data-version: 1
+# GUI用アイコン全体のエンチャント光。実物のCCSアイテムは各定義を参照します。
+enchantment-glint: false
+stats:
+  title: "<dark_aqua>✦ ステータス ✦</dark_aqua>"
+  border-material: GRAY_STAINED_GLASS_PANE
+  health-name: "<red>♥ 体力</red>"
+  attack-name: "<gold>⚔ 攻撃力</gold>"
+  defense-name: "<aqua>◆ 防御力</aqua>"
+  critical-name: "<light_purple>✧ 会心</light_purple>"
 # GUI表示例: name: "<aqua>表示名</aqua>"。MiniMessage形式を使用できます。
 main-menu:
   title: "<dark_gray>CombatCoreSystems</dark_gray>"
