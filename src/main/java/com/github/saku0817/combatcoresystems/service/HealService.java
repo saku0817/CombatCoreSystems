@@ -16,9 +16,10 @@ public final class HealService {
     private final StatService stats;
     private final DamageDisplayService displays;
     private final LevelService levels;
+    private final MobService mobs;
 
-    public HealService(PlayerDataService players, StatService stats, DamageDisplayService displays, LevelService levels) {
-        this.players = players; this.stats = stats; this.displays = displays; this.levels = levels;
+    public HealService(PlayerDataService players, StatService stats, DamageDisplayService displays, LevelService levels, MobService mobs) {
+        this.players = players; this.stats = stats; this.displays = displays; this.levels = levels; this.mobs = mobs;
     }
 
     public long heal(LivingEntity source, LivingEntity target, ReferenceStat reference, double multiplier, boolean small) {
@@ -29,8 +30,7 @@ public final class HealService {
         if (target instanceof Player player) {
             PlayerData data = players.require(player); levels.setVirtualHealth(player, data, data.getHealth() + amount);
         } else {
-            double max = target.getAttribute(Attribute.MAX_HEALTH) == null ? target.getHealth() : target.getAttribute(Attribute.MAX_HEALTH).getValue();
-            target.setHealth(Math.min(max, target.getHealth() + amount));
+            mobs.setHealth(target, mobs.health(target) + amount);
         }
         displays.heal(source == null ? target.getUniqueId() : source.getUniqueId(), target, amount, small);
         return amount;
@@ -41,6 +41,7 @@ public final class HealService {
             PlayerStats value = stats.get(player, players.require(player));
             return switch (stat) { case HP -> value.maxHp(); case ATK -> value.atk(); case DEF -> value.def(); };
         }
+        if (stat == ReferenceStat.HP) return mobs.maxHealth(source);
         Attribute attribute = switch (stat) { case HP -> Attribute.MAX_HEALTH; case ATK -> Attribute.ATTACK_DAMAGE; case DEF -> Attribute.ARMOR; };
         return source.getAttribute(attribute) == null ? 0 : source.getAttribute(attribute).getValue();
     }

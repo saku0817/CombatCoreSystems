@@ -25,6 +25,8 @@ public final class CombatCoreSystems extends JavaPlugin {
     private PlayerDataService players;
     private PartyService parties;
     private CombatCoreApi api;
+    private AdminWebService web;
+    private DebugService debug;
 
     @Override public void onEnable() {
         definitions = new DefinitionRegistry(this);
@@ -49,7 +51,7 @@ public final class CombatCoreSystems extends JavaPlugin {
         DamageDisplayService displays = new DamageDisplayService(this, definitions);
         DamageService damage = new DamageService(this, definitions, players, stats, combat, elements, mobs, parties, displays, regions, levels);
         MobAbilityService mobAbilities = new MobAbilityService(this, definitions, mobs, damage, items);
-        HealService healing = new HealService(players, stats, displays, levels);
+        HealService healing = new HealService(players, stats, displays, levels, mobs);
         BuffService buffs = new BuffService(this, definitions, players, stats, damage, healing);
         EquipmentService equipment = new EquipmentService(this, definitions, players, stats, combat, items);
         equipment.bindLevels(levels);
@@ -60,10 +62,12 @@ public final class CombatCoreSystems extends JavaPlugin {
         EnhancementService enhancement = new EnhancementService(definitions, players, stats, items);
         EncyclopediaService encyclopedia = new EncyclopediaService(players, mobs, definitions);
         SpawnService spawns = new SpawnService(this, definitions, mobs, combat);
-        DebugService debug = new DebugService(this);
-        HudService hud = new HudService(this, definitions, players, stats, levels, combat, elements, skills);
+        debug = new DebugService(this);
+        skills.bindDebug(debug);
+        HudService hud = new HudService(this, definitions, players, stats, levels, combat, elements, skills, mobs);
         GuiService gui = new GuiService(this, definitions, players, stats, levels, combat, equipment, skillTrees, parties, enhancement, items);
         BackupService backups = new BackupService(this, definitions, storage, players, parties, stats, levels, elements);
+        web = new AdminWebService(this, definitions);
 
         registerListeners(List.of(regions, mobs, stats, damage, equipment, skills, encyclopedia, gui, mobAbilities, debug,
                 new PlayerLifecycleListener(this, players, levels, combat, elements, buffs, equipment, hud, mobs)));
@@ -80,12 +84,14 @@ public final class CombatCoreSystems extends JavaPlugin {
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(this, definitions, players, stats, levels, combat, elements, skills, parties, items).register();
         if (Bukkit.getPluginManager().getPlugin("floodgate") != null) getLogger().info("Floodgate detected; Bedrock players use the common CCS controls and GUI flow.");
 
-        combat.start(); mobs.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule();
+        combat.start(); mobs.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule(); web.start();
         Bukkit.getOnlinePlayers().forEach(player -> players.load(player, data -> { elements.resumePlayer(data); equipment.syncArmor(player); levels.restore(player, data); }));
         getLogger().info("CombatCoreSystems v" + getPluginMeta().getVersion() + " enabled with " + storage.backend() + " storage.");
     }
 
     @Override public void onDisable() {
+        if (web != null) web.stop();
+        if (debug != null) debug.close();
         if (storage == null) return;
         try {
             var playerSave = players == null ? java.util.concurrent.CompletableFuture.completedFuture(null) : players.saveAll();

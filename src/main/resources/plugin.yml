@@ -8,6 +8,7 @@ authors:
 - s3_q3x
 softdepend:
 - PlaceholderAPI
+- floodgate
 commands:
   ccs:
     description: CombatCoreSystemsの一般コマンドです。

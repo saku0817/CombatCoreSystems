@@ -85,7 +85,6 @@ public final class EquipmentService implements Listener {
     }
 
     public void syncArmor(Player player) {
-        for (ItemStack stack : player.getInventory().getContents()) items.instance(stack).ifPresent(instance -> items.writeInstance(stack, instance));
         players.find(player.getUniqueId()).ifPresent(data -> {
             data.getEquipment().remove(EquipmentSlot.MELEE_WEAPON);
             data.getEquipment().remove(EquipmentSlot.RANGED_WEAPON);
@@ -110,6 +109,16 @@ public final class EquipmentService implements Listener {
                 if (actual == null) data.getEquipment().remove(accessory);
                 else data.getEquipment().put(accessory, actual);
             }
+            Map<String, Integer> setCounts = new HashMap<>();
+            for (EquipmentSlot armor : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
+                ItemInstance equipped = data.getEquipment().get(armor);
+                EquipmentDefinition definition = equipped == null ? null : definitions.snapshot().equipment().get(equipped.getDefinitionId());
+                if (definition != null && !definition.setId().isBlank()) setCounts.merge(definition.setId(), 1, Integer::sum);
+            }
+            for (ItemStack stack : player.getInventory().getContents()) items.instance(stack).ifPresent(instance -> {
+                EquipmentDefinition definition = definitions.snapshot().equipment().get(instance.getDefinitionId());
+                items.writeInstance(stack, instance, definition == null ? 0 : setCounts.getOrDefault(definition.setId(), 0));
+            });
             stats.invalidate(player.getUniqueId());
         });
         auditWeapons(player);

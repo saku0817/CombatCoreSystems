@@ -23,14 +23,16 @@ public final class HudService {
     private final CombatStateService combat;
     private final ElementService elements;
     private final SkillService skills;
+    private final MobService mobs;
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final Map<UUID, Board> boards = new HashMap<>();
     private final Map<UUID, net.kyori.adventure.bossbar.BossBar> targetBars = new HashMap<>();
+    private final Map<UUID, Map<Boolean, SkillService.Status>> readyStates = new HashMap<>();
 
     public HudService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
-                      LevelService levels, CombatStateService combat, ElementService elements, SkillService skills) {
+                      LevelService levels, CombatStateService combat, ElementService elements, SkillService skills, MobService mobs) {
         this.plugin = plugin; this.definitions = definitions; this.players = players; this.stats = stats; this.levels = levels;
-        this.combat = combat; this.elements = elements; this.skills = skills;
+        this.combat = combat; this.elements = elements; this.skills = skills; this.mobs = mobs;
     }
 
     public void start() {
@@ -39,6 +41,11 @@ public final class HudService {
     }
 
     public void remove(Player player) {
+        readyStates.remove(player.getUniqueId());
+        removeDisplays(player);
+    }
+
+    private void removeDisplays(Player player) {
         var bar = targetBars.remove(player.getUniqueId());
         if (bar != null) player.hideBossBar(bar);
         Board board = boards.remove(player.getUniqueId());
@@ -50,10 +57,13 @@ public final class HudService {
     }
 
     private void update(Player player, PlayerData data) {
-        if (!data.isHudEnabled()) { remove(player); return; }
+        SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
+        notifyReady(player, false, skill);
+        notifyReady(player, true, ultimate);
+        if (!data.isHudEnabled()) { removeDisplays(player); return; }
         updateTarget(player);
         if (definitions.snapshot().config("config.yml").getBoolean("hud.sidebar-enabled", true)) updateSidebar(player, data);
-        if (definitions.snapshot().config("config.yml").getBoolean("hud.actionbar-enabled", true)) updateActionBar(player);
+        if (definitions.snapshot().config("config.yml").getBoolean("hud.actionbar-enabled", true)) updateActionBar(player, skill, ultimate);
     }
 
     private void updateTarget(Player player) {
@@ -70,17 +80,16 @@ public final class HudService {
             if (previous != null) player.hideBossBar(previous);
             return;
         }
-        var health = target.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-        double maximum = health == null ? target.getHealth() : health.getValue();
+        double maximum = mobs.maxHealth(target), current = mobs.health(target);
         Component name = target.customName() == null ? Component.text(target.getName()) : target.customName();
         String template = definitions.snapshot().config("gui.yml").getString("hud.target-health", "<hp> / <max_hp>");
-        Component title = name.append(Component.text(" ")).append(mini.deserialize(template.replace("<hp>", Long.toString(Math.round(target.getHealth()))).replace("<max_hp>", Long.toString(Math.round(maximum)))));
+        Component title = name.append(Component.text(" ")).append(mini.deserialize(template.replace("<hp>", Long.toString(Math.round(current))).replace("<max_hp>", Long.toString(Math.round(maximum)))));
         var bar = targetBars.get(player.getUniqueId());
         if (bar == null) {
             bar = net.kyori.adventure.bossbar.BossBar.bossBar(title, 1, net.kyori.adventure.bossbar.BossBar.Color.RED, net.kyori.adventure.bossbar.BossBar.Overlay.PROGRESS);
             targetBars.put(player.getUniqueId(), bar); player.showBossBar(bar);
         }
-        bar.name(title).progress((float) Math.max(0, Math.min(1, target.getHealth() / Math.max(1, maximum))));
+        bar.name(title).progress((float) Math.max(0, Math.min(1, current / Math.max(1, maximum))));
     }
 
     private void updateSidebar(Player player, PlayerData data) {
@@ -114,10 +123,9 @@ public final class HudService {
         return new Board(scoreboard, objective, teams, lines, title);
     }
 
-    private void updateActionBar(Player player) {
+    private void updateActionBar(Player player, SkillService.Status skill, SkillService.Status ultimate) {
         long combatRemaining = combat.remainingMillis(player.getUniqueId());
         Map<Element, Long> attached = elements.remaining(player.getUniqueId());
-        SkillService.Status skill = skills.status(player.getUniqueId(), false), ultimate = skills.status(player.getUniqueId(), true);
         StringBuilder text = new StringBuilder();
         if (combatRemaining > 0) {
             String remaining = combat.isForced(player.getUniqueId()) ? "∞" : format(combatRemaining / 1000.0);
@@ -145,6 +153,22 @@ public final class HudService {
                 : config.getString("hud.ability-cooldown", "あと<seconds>秒").replace("<seconds>", format(status.remainingSeconds()));
         return status.maximumCharges() > 1 ? config.getString("hud.ability-stacks", "<remaining>/<maximum> <status>")
                 .replace("<remaining>", Integer.toString(status.charges())).replace("<maximum>", Integer.toString(status.maximumCharges())).replace("<status>", text) : text;
+    }
+
+    private void notifyReady(Player player, boolean ultimate, SkillService.Status status) {
+        boolean ready = status.maximumCharges() > 0 && status.ready();
+        Map<Boolean, SkillService.Status> previous = readyStates.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>());
+        SkillService.Status old = previous.put(ultimate, status);
+        if (old == null || !old.abilityKey().equals(status.abilityKey()) || old.ready() || !ready) return;
+        var config = definitions.snapshot().config("config.yml");
+        String root = "hud.ready-sound." + (ultimate ? "ultimate" : "skill");
+        if (!config.getBoolean(root + ".enabled", true)) return;
+        try {
+            player.playSound(player.getLocation(), config.getString(root + ".sound", ultimate ? "minecraft:block.amethyst_block.chime" : "minecraft:block.note_block.pling"),
+                    org.bukkit.SoundCategory.PLAYERS, (float) config.getDouble(root + ".volume", 0.8), (float) config.getDouble(root + ".pitch", ultimate ? 0.8 : 1.2));
+        } catch (IllegalArgumentException ex) {
+            plugin.getLogger().warning("Invalid ability ready sound: " + config.getString(root + ".sound"));
+        }
     }
 
     private String replace(String input, Player player, PlayerData data, PlayerStats value) {

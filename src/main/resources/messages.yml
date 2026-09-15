@@ -10,6 +10,24 @@ material-tooltip:
     PLAYER: プレイヤー
     WEAPON: 武器
     EQUIPMENT: 装備
+equipment-tooltip:
+  slot: '<white>装備部位：<u><slot></u></white>'
+  level: '<white>Lv.<yellow><level></yellow> / <yellow><max_level></yellow></white>'
+  main-stat: '<yellow>➽ <stat> +<value></yellow>'
+  substat-open: '<white>・<stat> <yellow>+<value></yellow> <aqua>[+<upgrades>]</aqua></white>'
+  substat-locked: '<gray>・<stat> +<value> [未開放]</gray>'
+  set-title: '<yellow><u>「<set>」</u></yellow> <white>シリーズ</white>'
+  set-active: '<green>・<pieces>セット <description> [発動中]</green>'
+  set-inactive: '<gray>・<pieces>セット <description> [未発動]</gray>'
+  slots:
+    HEAD: ヘルメット
+    CHEST: チェストプレート
+    LEGS: レギンス
+    FEET: ブーツ
+    RESONANCE: 残響
+divine-heart-tooltip:
+  slot: '<white>装備部位：<u>神心</u></white>'
+  talent-title: '<yellow>➽ <talent_color><u><b>「<name>」</b></u></talent_color></yellow>'
 # v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
 weapon-tooltip:
   # description未指定の既存武器に表示する要約です。

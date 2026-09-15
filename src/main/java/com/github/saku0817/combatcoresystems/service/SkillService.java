@@ -30,6 +30,8 @@ public final class SkillService implements Listener {
     private final JavaPlugin plugin;
     private BuffService buffs;
     private LevelService levels;
+    private DebugService debug;
+    public void bindDebug(DebugService debug) { this.debug = debug; }
     private final Map<UUID, Integer> inventoryDrops = new HashMap<>();
     private final Map<UUID, Map<String, AbilityState>> cooldowns = new ConcurrentHashMap<>();
     private final Map<UUID, Map<Boolean, Integer>> inputTicks = new HashMap<>();
@@ -58,23 +60,70 @@ public final class SkillService implements Listener {
         if (input(event.getPlayer(), target, true)) event.setCancelled(true);
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onInventoryDrop(org.bukkit.event.inventory.InventoryClickEvent event) {
         if (event.getAction().name().startsWith("DROP_")) {
+            if (event.getWhoClicked() instanceof Player player && isBedrock(player)
+                    && definitions.snapshot().config("config.yml").getBoolean("controls.drop-skill", true)
+                    && definitions.snapshot().config("config.yml").getBoolean("controls.bedrock-selected-slot-drop-skill", true)
+                    && !event.isCancelled()
+                    && event.getClickedInventory() == player.getInventory() && event.getSlot() == player.getInventory().getHeldItemSlot()) {
+                WeaponDefinition weapon = definitions.snapshot().weapons().get(items.id(event.getCurrentItem()).orElse(""));
+                if (weapon != null && weapon.skill() != null && player.hasPermission("combatcoresystems.command.skill")) {
+                    event.setCancelled(true);
+                    int selected = player.getInventory().getHeldItemSlot();
+                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (player.isOnline() && player.getInventory().getHeldItemSlot() == selected
+                                && items.id(player.getInventory().getItemInMainHand()).orElse("").equals(weapon.id())) activate(player, false);
+                    });
+                    trace("bedrock selected-slot fallback", player, "action=" + event.getAction() + " slot=" + event.getSlot());
+                    return;
+                }
+            }
             markInventoryDrop(event.getWhoClicked().getUniqueId());
-            if (definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false))
-                plugin.getLogger().info("[skill-input] " + event.getWhoClicked().getName() + " inventory=" + event.getAction() + " slot=" + event.getSlot());
+            if (event.getWhoClicked() instanceof Player player) trace("inventory drop", player, "action=" + event.getAction() + " slot=" + event.getSlot());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
+    public void traceInventory(org.bukkit.event.inventory.InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player) || !inputDebugEnabled(player)) return;
+        trace("inventory click", player, "click=" + event.getClick() + " action=" + event.getAction() + " slot=" + event.getSlot() + " rawSlot=" + event.getRawSlot() + " cancelled=" + event.isCancelled());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
     public void traceDrop(org.bukkit.event.player.PlayerDropItemEvent event) {
-        if (!definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false)) return;
         Player player = event.getPlayer();
-        plugin.getLogger().info("[skill-input] " + player.getName() + " drop cancelled=" + event.isCancelled()
+        if (!inputDebugEnabled(player)) return;
+        trace("drop", player, "cancelled=" + event.isCancelled()
                 + " inventoryDrop=" + inventoryDrops.containsKey(player.getUniqueId()) + " view=" + player.getOpenInventory().getType()
                 + " permission=" + player.hasPermission("combatcoresystems.command.skill")
                 + " weapon=" + items.id(event.getItemDrop().getItemStack()).orElse("none"));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void traceInteraction(PlayerInteractEvent event) {
+        if (event.getHand() == org.bukkit.inventory.EquipmentSlot.HAND && inputDebugEnabled(event.getPlayer()))
+            trace("interact", event.getPlayer(), "action=" + event.getAction() + " cancelled=" + event.isCancelled());
+    }
+
+    private void trace(String kind, Player player, String details) {
+        if (debug != null && debug.enabled(player.getUniqueId())) debug.log(player.getUniqueId(), "skill-input", player.getName() + " " + kind + " " + details);
+        else if (definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false))
+            plugin.getLogger().info("[skill-input] " + player.getName() + " " + kind + " " + details);
+    }
+
+    private boolean inputDebugEnabled(Player player) {
+        return definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false) || debug != null && debug.enabled(player.getUniqueId());
+    }
+
+    private boolean isBedrock(Player player) {
+        if (org.bukkit.Bukkit.getPluginManager().getPlugin("floodgate") == null) return false;
+        try {
+            Class<?> type = Class.forName("org.geysermc.floodgate.api.FloodgateApi");
+            Object api = type.getMethod("getInstance").invoke(null);
+            return Boolean.TRUE.equals(type.getMethod("isFloodgatePlayer", UUID.class).invoke(api, player.getUniqueId()));
+        } catch (ReflectiveOperationException ex) { return false; }
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -132,6 +181,7 @@ public final class SkillService implements Listener {
     @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) { inputTicks.remove(event.getPlayer().getUniqueId()); inventoryDrops.remove(event.getPlayer().getUniqueId()); }
 
     public boolean activate(Player player, LivingEntity target, boolean ultimate) {
+        trace("cast attempt", player, "kind=" + (ultimate ? "ultimate" : "skill") + " target=" + (target == null ? "none" : target.getType()));
         PlayerData data = players.find(player.getUniqueId()).orElse(null);
         if (data == null) return fail(player, "loading", "プレイヤーデータを読み込み中です。");
         String weaponId = items.id(player.getInventory().getItemInMainHand()).orElse("");
@@ -181,7 +231,8 @@ public final class SkillService implements Listener {
         }
         if (ability.target().equalsIgnoreCase("SELF")) { targets.clear(); targets.add(player); }
         else targets.removeIf(current -> !damage.canAffect(player, current));
-        if (targets.isEmpty()) return fail(player, "target", "対象が見つかりません。対象に照準を合わせてください。");
+        boolean emptyCast = targets.isEmpty() && definitions.snapshot().config("config.yml").getBoolean("controls.allow-empty-cast", true);
+        if (targets.isEmpty() && !emptyCast) return fail(player, "target", "対象が見つかりません。対象に照準を合わせてください。");
         if (!state.consume(maxCharges, adjustedCooldown)) {
             player.sendActionBar(mini.deserialize(definitions.snapshot().config("messages.yml").getString("skill-failure.cooldown", "<red>あと <seconds>秒</red>")
                     .replace("<seconds>", String.format(Locale.ROOT, "%.1f", state.remainingSeconds()))));
@@ -195,6 +246,8 @@ public final class SkillService implements Listener {
             levels.setVirtualHealth(player, data, data.getHealth() * (1 - ability.options().currentHpCost()));
         if (buffs != null) for (String id : ability.options().selfEffects()) buffs.apply(player, id, player.getUniqueId());
         stats.invalidate(player.getUniqueId());
+        trace("cast success", player, "weapon=" + weaponId + " kind=" + (ultimate ? "ultimate" : "skill") + " empty=" + emptyCast);
+        if (emptyCast) WeaponVisuals.play(player, ability.options().visual());
         Element activeElement = element;
         for (LivingEntity current : targets) {
             if (!current.equals(player) && !damage.canAffect(player, current)) continue;
@@ -213,8 +266,11 @@ public final class SkillService implements Listener {
         PlayerStats currentStats = stats.get(player, data);
         double hpRatio = data.getHealth() / Math.max(1, currentStats.maxHp());
         if (conditions.containsKey("min-hp-percent") && hpRatio < number(conditions.get("min-hp-percent"))) return false;
-        if (Boolean.TRUE.equals(conditions.get("requires-target")) && target == null) return false;
-        if (conditions.containsKey("max-distance") && (target == null || target.getLocation().distanceSquared(player.getLocation()) > Math.pow(number(conditions.get("max-distance")), 2))) return false;
+        if (Boolean.TRUE.equals(conditions.get("requires-target")) && target == null
+                && !definitions.snapshot().config("config.yml").getBoolean("controls.allow-empty-cast", true)) return false;
+        if (conditions.containsKey("max-distance") && (target == null
+                ? !definitions.snapshot().config("config.yml").getBoolean("controls.allow-empty-cast", true)
+                : target.getWorld() != player.getWorld() || target.getLocation().distanceSquared(player.getLocation()) > Math.pow(number(conditions.get("max-distance")), 2))) return false;
         return !Boolean.TRUE.equals(conditions.get("requires-combat")) || combat.inCombat(player.getUniqueId());
     }
 
@@ -224,6 +280,7 @@ public final class SkillService implements Listener {
     }
 
     private boolean fail(Player player, String key, String fallback) {
+        trace("cast rejected", player, "reason=" + key);
         var message = mini.deserialize(definitions.snapshot().config("messages.yml").getString("skill-failure." + key, "<red>" + fallback + "</red>"));
         player.sendActionBar(message);
         if (definitions.snapshot().config("config.yml").getBoolean("controls.failure-chat", true)) player.sendMessage(message);
@@ -263,13 +320,15 @@ public final class SkillService implements Listener {
         String kind = ultimate ? "ultimate" : "skill";
         int maximum = Math.max(1, (int) override(weapon, held.getLimitBreak(), kind + ".charges", ability.charges()));
         AbilityState state = cooldowns.getOrDefault(player, Map.of()).get(weapon.id() + ":" + kind);
-        if (state == null) return new Status(true, 0, maximum, maximum);
+        if (state == null) return new Status(true, 0, maximum, maximum, weapon.id() + ":" + kind);
         double cooldown = CoreMath.cooldownSeconds(override(weapon, held.getLimitBreak(), kind + ".cooldown", ability.cooldownSeconds()), stats.get(online, players.require(online)).value(StatKey.COOLDOWN));
         state.refresh(maximum, cooldown);
-        return new Status(state.charges > 0, state.remainingSeconds(), state.charges, maximum);
+        return new Status(state.charges > 0, state.remainingSeconds(), state.charges, maximum, weapon.id() + ":" + kind);
     }
 
-    public record Status(boolean ready, double remainingSeconds, int charges, int maximumCharges) {}
+    public record Status(boolean ready, double remainingSeconds, int charges, int maximumCharges, String abilityKey) {
+        public Status(boolean ready, double remainingSeconds, int charges, int maximumCharges) { this(ready, remainingSeconds, charges, maximumCharges, ""); }
+    }
 
     private static final class AbilityState {
         private int charges;

@@ -29,8 +29,12 @@ public final class MobService implements Listener {
     private final NamespacedKey levelKey;
     private final NamespacedKey bossKey;
     private final NamespacedKey autoSpawnKey;
+    private final NamespacedKey virtualHealthKey;
+    private final NamespacedKey virtualMaxHealthKey;
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final Set<UUID> managed = ConcurrentHashMap.newKeySet();
+    private DefinitionRegistry.Snapshot indexedSnapshot;
+    private final java.util.Map<EntityType, MobDefinition> vanillaIndex = new java.util.EnumMap<>(EntityType.class);
     private final java.util.Map<UUID, PhaseModifiers> phaseModifiers = new ConcurrentHashMap<>();
 
     public MobService(JavaPlugin plugin, DefinitionRegistry definitions) {
@@ -39,6 +43,8 @@ public final class MobService implements Listener {
         this.levelKey = new NamespacedKey(plugin, "mob_level");
         this.bossKey = new NamespacedKey(plugin, "boss");
         this.autoSpawnKey = new NamespacedKey(plugin, "auto_spawned");
+        this.virtualHealthKey = new NamespacedKey(plugin, "mob_virtual_health");
+        this.virtualMaxHealthKey = new NamespacedKey(plugin, "mob_virtual_max_health");
     }
 
     public Optional<LivingEntity> spawn(String id, boolean boss, Location location, boolean automatic) {
@@ -53,6 +59,9 @@ public final class MobService implements Listener {
         entity.getPersistentDataContainer().set(bossKey, PersistentDataType.BOOLEAN, boss);
         entity.getPersistentDataContainer().set(autoSpawnKey, PersistentDataType.BOOLEAN, automatic);
         managed.add(entity.getUniqueId());
+        // A spawn event may already have applied a vanilla override to this new entity.
+        entity.getPersistentDataContainer().remove(virtualMaxHealthKey);
+        entity.getPersistentDataContainer().remove(virtualHealthKey);
         applyDefinition(entity, definition, level);
         if (boss) entity.setPersistent(true);
         return Optional.of(entity);
@@ -66,7 +75,11 @@ public final class MobService implements Listener {
     }
 
     public void start() {
-        org.bukkit.Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(this::applyVanillaDefinition));
+        org.bukkit.Bukkit.getWorlds().forEach(world -> world.getLivingEntities().forEach(entity -> {
+            if (entity.getPersistentDataContainer().has(definitionKey, PersistentDataType.STRING)) {
+                definition(entity).ifPresent(definition -> { applyDefinition(entity, definition, level(entity)); managed.add(entity.getUniqueId()); });
+            } else applyVanillaDefinition(entity);
+        }));
     }
 
     public long customExperience(LivingEntity entity) {
@@ -79,9 +92,22 @@ public final class MobService implements Listener {
 
     @EventHandler public void onCreatureSpawn(CreatureSpawnEvent event) { applyVanillaDefinition(event.getEntity()); }
 
+    @EventHandler public void onEntitiesLoad(org.bukkit.event.world.EntitiesLoadEvent event) {
+        for (var entity : event.getEntities()) if (entity instanceof LivingEntity living && !(living instanceof Player)) {
+            if (living.getPersistentDataContainer().has(definitionKey, PersistentDataType.STRING))
+                definition(living).ifPresent(value -> { applyDefinition(living, value, level(living)); managed.add(living.getUniqueId()); });
+            else applyVanillaDefinition(living);
+        }
+    }
+
     private Optional<MobDefinition> vanillaDefinition(LivingEntity entity) {
-        return definitions.snapshot().vanillaMobs().values().stream()
-                .filter(definition -> definition.entityType().equalsIgnoreCase(entity.getType().name())).findFirst();
+        var snapshot = definitions.snapshot();
+        if (indexedSnapshot != snapshot) {
+            vanillaIndex.clear();
+            snapshot.vanillaMobs().values().forEach(value -> vanillaIndex.put(EntityType.valueOf(value.entityType().toUpperCase(java.util.Locale.ROOT)), value));
+            indexedSnapshot = snapshot;
+        }
+        return Optional.ofNullable(vanillaIndex.get(entity.getType()));
     }
 
     private void applyVanillaDefinition(LivingEntity entity) {
@@ -102,17 +128,51 @@ public final class MobService implements Listener {
     private void applyDefinition(LivingEntity entity, MobDefinition definition, int level) {
         double hp = CoreMath.linear(definition.hpAtMin(), definition.hpAtMax(), level - definition.minLevel() + 1,
                 definition.maxLevel() - definition.minLevel() + 1);
+        boolean alreadyVirtual = entity.getPersistentDataContainer().has(virtualMaxHealthKey, PersistentDataType.DOUBLE);
+        double priorHealth = alreadyVirtual ? health(entity) : hp;
+        entity.getPersistentDataContainer().set(virtualMaxHealthKey, PersistentDataType.DOUBLE, hp);
         var maxHealth = entity.getAttribute(Attribute.MAX_HEALTH);
-        if (maxHealth != null) maxHealth.setBaseValue(hp);
+        double physical = physicalMaximum(hp, definitions.snapshot().config("mobs.yml").getDouble("virtual-health.physical-cap", 1024));
+        if (maxHealth != null) maxHealth.setBaseValue(physical);
         var attack = entity.getAttribute(Attribute.ATTACK_DAMAGE);
         if (attack != null) attack.setBaseValue(attack(definition, level));
         var armor = entity.getAttribute(Attribute.ARMOR);
         if (armor != null) armor.setBaseValue(0);
-        entity.setHealth(hp);
+        setHealth(entity, Math.min(hp, priorHealth));
         if (definition.showLevel()) entity.customName(mini.deserialize("<gray>Lv." + level + "</gray> " + definition.name()));
     }
 
     public int level(LivingEntity entity) { return entity.getPersistentDataContainer().getOrDefault(levelKey, PersistentDataType.INTEGER, 1); }
+    public double maxHealth(LivingEntity entity) {
+        return entity.getPersistentDataContainer().getOrDefault(virtualMaxHealthKey, PersistentDataType.DOUBLE,
+                entity.getAttribute(Attribute.MAX_HEALTH) == null ? entity.getHealth() : entity.getAttribute(Attribute.MAX_HEALTH).getValue());
+    }
+    public double health(LivingEntity entity) {
+        Double saved = entity.getPersistentDataContainer().get(virtualHealthKey, PersistentDataType.DOUBLE);
+        if (saved == null) return entity.getHealth();
+        var attribute = entity.getAttribute(Attribute.MAX_HEALTH);
+        double physicalMax = attribute == null ? maxHealth(entity) : attribute.getValue();
+        // Reflect environmental damage and other plugins' healing without a per-tick entity scan.
+        if (Math.abs(entity.getHealth() - physicalHealth(saved, maxHealth(entity), physicalMax)) < 0.0001) return saved;
+        return CoreMath.toVirtualHealth(entity.getHealth(), physicalMax, maxHealth(entity));
+    }
+    public void setHealth(LivingEntity entity, double value) {
+        if (!entity.getPersistentDataContainer().has(virtualMaxHealthKey, PersistentDataType.DOUBLE)) {
+            entity.setHealth(Math.max(0, Math.min(maxHealth(entity), value)));
+            return;
+        }
+        double maximum = maxHealth(entity);
+        double current = Math.max(0, Math.min(maximum, value));
+        entity.getPersistentDataContainer().set(virtualHealthKey, PersistentDataType.DOUBLE, current);
+        if (current <= 0) { entity.setHealth(0); return; }
+        double physicalMaximum = entity.getAttribute(Attribute.MAX_HEALTH) == null ? maximum : entity.getAttribute(Attribute.MAX_HEALTH).getValue();
+        entity.setHealth(physicalHealth(current, maximum, physicalMaximum));
+    }
+    static double physicalMaximum(double virtualMaximum, double configuredCap) { return Math.min(Math.max(1, virtualMaximum), Double.isFinite(configuredCap) ? Math.clamp(configuredCap, 1, 1024) : 1024); }
+    static double physicalHealth(double current, double virtualMaximum, double physicalMaximum) {
+        if (current <= 0) return 0;
+        return Math.max(0.01, Math.min(physicalMaximum, current / Math.max(1e-9, virtualMaximum) * physicalMaximum));
+    }
     public double attack(MobDefinition definition, int level) { return CoreMath.linear(definition.atkAtMin(), definition.atkAtMax(), level - definition.minLevel() + 1, definition.maxLevel() - definition.minLevel() + 1); }
     public double defense(MobDefinition definition, int level) { return CoreMath.linear(definition.defAtMin(), definition.defAtMax(), level - definition.minLevel() + 1, definition.maxLevel() - definition.minLevel() + 1); }
     public double defense(LivingEntity entity, MobDefinition definition, int level) { return defense(definition, level) * phaseModifiers.getOrDefault(entity.getUniqueId(), PhaseModifiers.DEFAULT).defenseMultiplier; }

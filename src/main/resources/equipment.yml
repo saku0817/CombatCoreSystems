@@ -33,3 +33,24 @@ data-version: 1
 # HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
 # 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
 equipment: {}
+# 完全なツールチップ・固定サブステータス例:
+# equipment:
+#   fictional_traveler_chest:
+#     name: '<blue><bold>虚構の旅人のチェストプレート</bold></blue>'
+#     material: DIAMOND_CHESTPLATE
+#     slot: CHEST
+#     rarity: 5
+#     max-level: 25
+#     initial-level: 9 # 作成時のレベル。省略時1。既存アイテムには適用しません。
+#     main-stat: {type: CRIT_DAMAGE, level-1: 0.60, max-level: 0.60}
+#     substats: [ATK_PERCENT, HP_FLAT, CRIT_RATE, CRIT_DAMAGE]
+#     initial-substats: {ATK_PERCENT: 0.10, HP_FLAT: 50, CRIT_RATE: 0.05, CRIT_DAMAGE: 0.05}
+#     initial-upgrades: {ATK_PERCENT: 1, HP_FLAT: 1, CRIT_RATE: 0, CRIT_DAMAGE: 0}
+#     initial-unlocked-substats: 3
+#     set: fictional_traveler
+#     lore:
+#       - '<gray>「真実だけを辿れば、いつか世界の果てへ着けると思っていた。」</gray>'
+#       - '<gray>旅人は幾つもの星を渡り、幾つもの物語を見届けた。</gray>'
+#       - '<gray>「歴史とは、起きた出来事の集積ではない。」</gray>'
+#       - '<gray>だから旅人は歩き続ける。</gray>'
+#       - '<gray>虚構と現実の境界がとうに失われた道を、その足跡を残して...</gray>'

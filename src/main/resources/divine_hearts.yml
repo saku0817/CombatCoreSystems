@@ -24,3 +24,35 @@ data-version: 1
 # 装備GUIの「神の心」枠→所持品の神心を選択。実物は所持品に残り、1個体を登録します。
 # 実物を手放すと装備登録が解除されます。戦闘中は着脱できません。
 divine-hearts: {}
+# 完全な天賦・属性反応置換例:
+# divine-hearts:
+#   sun_god_heart:
+#     name: '<red><bold>火神の神心</bold></red>'
+#     material: NETHER_STAR
+#     rarity: 5
+#     enchantment-glint: true
+#     modifiers: {FIRE_DAMAGE: 0.50}
+#     talents:
+#       solar_blessing:
+#         name: 太陽の祝福
+#         color: red
+#         description:
+#           - '<#ff0000>火属性</#ff0000>ダメージ <yellow>+50%</yellow>'
+#           - '通常攻撃が<#ff0000>火属性</#ff0000>攻撃に変更される。（武器指定がある場合は武器を優先）'
+#           - '<#ff0000>火属性</#ff0000>による属性反応を<red><u><b>「烈日」</b></u></red>へ変更する。'
+#       blazing_sun:
+#         name: 烈日
+#         color: red
+#         description:
+#           - '反応時、半径3mに攻撃力200%の火属性ダメージ。火属性耐性-20%、10秒。反応CT15秒。'
+#     rules:
+#       normal-attack-attribute: FIRE
+#       reaction-override:
+#         source-attribute: FIRE
+#         id: blazing_sun
+#         name: 烈日
+#         radius: 3.0
+#         cooldown-seconds: 15.0
+#         damage: {reference: ATK, multiplier: 2.0, attribute: FIRE}
+#         resistance-down: {attribute: FIRE, amount: 0.20, duration-seconds: 10.0}
+#     lore: ['<gray>太陽のように光り輝いている。</gray>']

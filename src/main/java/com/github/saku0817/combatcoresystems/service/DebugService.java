@@ -19,10 +19,17 @@ public final class DebugService implements org.bukkit.event.Listener {
     private final Map<UUID, Session> sessions = new ConcurrentHashMap<>();
     private final Map<UUID, Scheduled> scheduled = new ConcurrentHashMap<>();
     private final MiniMessage mini = MiniMessage.miniMessage();
+    private final java.util.concurrent.ArrayBlockingQueue<String> pendingLines = new java.util.concurrent.ArrayBlockingQueue<>(4096);
+    private final java.util.concurrent.atomic.AtomicInteger droppedLines = new java.util.concurrent.atomic.AtomicInteger();
+    private org.bukkit.scheduler.BukkitTask writer;
 
     public DebugService(JavaPlugin plugin) { this.plugin = plugin; }
 
-    public void start() { Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L); }
+    public void start() {
+        Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
+        writer = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, this::flush, 20L, 20L);
+    }
+    public void close() { if (writer != null) writer.cancel(); flush(); }
     public void enable(UUID user, Duration duration) { sessions.put(user, new Session(System.currentTimeMillis() + duration.toMillis(), Set.of("all"))); }
     public void disable(UUID user) { sessions.remove(user); scheduled.remove(user); }
     public void schedule(UUID user, Duration delay, Duration duration) { scheduled.put(user, new Scheduled(System.currentTimeMillis() + delay.toMillis(), duration)); }
@@ -59,11 +66,18 @@ public final class DebugService implements org.bukkit.event.Listener {
     }
 
     private void writeFile(String category, String message) {
+        if (!pendingLines.offer(LocalDateTime.now() + " [" + category + "] " + message + System.lineSeparator())) droppedLines.incrementAndGet();
+    }
+
+    private synchronized void flush() {
+        List<String> lines = new ArrayList<>(); pendingLines.drainTo(lines);
+        int dropped = droppedLines.getAndSet(0);
+        if (dropped > 0) lines.add(LocalDateTime.now() + " [debug] dropped " + dropped + " lines because the debug queue was full" + System.lineSeparator());
+        if (lines.isEmpty()) return;
         try {
             Path directory = plugin.getDataFolder().toPath().resolve("logs/debug"); Files.createDirectories(directory);
             Path file = directory.resolve(LocalDate.now().format(DateTimeFormatter.ISO_DATE) + ".log");
-            String line = LocalDateTime.now() + " [" + category + "] " + message + System.lineSeparator();
-            Files.writeString(file, line, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            Files.writeString(file, String.join("", lines), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
         } catch (IOException ex) { plugin.getLogger().warning("Could not write debug log: " + ex.getMessage()); }
     }
 

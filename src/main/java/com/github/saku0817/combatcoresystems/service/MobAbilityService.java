@@ -58,8 +58,8 @@ public final class MobAbilityService implements Listener {
 
     private ConfigurationSection updatePhase(LivingEntity entity, MobDefinition definition, ConfigurationSection source) {
         ConfigurationSection phaseRoot = source.getConfigurationSection("phases"); if (phaseRoot == null) return null;
-        double maximum = entity.getAttribute(Attribute.MAX_HEALTH) == null ? entity.getHealth() : entity.getAttribute(Attribute.MAX_HEALTH).getValue();
-        double ratio = entity.getHealth() / Math.max(1, maximum); String selectedId = ""; ConfigurationSection selected = null;
+        double maximum = mobs.maxHealth(entity);
+        double ratio = mobs.health(entity) / Math.max(1, maximum); String selectedId = ""; ConfigurationSection selected = null;
         List<String> keys = new ArrayList<>(phaseRoot.getKeys(false)); keys.sort(Comparator.comparingDouble(id -> phaseRoot.getDouble(id + ".hp-at-or-below", 1)).reversed());
         for (String id : keys) if (ratio <= phaseRoot.getDouble(id + ".hp-at-or-below", 1)) { selectedId = id; selected = phaseRoot.getConfigurationSection(id); }
         String old = phases.getOrDefault(entity.getUniqueId(), "");
@@ -86,7 +86,7 @@ public final class MobAbilityService implements Listener {
 
     private void updateBossBar(LivingEntity entity, MobDefinition definition) {
         BossBar bar = bars.computeIfAbsent(entity.getUniqueId(), ignored -> BossBar.bossBar(mini.deserialize(definition.name()), 1, BossBar.Color.RED, BossBar.Overlay.PROGRESS));
-        double max = entity.getAttribute(Attribute.MAX_HEALTH) == null ? entity.getHealth() : entity.getAttribute(Attribute.MAX_HEALTH).getValue(); bar.progress((float) Math.max(0, Math.min(1, entity.getHealth() / Math.max(1, max))));
+        double max = mobs.maxHealth(entity); bar.progress((float) Math.max(0, Math.min(1, mobs.health(entity) / Math.max(1, max))));
         for (Player player : Bukkit.getOnlinePlayers()) { boolean nearby = player.getWorld().equals(entity.getWorld()) && player.getLocation().distanceSquared(entity.getLocation()) <= 64 * 64; if (nearby) player.showBossBar(bar); else player.hideBossBar(bar); }
     }
 

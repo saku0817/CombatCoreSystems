@@ -29,6 +29,11 @@ public final class ItemService {
     private final NamespacedKey idKey;
     private final NamespacedKey typeKey;
     private final NamespacedKey instanceKey;
+    private DefinitionRegistry.Snapshot renderedSnapshot;
+    private record Rendered(Component name, List<Component> lore, boolean glint) {}
+    private final java.util.Map<String, Rendered> renderedItems = new java.util.LinkedHashMap<>(128, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<String, Rendered> eldest) { return size() > 2048; }
+    };
 
     public ItemService(JavaPlugin plugin, DefinitionRegistry definitions) {
         this.definitions = definitions;
@@ -78,7 +83,10 @@ public final class ItemService {
             value = new ItemInstance();
             value.setDefinitionId(id);
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(id);
-            if (equipment != null) generateSubstats(value, equipment);
+            if (equipment != null) {
+                value.setLevel(Math.clamp(definitions.snapshot().config("equipment.yml").getInt("equipment." + id + ".initial-level", 1), 1, equipment.maxLevel()));
+                generateSubstats(value, equipment);
+            }
             pdc.set(instanceKey, PersistentDataType.STRING, gson.toJson(value));
         }
         stack.setItemMeta(meta);
@@ -122,14 +130,31 @@ public final class ItemService {
 
     public String statValue(String key, double value) {
         boolean percent = !key.endsWith("_FLAT") && !key.equals("ATTACK_SPEED");
-        return String.format(java.util.Locale.ROOT, "%.1f%s", percent ? value * 100 : value, percent ? "%" : "");
+        return String.format(java.util.Locale.ROOT, "%.1f", percent ? value * 100 : value).replaceFirst("\\.0$", "") + (percent ? "%" : "");
     }
 
     public void writeInstance(ItemStack item, ItemInstance instance) {
+        writeInstance(item, instance, 0);
+    }
+
+    public void writeInstance(ItemStack item, ItemInstance instance, int activeSetPieces) {
         if (item == null || !item.hasItemMeta()) return;
         ItemMeta meta = item.getItemMeta();
+        if (renderedSnapshot != definitions.snapshot()) {
+            renderedSnapshot = definitions.snapshot();
+            renderedItems.clear();
+        }
+        String serialized = gson.toJson(instance);
+        String renderKey = serialized + ":" + activeSetPieces;
+        Rendered cached = renderedItems.get(renderKey);
+        if (cached != null) {
+            meta.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, serialized);
+            meta.itemName(cached.name()); meta.lore(cached.lore()); meta.setEnchantmentGlintOverride(cached.glint());
+            if (!meta.equals(item.getItemMeta())) item.setItemMeta(meta);
+            return;
+        }
         meta.setEnchantmentGlintOverride(glint(instance.getDefinitionId()));
-        meta.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, gson.toJson(instance));
+        meta.getPersistentDataContainer().set(instanceKey, PersistentDataType.STRING, serialized);
         List<Component> lore = new ArrayList<>();
         WeaponDefinition weapon = definitions.snapshot().weapons().get(instance.getDefinitionId());
         EquipmentDefinition equipment = definitions.snapshot().equipment().get(instance.getDefinitionId());
@@ -137,42 +162,81 @@ public final class ItemService {
             meta.itemName(mini.deserialize(weapon.name()));
             appendWeapon(lore, weapon, instance);
             meta.lore(lore);
+            renderedItems.put(renderKey, new Rendered(meta.itemName(), List.copyOf(lore), glint(instance.getDefinitionId())));
             if (!meta.equals(item.getItemMeta())) item.setItemMeta(meta);
             return;
         }
-        if (equipment != null) equipment.lore().forEach(line -> lore.add(mini.deserialize(line)));
         ConfigurationSection heart = definitions.snapshot().config("divine_hearts.yml").getConfigurationSection("divine-hearts." + instance.getDefinitionId());
-        if (heart != null) {
-            heart.getStringList("lore").forEach(line -> lore.add(mini.deserialize(line)));
-            appendEffects(lore, heart.getConfigurationSection("modifiers"), "神心");
-            appendEffects(lore, heart.getConfigurationSection("rules"), "神心ルール");
-        }
-        if (heart == null) lore.add(mini.deserialize("<gray>Lv." + instance.getLevel() + "</gray>"));
-        if (weapon != null) lore.add(mini.deserialize("<gray>限界突破 " + instance.getLimitBreak() + "/5</gray>"));
-        if (weapon != null) {
-            lore.add(mini.deserialize("<white>攻撃力: " + weapon.attackAt(instance.getLevel()) + "</white>"));
-            lore.add(mini.deserialize("<gray>装備可能レベル: " + weapon.minimumEquipLevel() + "～" + weapon.maximumEquipLevel() + "</gray>"));
-            appendAbility(lore, weapon.skill(), "スキル：しゃがみ＋攻撃 /ccs skill");
-            appendAbility(lore, weapon.ultimate(), "必殺技：しゃがみ＋使用 /ccs ultimate");
-        }
+        if (heart != null) appendDivineHeart(lore, heart);
+        if (equipment != null) meta.itemName(mini.deserialize(equipment.name()));
+        if (heart != null) meta.itemName(mini.deserialize(heart.getString("name", instance.getDefinitionId())));
         if (equipment != null) {
-            lore.add(mini.deserialize("<white>" + displayName(equipment.mainStat().name()) + ": " + statValue(equipment.mainStat().name(), com.github.saku0817.combatcoresystems.util.CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), instance.getLevel(), equipment.maxLevel())) + "</white>"));
-            if (!equipment.setId().isBlank()) lore.add(mini.deserialize("<gray>セット: " + equipment.setId() + "</gray>"));
-            if (!equipment.setId().isBlank()) {
-                ConfigurationSection set = definitions.snapshot().config("sets.yml").getConfigurationSection("sets." + equipment.setId());
-                if (set != null) {
-                    appendEffects(lore, set.getConfigurationSection("two-piece.modifiers"), "2部位");
-                    appendEffects(lore, set.getConfigurationSection("four-piece.modifiers"), "4部位");
-                }
-            }
-            int index = 0;
-            for (var entry : instance.getSubstats().entrySet()) {
-                boolean open = index++ < instance.getUnlockedSubstats();
-                lore.add(mini.deserialize((open ? "<white>" : "<dark_gray>[未開放] ") + displayName(entry.getKey()) + " +" + statValue(entry.getKey(), entry.getValue()) + (open ? "</white>" : "</dark_gray>")));
-            }
+            appendEquipment(lore, equipment, instance, activeSetPieces);
         }
         meta.lore(lore);
+        renderedItems.put(renderKey, new Rendered(meta.itemName(), List.copyOf(lore), glint(instance.getDefinitionId())));
         if (!meta.equals(item.getItemMeta())) item.setItemMeta(meta);
+    }
+
+    private void appendEquipment(List<Component> lore, EquipmentDefinition definition, ItemInstance instance, int activeSetPieces) {
+        lore.add(mini.deserialize(rarityLine(definition.rarity())));
+        var messages = definitions.snapshot().config("messages.yml");
+        String slot = messages.getString("equipment-tooltip.slots." + definition.slot().name(), displayName(definition.slot().name()));
+        lore.add(mini.deserialize(messages.getString("equipment-tooltip.slot", "<white>装備部位：<u><slot></u></white>").replace("<slot>", slot)));
+        lore.add(mini.deserialize(messages.getString("equipment-tooltip.level", "<white>Lv.<yellow><level></yellow> / <yellow><max_level></yellow></white>")
+                .replace("<level>", Integer.toString(instance.getLevel())).replace("<max_level>", Integer.toString(definition.maxLevel()))));
+        lore.add(Component.empty());
+        double main = com.github.saku0817.combatcoresystems.util.CoreMath.linear(definition.mainAtLevel1(), definition.mainAtMaxLevel(), instance.getLevel(), definition.maxLevel());
+        lore.add(mini.deserialize(messages.getString("equipment-tooltip.main-stat", "<yellow>➽ <stat> +<value></yellow>")
+                .replace("<stat>", displayName(definition.mainStat().name())).replace("<value>", statValue(definition.mainStat().name(), main))));
+        int index = 0;
+        for (var entry : instance.getSubstats().entrySet()) {
+            boolean open = index++ < instance.getUnlockedSubstats();
+            int upgrades = instance.getSubstatUpgrades().getOrDefault(entry.getKey(), 0);
+            String template = messages.getString(open ? "equipment-tooltip.substat-open" : "equipment-tooltip.substat-locked",
+                    open ? "<white>・<stat> <yellow>+<value></yellow> <aqua>[+<upgrades>]</aqua></white>" : "<gray>・<stat> +<value> [未開放]</gray>");
+            lore.add(mini.deserialize(template.replace("<stat>", displayName(entry.getKey())).replace("<value>", statValue(entry.getKey(), entry.getValue()))
+                    .replace("<upgrades>", Integer.toString(upgrades))));
+        }
+        if (!definition.setId().isBlank()) {
+            ConfigurationSection set = definitions.snapshot().config("sets.yml").getConfigurationSection("sets." + definition.setId());
+            if (set != null) {
+                lore.add(Component.empty());
+                lore.add(mini.deserialize(messages.getString("equipment-tooltip.set-title", "<yellow><u>「<set>」</u></yellow> <white>シリーズ</white>")
+                        .replace("<set>", set.getString("name", definition.setId()))));
+                appendSetLine(lore, set, "two-piece", 2, activeSetPieces >= 2);
+                appendSetLine(lore, set, "four-piece", 4, activeSetPieces >= 4);
+            }
+        }
+        if (!definition.lore().isEmpty()) { lore.add(Component.empty()); definition.lore().forEach(line -> lore.add(mini.deserialize(line))); }
+    }
+
+    private void appendSetLine(List<Component> lore, ConfigurationSection set, String key, int pieces, boolean active) {
+        String description = set.getString(key + ".description", summarizeModifiers(set.getConfigurationSection(key + ".modifiers")));
+        String template = definitions.snapshot().config("messages.yml").getString(active ? "equipment-tooltip.set-active" : "equipment-tooltip.set-inactive",
+                active ? "<green>・<pieces>セット <description> [発動中]</green>" : "<gray>・<pieces>セット <description> [未発動]</gray>");
+        lore.add(mini.deserialize(template.replace("<pieces>", Integer.toString(pieces)).replace("<description>", description)));
+    }
+
+    private String summarizeModifiers(ConfigurationSection section) {
+        if (section == null) return "効果なし";
+        return section.getKeys(false).stream().map(key -> displayName(key) + (section.getDouble(key) >= 0 ? "+" : "") + statValue(key, section.getDouble(key))).collect(java.util.stream.Collectors.joining("、"));
+    }
+
+    private void appendDivineHeart(List<Component> lore, ConfigurationSection heart) {
+        lore.add(mini.deserialize(rarityLine(heart.getInt("rarity", 5))));
+        var messages = definitions.snapshot().config("messages.yml");
+        lore.add(mini.deserialize(messages.getString("divine-heart-tooltip.slot", "<white>装備部位：<u>神心</u></white>")));
+        ConfigurationSection talents = heart.getConfigurationSection("talents");
+        if (talents != null) for (String id : talents.getKeys(false)) {
+            ConfigurationSection talent = talents.getConfigurationSection(id); if (talent == null) continue;
+            lore.add(Component.empty());
+            String color = talent.getString("color", "yellow");
+            lore.add(mini.deserialize(messages.getString("divine-heart-tooltip.talent-title", "<yellow>➽ <talent_color><u><b>「<name>」</b></u></talent_color></yellow>")
+                    .replace("<talent_color>", "<" + color + ">").replace("</talent_color>", "</" + color + ">").replace("<name>", talent.getString("name", id))));
+            talent.getStringList("description").forEach(line -> lore.add(mini.deserialize("<white>" + line + "</white>")));
+        }
+        if (!heart.getStringList("lore").isEmpty()) { lore.add(Component.empty()); heart.getStringList("lore").forEach(line -> lore.add(mini.deserialize(line))); }
     }
 
     private void appendAbility(List<Component> lore, WeaponDefinition.SkillDefinition ability, String label) {
@@ -243,6 +307,16 @@ public final class ItemService {
     }
 
     private void generateSubstats(ItemInstance instance, EquipmentDefinition definition) {
+        ConfigurationSection fixed = definitions.snapshot().config("equipment.yml").getConfigurationSection("equipment." + definition.id() + ".initial-substats");
+        if (fixed != null) {
+            fixed.getKeys(false).stream().limit(4).forEach(key -> {
+                instance.getSubstats().put(key.toUpperCase(java.util.Locale.ROOT), fixed.getDouble(key));
+                instance.getSubstatUpgrades().put(key.toUpperCase(java.util.Locale.ROOT), definitions.snapshot().config("equipment.yml")
+                        .getInt("equipment." + definition.id() + ".initial-upgrades." + key, 0));
+            });
+            instance.setUnlockedSubstats(definitions.snapshot().config("equipment.yml").getInt("equipment." + definition.id() + ".initial-unlocked-substats", 0));
+            return;
+        }
         List<StatKey> candidates = new ArrayList<>(definition.substatCandidates());
         if (candidates.isEmpty()) candidates.addAll(List.of(StatKey.ATK_FLAT, StatKey.ATK_PERCENT, StatKey.HP_FLAT,
                 StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT, StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE));

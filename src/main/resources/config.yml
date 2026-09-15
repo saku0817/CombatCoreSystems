@@ -1,9 +1,22 @@
 data-version: 1
+# レンタルサーバー向け管理画面。外部公開時はホスト側のHTTPSリバースプロキシとFWを使用してください。
+web-editor:
+  enabled: false
+  bind: 127.0.0.1
+  port: 8765
+  threads: 2
+  # 16文字以上に変更するまで起動しません。GitHub等へ実トークンをコミットしないでください。
+  token: CHANGE_ME
 controls:
+  # 対象がいなくてもCT・コスト・自己効果を適用して発動成功にする。
+  allow-empty-cast: true
   # BE等で不発を調べる際だけtrueにし、ドロップイベントの分類をサーバーログで確認します。
   debug-inputs: false
   # HUDの常時表示で発動失敗理由が消えないよう、自分のチャットにも表示。
   failure-chat: true
+  # Geyserが選択中ホットバースロットの破棄をInventoryClickへ変換した場合のBE専用補完。
+  # BEで選択中スロットをインベントリ画面から破棄した場合もスキル扱い。他スロットの破棄は通常通り。
+  bedrock-selected-slot-drop-skill: true
   # 手持ちCCS武器をドロップしようとすると、落とさずにスキルを発動。インベントリからの破棄は除外。
   drop-skill: true
   # しゃがみ＋攻撃で必殺技。通常攻撃はキャンセル。コマンドは引き続き併用可能。
@@ -32,6 +45,17 @@ hud:
   sidebar-enabled: true
   actionbar-enabled: true
   update-ticks: 5
+  ready-sound:
+    skill:
+      enabled: true
+      sound: minecraft:block.note_block.pling
+      volume: 0.8
+      pitch: 1.2
+    ultimate:
+      enabled: true
+      sound: minecraft:block.amethyst_block.chime
+      volume: 0.8
+      pitch: 0.8
 region-wand:
   material: WOODEN_AXE
 performance:

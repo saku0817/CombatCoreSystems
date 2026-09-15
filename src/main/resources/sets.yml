@@ -1,3 +1,13 @@
 data-version: 1
 # セット追加例: sets.warrior.two-piece.modifiers.ATK_PERCENT: 0.15
 sets: {}
+# 実装例（equipment.ymlのfictional_traveler_chestと組み合わせる）:
+# sets:
+#   fictional_traveler:
+#     name: 虚構辿る旅人の軌跡
+#     two-piece:
+#       description: 会心ダメージ+16%
+#       modifiers: {CRIT_DAMAGE: 0.16}
+#     four-piece:
+#       description: 敵にダメージを与える時、敵の防御力を10%無視する。
+#       modifiers: {DEF_IGNORE: 0.10}

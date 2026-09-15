@@ -34,6 +34,10 @@ try {
     $stamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
     Copy-Item -LiteralPath $sourceJar -Destination (Join-Path $backupDir "CombatCoreSystems-$version-$stamp.jar")
 
+    $generatorName = "CombatCoreSystems-YamlGenerator-$version.html"
+    Copy-Item -LiteralPath (Join-Path $projectRoot "src/main/resources/web-editor.html") -Destination (Join-Path $releaseDir $generatorName) -Force
+    Copy-Item -LiteralPath (Join-Path $projectRoot "src/main/resources/web-editor.html") -Destination (Join-Path $backupDir "CombatCoreSystems-YamlGenerator-$version-$stamp.html")
+
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceJar).Hash.ToLowerInvariant()
     Set-Content -LiteralPath (Join-Path $releaseDir "$jarName.sha256") -Value "$hash  $jarName" -Encoding utf8
     Write-Host "Release: $releaseDir\$jarName"

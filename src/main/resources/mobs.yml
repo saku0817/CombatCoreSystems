@@ -1,4 +1,7 @@
 data-version: 1
+virtual-health:
+  # Minecraft内部へ同期する表示用HPの上限。CCS上のMob HP自体には上限を設けません。
+  physical-cap: 1024
 # 個別定義のないバニラMobの報酬。個別定義のcustom-exp/drop-custom-expが優先されます。
 vanilla-defaults:
   custom-exp: 5

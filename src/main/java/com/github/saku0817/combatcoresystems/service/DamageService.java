@@ -40,6 +40,8 @@ public final class DamageService implements DamageApi, Listener {
     private final NamespacedKey itemIdKey;
     private final NamespacedKey projectileWeaponKey;
     private final Map<UUID, AttackCharge> attackCharges = new HashMap<>();
+    private final Map<String, Long> heartReactionCooldowns = new HashMap<>();
+    private long nextHeartCooldownCleanup;
     private BuffService buffs;
     public void bindBuffs(BuffService buffs) { this.buffs = buffs; }
 
@@ -111,8 +113,9 @@ public final class DamageService implements DamageApi, Listener {
             if (heart != null) {
                 var heartConfig = definitions.snapshot().config("divine_hearts.yml");
                 String path = "divine-hearts." + heart.getDefinitionId() + ".rules.";
-                element = Element.parse(heartConfig.contains(path + "normal-attack-attribute")
-                        ? heartConfig.getString(path + "normal-attack-attribute") : heartConfig.getString(path + "normal-attack-element")).orElse(element);
+                if (weapon == null || weapon.options().normalElement() == Element.PHYSICAL)
+                    element = Element.parse(heartConfig.contains(path + "normal-attack-attribute")
+                            ? heartConfig.getString(path + "normal-attack-attribute") : heartConfig.getString(path + "normal-attack-element")).orElse(element);
             }
         }
         DamageRequest request = new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), ReferenceStat.ATK,
@@ -215,8 +218,10 @@ public final class DamageService implements DamageApi, Listener {
             base = request.multiplier() * request.components().stream().mapToDouble(c ->
                     componentAmount(c, source.hp, source.atk, source.def, source.elementDamage(c.bonusElement()))).sum();
         }
-        double ignored = defender.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORED_WHEN_HIT)
-                : buffs == null ? 0 : buffs.modifier(target, StatKey.DEF_IGNORED_WHEN_HIT);
+        double outgoingIgnored = source.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORE)
+                : buffs == null ? 0 : buffs.modifier(attacker, StatKey.DEF_IGNORE);
+        double ignored = outgoingIgnored + (defender.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORED_WHEN_HIT)
+                : buffs == null ? 0 : buffs.modifier(target, StatKey.DEF_IGNORED_WHEN_HIT));
         double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown) * (1 - Math.clamp(ignored, 0, 1));
         double defenseCoefficient = CoreMath.defenseCoefficient(source.level, defender.level, effectiveDef);
         double damage = base * defenseCoefficient;
@@ -242,6 +247,9 @@ public final class DamageService implements DamageApi, Listener {
     }
 
     private void applyReaction(LivingEntity attacker, LivingEntity central, ReferenceStat referenceStat, ElementService.ReactionTrigger trigger) {
+        referenceStat = divineReactionReference(attacker, trigger, referenceStat);
+        trigger = divineReaction(attacker, central, trigger);
+        if (trigger == null) return;
         List<LivingEntity> targets = new ArrayList<>();
         targets.add(central);
         if (trigger.definition().radius() > 0) {
@@ -251,6 +259,7 @@ public final class DamageService implements DamageApi, Listener {
         CombatantStats source = combatant(attacker);
         double reference = switch (referenceStat) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
         for (LivingEntity target : targets) {
+            if (target.isDead() || !allowed(attacker, target)) continue;
             CombatantStats defender = combatant(target);
             double total = 0;
             for (Map.Entry<Element, Double> component : trigger.definition().components().entrySet()) {
@@ -268,13 +277,53 @@ public final class DamageService implements DamageApi, Listener {
             if (rounded > 0 && attacker instanceof Player player) target.setKiller(player);
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
-            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage, trigger.existing(), trigger.incoming());
+            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage, trigger.incoming(), null);
             if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
             if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
                     trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());
             Bukkit.getPluginManager().callEvent(new ElementReactionEvent(target.getUniqueId(), trigger.definition().id(),
                     trigger.existing(), trigger.incoming(), rounded));
         }
+    }
+
+    private ReferenceStat divineReactionReference(LivingEntity attacker, ElementService.ReactionTrigger trigger, ReferenceStat fallback) {
+        if (!(attacker instanceof Player player)) return fallback;
+        ItemInstance heart = players.require(player).getEquipment().get(EquipmentSlot.DIVINE_HEART);
+        if (heart == null) return fallback;
+        var config = definitions.snapshot().config("divine_hearts.yml");
+        String root = "divine-hearts." + heart.getDefinitionId() + ".rules.reaction-override";
+        Element source = Element.parse(config.getString(root + ".source-attribute")).orElse(null);
+        if (source != trigger.incoming()) return fallback;
+        try { return ReferenceStat.valueOf(config.getString(root + ".damage.reference", fallback.name()).toUpperCase(Locale.ROOT)); }
+        catch (IllegalArgumentException ex) { return fallback; }
+    }
+
+    private ElementService.ReactionTrigger divineReaction(LivingEntity attacker, LivingEntity target, ElementService.ReactionTrigger original) {
+        if (!(attacker instanceof Player player)) return original;
+        ItemInstance heart = players.require(player).getEquipment().get(EquipmentSlot.DIVINE_HEART);
+        if (heart == null) return original;
+        var config = definitions.snapshot().config("divine_hearts.yml");
+        String root = "divine-hearts." + heart.getDefinitionId() + ".rules.reaction-override";
+        if (!config.isConfigurationSection(root)) return original;
+        Element source = Element.parse(config.getString(root + ".source-attribute")).orElse(null);
+        if (source == null || original.incoming() != source) return original;
+        String id = config.getString(root + ".id", heart.getDefinitionId() + "_reaction");
+        long now = System.currentTimeMillis();
+        String cooldownKey = target.getUniqueId() + ":" + id;
+        if (now >= nextHeartCooldownCleanup) {
+            heartReactionCooldowns.entrySet().removeIf(entry -> entry.getValue() <= now);
+            nextHeartCooldownCleanup = now + 1000;
+        }
+        if (heartReactionCooldowns.getOrDefault(cooldownKey, 0L) > now) return null;
+        double cooldown = Math.max(0, config.getDouble(root + ".cooldown-seconds", 0));
+        heartReactionCooldowns.put(cooldownKey, now + (long) (cooldown * 1000));
+        Element damageElement = Element.parse(config.getString(root + ".damage.attribute", source.name())).orElse(source);
+        Element downElement = Element.parse(config.getString(root + ".resistance-down.attribute", damageElement.name())).orElse(damageElement);
+        ReactionDefinition replacement = new ReactionDefinition(id, config.getString(root + ".name", id), original.existing(), original.incoming(),
+                Math.max(0, config.getDouble(root + ".radius", 0)), cooldown, 1, null, 0,
+                Map.of(damageElement, Math.max(0, config.getDouble(root + ".damage.multiplier", 1))), downElement,
+                Math.max(0, config.getDouble(root + ".resistance-down.amount", 0)), Math.max(0, config.getDouble(root + ".resistance-down.duration-seconds", 0)));
+        return new ElementService.ReactionTrigger(replacement, original.existing(), original.incoming());
     }
 
     private CombatantStats combatant(LivingEntity entity) {
@@ -286,7 +335,7 @@ public final class DamageService implements DamageApi, Listener {
         }
         MobDefinition definition = mobs.definition(entity).orElse(null);
         int level = definition == null ? 1 : mobs.level(entity);
-        double hp = attribute(entity, Attribute.MAX_HEALTH, entity.getHealth());
+        double hp = mobs.maxHealth(entity);
         double atk = attribute(entity, Attribute.ATTACK_DAMAGE, 2);
         double def = definition == null ? 0 : mobs.defense(entity, definition, level);
         if (buffs != null) {
@@ -308,12 +357,12 @@ public final class DamageService implements DamageApi, Listener {
         if (target instanceof Player player) {
             PlayerData data = players.require(player);
             levels.setVirtualHealth(player, data, data.getHealth() - damage);
-        } else target.setHealth(Math.max(0, target.getHealth() - damage));
+        } else mobs.setHealth(target, mobs.health(target) - damage);
     }
 
     private long overdamage(LivingEntity target, long damage) {
         if (!definitions.snapshot().config("config.yml").getBoolean("text-display.show-overdamage", true)) return 0;
-        double current = target instanceof Player player ? players.require(player).getHealth() : target.getHealth();
+        double current = target instanceof Player player ? players.require(player).getHealth() : mobs.health(target);
         return CoreMath.overdamage(damage, current);
     }
 

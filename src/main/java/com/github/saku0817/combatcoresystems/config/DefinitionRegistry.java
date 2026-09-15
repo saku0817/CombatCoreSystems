@@ -8,6 +8,8 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -28,8 +30,53 @@ public final class DefinitionRegistry {
 
     public void createDefaults() {
         for (String file : FILES) {
-            if (!new File(plugin.getDataFolder(), file).exists()) plugin.saveResource(file, false);
+            File target = new File(plugin.getDataFolder(), file);
+            if (!target.exists()) plugin.saveResource(file, false);
+            else mergeMissingDefaults(file, target);
         }
+    }
+
+    private void mergeMissingDefaults(String name, File target) {
+        try (var stream = plugin.getResource(name)) {
+            if (stream == null) return;
+            YamlConfiguration defaults = YamlConfiguration.loadConfiguration(new InputStreamReader(stream, StandardCharsets.UTF_8));
+            YamlConfiguration current = new YamlConfiguration();
+            // The convenience loader swallows syntax errors and returns an empty document.
+            // Never use it before a migration that writes to the user's file.
+            current.load(target);
+            boolean changed = mergeMissing(current, defaults);
+            if (changed) {
+                File backup = new File(plugin.getDataFolder(), "backups/config-migrations/" + System.currentTimeMillis() + "-" + name);
+                backup.getParentFile().mkdirs();
+                java.nio.file.Files.copy(target.toPath(), backup.toPath());
+                java.nio.file.Path temporary = java.nio.file.Files.createTempFile(target.toPath().getParent(), "ccs-migration-", ".yml");
+                try {
+                    current.save(temporary.toFile());
+                    try { java.nio.file.Files.move(temporary, target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+                    catch (java.nio.file.AtomicMoveNotSupportedException ex) { java.nio.file.Files.move(temporary, target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING); }
+                } finally { java.nio.file.Files.deleteIfExists(temporary); }
+                plugin.getLogger().info("Added new default settings to " + name + " (backup: " + backup.getPath() + ")");
+            }
+        } catch (Exception ex) {
+            plugin.getLogger().log(Level.WARNING, "Could not merge new defaults into " + name + "; existing file was kept", ex);
+        }
+    }
+
+    static boolean mergeMissing(ConfigurationSection target, ConfigurationSection defaults) {
+        boolean changed = false;
+        for (String key : defaults.getKeys(false)) {
+            if (!target.contains(key)) {
+                target.set(key, defaults.get(key));
+                target.setComments(key, defaults.getComments(key));
+                target.setInlineComments(key, defaults.getInlineComments(key));
+                changed = true;
+            } else if (target.isConfigurationSection(key) && defaults.isConfigurationSection(key)
+                    && !(target.getCurrentPath().isEmpty() && Set.of("weapons", "equipment", "divine-hearts", "sets", "mobs", "vanilla-mobs", "bosses", "buffs", "reactions", "regions", "spawns", "skill-trees").contains(key))) {
+                changed |= mergeMissing(target.getConfigurationSection(key), defaults.getConfigurationSection(key));
+            }
+            // A pre-existing scalar/list is intentional; don't replace it with a section.
+        }
+        return changed;
     }
 
     public boolean loadInitial() {
@@ -42,6 +89,11 @@ public final class DefinitionRegistry {
     }
 
     public boolean reloadSafely() {
+        return reloadSafely(true);
+    }
+
+    public boolean reloadSafely(boolean migrate) {
+        if (migrate) createDefaults();
         LoadResult result = loadCandidate();
         logIssues(result);
         if (!result.errors().isEmpty() || !result.fatalErrors().isEmpty()) return false;
@@ -90,6 +142,7 @@ public final class DefinitionRegistry {
         Map<String, ReactionDefinition> reactions = parseReactions(yaml.get("reactions.yml"), errors);
         Map<String, WeaponDefinition> weapons = parseWeapons(yaml.get("weapons.yml"), errors, warnings);
         Map<String, EquipmentDefinition> equipment = parseEquipment(yaml.get("equipment.yml"), errors, warnings);
+        validateDivineHearts(yaml.get("divine_hearts.yml"), errors);
         Map<String, MobDefinition> mobs = parseMobs(yaml.get("mobs.yml"), "mobs", false, false, errors);
         Map<String, MobDefinition> vanillaMobs = parseMobs(yaml.get("mobs.yml"), "vanilla-mobs", false, true, errors);
         Map<String, MobDefinition> bosses = parseMobs(yaml.get("bosses.yml"), "bosses", true, false, errors);
@@ -111,6 +164,23 @@ public final class DefinitionRegistry {
 
         Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions);
         return new LoadResult(snapshot, warnings, errors, fatal);
+    }
+
+    private void validateDivineHearts(YamlConfiguration yaml, List<String> errors) {
+        ConfigurationSection root = yaml.getConfigurationSection("divine-hearts");
+        if (root == null) return;
+        for (String id : root.getKeys(false)) {
+            String path = "divine-hearts." + id + ".rules.reaction-override";
+            if (!yaml.isConfigurationSection(path)) continue;
+            for (String attributePath : List.of("source-attribute", "damage.attribute"))
+                if (Element.parse(yaml.getString(path + "." + attributePath)).isEmpty()) errors.add("divine heart " + id + " has invalid " + attributePath);
+            if (yaml.isConfigurationSection(path + ".resistance-down") && Element.parse(yaml.getString(path + ".resistance-down.attribute")).isEmpty())
+                errors.add("divine heart " + id + " has invalid resistance-down.attribute");
+            try { ReferenceStat.valueOf(yaml.getString(path + ".damage.reference", "ATK").toUpperCase(Locale.ROOT)); }
+            catch (IllegalArgumentException ex) { errors.add("divine heart " + id + " has invalid damage.reference"); }
+            for (String number : List.of("radius", "cooldown-seconds", "damage.multiplier", "resistance-down.amount", "resistance-down.duration-seconds"))
+                if (!Double.isFinite(yaml.getDouble(path + "." + number)) || yaml.getDouble(path + "." + number) < 0) errors.add("divine heart " + id + " has invalid " + number);
+        }
     }
 
     private Map<String, ReactionDefinition> parseReactions(YamlConfiguration yaml, List<String> errors) {
@@ -225,8 +295,16 @@ public final class DefinitionRegistry {
             int expectedMax = rarity == 3 ? 9 : rarity == 4 ? 12 : rarity == 5 ? 15 : -1;
             if (expectedMax < 0) { errors.add("equipment " + id + " rarity must be 3..5"); continue; }
             int maxLevel = s.getInt("max-level", expectedMax);
+            if (maxLevel < 1 || maxLevel > 100) { errors.add("equipment " + id + " max-level must be 1..100"); continue; }
             if (maxLevel != expectedMax) warnings.add("equipment " + id + " max-level differs from rarity standard");
             List<StatKey> candidates = new ArrayList<>();
+            ConfigurationSection initialStats = s.getConfigurationSection("initial-substats");
+            if (initialStats != null) {
+                parseStatMap(initialStats, errors, "equipment " + id + " initial-substats");
+                if (initialStats.getKeys(false).size() > 4) errors.add("equipment " + id + " initial-substats must have at most four entries");
+                int unlocked = s.getInt("initial-unlocked-substats", 0);
+                if (unlocked < 0 || unlocked > initialStats.getKeys(false).size()) errors.add("equipment " + id + " has invalid initial-unlocked-substats");
+            }
             for (String raw : s.getStringList("substats")) {
                 try { StatKey key = StatKey.valueOf(raw.toUpperCase(Locale.ROOT)); if (!candidates.contains(key)) candidates.add(key); }
                 catch (IllegalArgumentException ex) { errors.add("equipment " + id + " contains invalid substat " + raw); }
@@ -260,6 +338,16 @@ public final class DefinitionRegistry {
             if (s == null) continue;
             try { EntityType.valueOf(s.getString("entity-type", "").toUpperCase(Locale.ROOT)); }
             catch (IllegalArgumentException ex) { errors.add((boss ? "boss " : "mob ") + id + " has invalid entity type"); continue; }
+            if (!EntityType.valueOf(s.getString("entity-type").toUpperCase(Locale.ROOT)).isAlive()) {
+                errors.add(rootName + "." + id + " must use a living entity type"); continue;
+            }
+            boolean invalidStats = false;
+            for (String key : List.of("stats.hp.min", "stats.hp.max", "stats.atk.min", "stats.atk.max", "stats.def.min", "stats.def.max")) {
+                if (s.contains(key) && (!Double.isFinite(s.getDouble(key)) || (key.startsWith("stats.hp") ? s.getDouble(key) <= 0 : s.getDouble(key) < 0))) {
+                    errors.add(rootName + "." + id + "." + key + " must be finite and " + (key.startsWith("stats.hp") ? "positive" : "nonnegative")); invalidStats = true;
+                }
+            }
+            if (invalidStats) continue;
             int min = Math.max(1, s.getInt("level.min", 1));
             int max = Math.max(min, s.getInt("level.max", min));
             Set<Element> immunity = EnumSet.noneOf(Element.class);
