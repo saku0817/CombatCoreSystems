@@ -93,5 +93,12 @@ damage-display:
   overdamage: "<white><damage></white>"
   heal: "<green>+<heal></green>"
 command:
+  itemlevel: "<green><player> の手持ちアイテムをLv.<level>にしました（残りEXPは0）。</green>"
   updated: "<green>設定を更新しました。</green>"
   force: "<green><player> の戦闘状態を <state> にしました。</green>"
+rebirth-failure:
+  level: "<red>必要レベルに達していません。新生回帰にはLv.<required>が必要です（現在Lv.<level>）。</red>"
+  combat: "<red>戦闘中は新生回帰できません。</red>"
+damage-chat:
+  # <damage>には属性色・会心・反応名を含むダメージ表示が入ります。
+  format: "<gray>[ダメージ]</gray> <damage>"

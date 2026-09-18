@@ -68,7 +68,7 @@ public final class SkillService implements Listener {
                     && definitions.snapshot().config("config.yml").getBoolean("controls.bedrock-selected-slot-drop-skill", true)
                     && !event.isCancelled()
                     && event.getClickedInventory() == player.getInventory() && event.getSlot() == player.getInventory().getHeldItemSlot()) {
-                WeaponDefinition weapon = definitions.snapshot().weapons().get(items.id(event.getCurrentItem()).orElse(""));
+                WeaponDefinition weapon = definitions.snapshot().weapon(items.instance(event.getCurrentItem()).orElse(null));
                 if (weapon != null && weapon.skill() != null && player.hasPermission("combatcoresystems.command.skill")) {
                     event.setCancelled(true);
                     int selected = player.getInventory().getHeldItemSlot();
@@ -145,10 +145,15 @@ public final class SkillService implements Listener {
         Player player = event.getPlayer();
         if (!definitions.snapshot().config("config.yml").getBoolean("controls.drop-skill", true)
                 || inventoryDrops.containsKey(player.getUniqueId())
-                || player.getOpenInventory().getType() != org.bukkit.event.inventory.InventoryType.CRAFTING
-                || !player.hasPermission("combatcoresystems.command.skill")) return;
+                || !isHandDropView(player.getOpenInventory().getType().name())
+                || !player.hasPermission("combatcoresystems.command.skill")) {
+            trace("drop skipped", player, "view=" + player.getOpenInventory().getType() + " inventoryDrop=" + inventoryDrops.containsKey(player.getUniqueId())
+                    + " enabled=" + definitions.snapshot().config("config.yml").getBoolean("controls.drop-skill", true)
+                    + " permission=" + player.hasPermission("combatcoresystems.command.skill"));
+            return;
+        }
         ItemInstance dropped = items.instance(event.getItemDrop().getItemStack()).orElse(null);
-        WeaponDefinition weapon = dropped == null ? null : definitions.snapshot().weapons().get(dropped.getDefinitionId());
+        WeaponDefinition weapon = dropped == null ? null : definitions.snapshot().weapon(dropped);
         if (weapon == null || weapon.skill() == null) return;
         int slot = player.getInventory().getHeldItemSlot();
         event.setCancelled(true);
@@ -165,13 +170,17 @@ public final class SkillService implements Listener {
         });
     }
 
+    static boolean isHandDropView(String type) {
+        return "CRAFTING".equals(type) || "CREATIVE".equals(type);
+    }
+
     private boolean input(Player player, LivingEntity target, boolean ultimate) {
         if (!definitions.snapshot().config("config.yml").getBoolean("controls.sneak-attack-ultimate", true)
                 || !player.hasPermission("combatcoresystems.command." + (ultimate ? "ultimate" : "skill"))
                 || items.id(player.getInventory().getItemInMainHand()).isEmpty()) return false;
         Map<Boolean, Integer> ticks = inputTicks.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>());
         int tick = org.bukkit.Bukkit.getCurrentTick();
-        WeaponDefinition weapon = definitions.snapshot().weapons().get(items.id(player.getInventory().getItemInMainHand()).orElse(""));
+        WeaponDefinition weapon = definitions.snapshot().weapon(items.instance(player.getInventory().getItemInMainHand()).orElse(null));
         if (weapon == null || weapon.ultimate() == null) return false;
         if (Objects.equals(ticks.put(ultimate, tick), tick)) return true;
         activate(player, target, ultimate);
@@ -186,7 +195,7 @@ public final class SkillService implements Listener {
         if (data == null) return fail(player, "loading", "プレイヤーデータを読み込み中です。");
         String weaponId = items.id(player.getInventory().getItemInMainHand()).orElse("");
         if (weaponId.isBlank()) return false;
-        WeaponDefinition weapon = definitions.snapshot().weapons().get(weaponId);
+        WeaponDefinition weapon = definitions.snapshot().weapon(items.instance(player.getInventory().getItemInMainHand()).orElse(null));
         if (weapon == null) return fail(player, "unknown-weapon", "この武器の設定が読み込まれていません。");
         if (!weapon.canEquip(data.getLevel())) return fail(player, "equip-level", "武器の装備可能レベルを満たしていません。");
         WeaponDefinition.SkillDefinition ability = ultimate ? weapon.ultimate() : weapon.skill();
@@ -314,7 +323,7 @@ public final class SkillService implements Listener {
     public Status status(UUID player, boolean ultimate) {
         Player online = org.bukkit.Bukkit.getPlayer(player);
         ItemInstance held = online == null ? null : items.instance(online.getInventory().getItemInMainHand()).orElse(null);
-        WeaponDefinition weapon = held == null ? null : definitions.snapshot().weapons().get(held.getDefinitionId());
+        WeaponDefinition weapon = held == null ? null : definitions.snapshot().weapon(held);
         var ability = weapon == null ? null : ultimate ? weapon.ultimate() : weapon.skill();
         if (ability == null) return new Status(false, 0, 0, 0);
         String kind = ultimate ? "ultimate" : "skill";

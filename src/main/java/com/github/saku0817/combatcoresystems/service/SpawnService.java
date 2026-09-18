@@ -77,6 +77,8 @@ public final class SpawnService {
         for (int attempt = 0; attempt < 12; attempt++) {
             int x = ThreadLocalRandom.current().nextInt(region.minX(), region.maxX() + 1);
             int z = ThreadLocalRandom.current().nextInt(region.minZ(), region.maxZ() + 1);
+            // Never synchronously load/generate distant terrain from the main-thread spawn timer.
+            if (!world.isChunkLoaded(x >> 4, z >> 4)) continue;
             int y = region.minY() == null ? world.getHighestBlockYAt(x, z) + 1 : ThreadLocalRandom.current().nextInt(region.minY(), region.maxY() + 1);
             Location value = new Location(world, x + 0.5, y, z + 0.5);
             if (value.getBlock().isPassable() && value.clone().add(0, 1, 0).getBlock().isPassable() && !value.clone().add(0, -1, 0).getBlock().isPassable()) return Optional.of(value);

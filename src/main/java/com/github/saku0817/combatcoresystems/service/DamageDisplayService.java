@@ -40,7 +40,6 @@ public final class DamageDisplayService {
     }
 
     public void damage(UUID owner, LivingEntity target, long amount, boolean critical, String reaction, boolean small, long overdamage, Element element, Element second) {
-        if (!definitions.snapshot().config("config.yml").getBoolean("text-display.enabled", true)) return;
         String path = reaction != null ? "damage-display.reaction" : critical ? "damage-display.critical" : "damage-display.normal";
         String fallback = reaction != null ? "<aqua><reaction> <damage></aqua>" : critical ? "<gold>CRIT <damage></gold>" : "<white><damage></white>";
         String number = Long.toString(amount);
@@ -48,7 +47,13 @@ public final class DamageDisplayService {
                 : "<gradient:" + color(element) + ":" + color(second) + ">" + number + "</gradient>";
         Component text = mini.deserialize(template(path, fallback).replace("<reaction>", reaction == null ? "" : reaction)
                 .replace("<damage>", number).replace("<overdamage>", Long.toString(overdamage)));
-        spawn(owner, target, text, critical ? 1.35f : small ? 0.7f : 1.0f);
+        if (definitions.snapshot().config("config.yml").getBoolean("damage-chat.enabled", false)) {
+            var player = owner == null ? null : Bukkit.getPlayer(owner);
+            if (player != null) player.sendMessage(mini.deserialize(template("damage-chat.format", "<gray>[ダメージ]</gray> <damage>"),
+                    net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.component("damage", text)));
+        }
+        if (definitions.snapshot().config("config.yml").getBoolean("text-display.enabled", true))
+            spawn(owner, target, text, critical ? 1.35f : small ? 0.7f : 1.0f);
     }
 
     public void heal(UUID owner, LivingEntity target, long amount, boolean small) {

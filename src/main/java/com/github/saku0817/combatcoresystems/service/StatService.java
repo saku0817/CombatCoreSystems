@@ -26,6 +26,10 @@ public final class StatService implements Listener {
     private final ItemService items;
     private final NamespacedKey itemIdKey;
     private final Map<UUID, PlayerStats> cache = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> cacheTicks = new HashMap<>();
+    private DefinitionRegistry.Snapshot cachedDefinitions;
+    private DefinitionRegistry.Snapshot talentDefinitions;
+    private Set<WeaponOptions.Hand> talentHands = Set.of();
     private final Map<UUID, Set<String>> activeTalents = new HashMap<>();
 
     public StatService(JavaPlugin plugin, DefinitionRegistry definitions, CombatStateService combat, ItemService items) {
@@ -37,14 +41,18 @@ public final class StatService implements Listener {
     }
 
     public PlayerStats get(Player player, PlayerData data) {
-        // Inventory changes made by commands and other plugins do not always fire inventory events.
-        return recalculate(player, data);
+        if (cachedDefinitions != definitions.snapshot()) { cache.clear(); cacheTicks.clear(); cachedDefinitions = definitions.snapshot(); }
+        // Share repeated HUD/damage queries within one tick, never cache external changes indefinitely.
+        PlayerStats value = cache.get(player.getUniqueId());
+        return value != null && Objects.equals(cacheTicks.get(player.getUniqueId()), org.bukkit.Bukkit.getCurrentTick())
+                ? value : recalculate(player, data);
     }
 
     public PlayerStats recalculate(Player player, PlayerData data) {
         PlayerStats stats = calculate(player, data);
         synchronizeAttackAttribute(player, stats.atk());
         cache.put(player.getUniqueId(), stats);
+        cacheTicks.put(player.getUniqueId(), org.bukkit.Bukkit.getCurrentTick());
         return stats;
     }
 
@@ -52,6 +60,7 @@ public final class StatService implements Listener {
 
     @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
         cache.remove(event.getPlayer().getUniqueId());
+        cacheTicks.remove(event.getPlayer().getUniqueId());
         activeTalents.remove(event.getPlayer().getUniqueId());
     }
 
@@ -64,6 +73,13 @@ public final class StatService implements Listener {
     }
 
     private PlayerStats calculate(Player player, PlayerData data) {
+        if (talentDefinitions != definitions.snapshot()) {
+            talentDefinitions = definitions.snapshot();
+            talentHands = java.util.stream.Stream.concat(talentDefinitions.weapons().values().stream(),
+                            talentDefinitions.weaponStages().values().stream().flatMap(List::stream))
+                    .map(weapon -> weapon.options().talent()).filter(Objects::nonNull)
+                    .map(WeaponOptions.Talent::hand).collect(java.util.stream.Collectors.toSet());
+        }
         YamlConfiguration levels = definitions.snapshot().config("levels.yml");
         int level = data.getLevel();
         int rebirth = data.getRebirthCount();
@@ -78,19 +94,27 @@ public final class StatService implements Listener {
         double weaponAtk = vanillaWeaponAttack(player, levels);
         Set<String> currentTalents = new HashSet<>();
         Set<String> previousTalents = activeTalents.getOrDefault(player.getUniqueId(), Set.of());
-        for (boolean mainHand : new boolean[]{true, false}) {
-            ItemInstance instance = items.instance(mainHand ? player.getInventory().getItemInMainHand() : player.getInventory().getItemInOffHand()).orElse(null);
-            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
+        Set<String> counted = new HashSet<>();
+        int selected = player.getInventory().getHeldItemSlot();
+        for (int slot = 0; slot <= 40; slot++) {
+            if (slot >= 36 && slot <= 39) continue;
+            if (slot != selected && slot != 40 && !talentHands.contains(WeaponOptions.Hand.INVENTORY)
+                    && !(slot <= 8 && talentHands.contains(WeaponOptions.Hand.HOT_BAR))) continue;
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (!definitions.snapshot().weapons().containsKey(items.id(stack).orElse(""))) continue;
+            ItemInstance instance = items.instance(stack).orElse(null);
+            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapon(instance);
             if (weapon == null) continue;
+            if (!counted.add(instance.getInstanceId())) continue;
             if (!weapon.canEquip(level)) continue;
-            weaponAtk += weapon.attackFor(level, instance.getLevel());
-            if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
+            if (slot == selected || slot == 40) {
+                weaponAtk += weapon.attackFor(level, instance.getLevel());
+                if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
+            }
             WeaponOptions.Talent talent = weapon.options().talent();
-            if (talent != null && (talent.hand() == WeaponOptions.Hand.EITHER_HAND
-                    || mainHand && talent.hand() == WeaponOptions.Hand.MAIN_HAND
-                    || !mainHand && talent.hand() == WeaponOptions.Hand.OFF_HAND)) {
+            if (talent != null && talent.hand().includes(slot, selected)) {
                 talent.modifiers().forEach((key, value) -> add(modifiers, key, value * talent.multiplier()));
-                String activation = instance.getInstanceId() + ":" + mainHand;
+                String activation = instance.getInstanceId() + ":" + talent.name();
                 currentTalents.add(activation);
                 if (!previousTalents.contains(activation)) {
                     String message = definitions.snapshot().config("messages.yml").getString("ability-announcement.talent", "<green>天賦発動：<name></green>");

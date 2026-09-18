@@ -46,6 +46,19 @@ main-menu:
       icon: COMPARATOR
       name: "<gray>設定</gray>"
 enhancement:
+  select-all: "<green>全て選択</green>"
+  select-all-lore: "<gray>対応する実物・数値素材を全て選択します。確定するまで消費しません。</gray>"
+  clear-selection: "<yellow>選択を解除</yellow>"
+  duplicate-title: "<light_purple>消費する同名武器を選択</light_purple>"
+  duplicate-confirm-title: "<red>この武器を消費しますか？</red>"
+  duplicate-confirm: "<green>右の武器を1本消費して、左の武器を限界突破</green>"
+  no-duplicate: "<red>消費可能な同名武器がありません</red>"
+  failure-reasons:
+    target_not_weapon: "対象の武器が見つかりません。選び直してください。"
+    limit_break_maximum: "限界突破段階が最大です。"
+    invalid_material: "対象武器自身は素材にできません。"
+    materials_changed: "選択した素材が移動・変更されました。選び直してください。"
+    select_duplicate_weapon: "GUIで消費する同名武器を選んでください。"
   title: "<blue>強化</blue>"
   player:
     name: "<green>プレイヤーレベルアップ</green>"

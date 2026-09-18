@@ -58,6 +58,9 @@ hud:
       pitch: 0.8
 region-wand:
   material: WOODEN_AXE
+damage-chat:
+  # true: 与えたダメージを攻撃した本人のチャットだけに表示。TextDisplayとは独立。
+  enabled: false
 performance:
   max-operations-per-tick: 250
 attribute-colors:

@@ -37,8 +37,10 @@ public final class DamageService implements DamageApi, Listener {
     private final DamageDisplayService displays;
     private final RegionService regions;
     private final LevelService levels;
+    private final ItemService items;
     private final NamespacedKey itemIdKey;
     private final NamespacedKey projectileWeaponKey;
+    private final NamespacedKey projectileStageKey;
     private final Map<UUID, AttackCharge> attackCharges = new HashMap<>();
     private final Map<String, Long> heartReactionCooldowns = new HashMap<>();
     private long nextHeartCooldownCleanup;
@@ -62,7 +64,8 @@ public final class DamageService implements DamageApi, Listener {
 
     public DamageService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                          CombatStateService combat, ElementService elements, MobService mobs, PartyService parties,
-                         DamageDisplayService displays, RegionService regions, LevelService levels) {
+                         DamageDisplayService displays, RegionService regions, LevelService levels, ItemService items) {
+        this.items = items;
         this.plugin = plugin;
         this.definitions = definitions;
         this.players = players;
@@ -76,6 +79,7 @@ public final class DamageService implements DamageApi, Listener {
         this.levels = levels;
         this.itemIdKey = new NamespacedKey(plugin, "item_id");
         this.projectileWeaponKey = new NamespacedKey(plugin, "projectile_weapon");
+        this.projectileStageKey = new NamespacedKey(plugin, "projectile_weapon_stage");
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -83,6 +87,8 @@ public final class DamageService implements DamageApi, Listener {
         if (!(event.getEntity().getShooter() instanceof Player player)) return;
         String weapon = player.getInventory().getItemInMainHand().getPersistentDataContainer().get(itemIdKey, PersistentDataType.STRING);
         if (weapon != null) event.getEntity().getPersistentDataContainer().set(projectileWeaponKey, PersistentDataType.STRING, weapon);
+        ItemInstance instance = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
+        if (instance != null) event.getEntity().getPersistentDataContainer().set(projectileStageKey, PersistentDataType.INTEGER, instance.getLimitBreak());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -107,7 +113,7 @@ public final class DamageService implements DamageApi, Listener {
         }
         Element element = mobs.definition(attacker).map(MobDefinition::nativeElement).orElse(Element.PHYSICAL);
         if (attacker instanceof Player player) {
-            WeaponDefinition weapon = definitions.snapshot().weapons().get(weaponId);
+            WeaponDefinition weapon = attackWeapon(player, event.getDamager());
             if (weapon != null && weapon.canEquip(players.require(player).getLevel())) element = weapon.options().normalElement();
             PlayerData data = players.require(player); ItemInstance heart = data.getEquipment().get(EquipmentSlot.DIVINE_HEART);
             if (heart != null) {
@@ -123,7 +129,7 @@ public final class DamageService implements DamageApi, Listener {
         event.setCancelled(true);
         DamageResult result = apply(request);
         if (!result.applied()) return;
-        WeaponDefinition activeWeapon = definitions.snapshot().weapons().get(weaponId);
+        WeaponDefinition activeWeapon = attacker instanceof Player owner ? attackWeapon(owner, event.getDamager()) : null;
         if (attacker instanceof Player player && activeWeapon != null && activeWeapon.canEquip(players.require(player).getLevel()))
             WeaponVisuals.play(target, activeWeapon.options().visual());
         event.setCancelled(true);
@@ -131,6 +137,17 @@ public final class DamageService implements DamageApi, Listener {
     }
 
     public boolean canAffect(LivingEntity attacker, LivingEntity target) { return !target.isDead() && allowed(attacker, target); }
+
+    private WeaponDefinition attackWeapon(Player player, Entity damager) {
+        if (damager instanceof Projectile projectile) {
+            String id = projectile.getPersistentDataContainer().get(projectileWeaponKey, PersistentDataType.STRING);
+            if (id == null) return null;
+            int stage = projectile.getPersistentDataContainer().getOrDefault(projectileStageKey, PersistentDataType.INTEGER, 0);
+            var variants = definitions.snapshot().weaponStages().get(id);
+            return variants == null ? definitions.snapshot().weapons().get(id) : variants.get(Math.clamp(stage, 0, 5));
+        }
+        return definitions.snapshot().weapon(items.instance(player.getInventory().getItemInMainHand()).orElse(null));
+    }
 
     private boolean allowed(LivingEntity attacker, LivingEntity target) {
         if (attacker instanceof Player first && target instanceof Player second) {

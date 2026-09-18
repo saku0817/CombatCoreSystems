@@ -76,7 +76,7 @@ public final class GuiService implements Listener {
         List<String> attackLore = new ArrayList<>();
         for (int i : new int[]{player.getInventory().getHeldItemSlot(), 40}) {
             ItemInstance instance = items.instance(player.getInventory().getItem(i)).orElse(null);
-            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapons().get(instance.getDefinitionId());
+            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapon(instance);
             if (weapon == null) continue;
             attackLore.add("<gray>" + weapon.name() + " 武器Lv." + instance.getLevel() + "：+" + round(weapon.attackFor(data.getLevel(), instance.getLevel())) + "</gray>");
             if (!weapon.canEquip(data.getLevel())) attackLore.add("<red>必要プレイヤーLv." + weapon.minimumEquipLevel() + "～" + weapon.maximumEquipLevel() + "（現在は無効）</red>");
@@ -110,7 +110,7 @@ public final class GuiService implements Listener {
             if (instance != null || physical != null && !physical.getType().isAir()) {
                 ItemMeta meta = icon.getItemMeta();
                 List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of()));
-                lore.add(mini.deserialize(gui("equipment.equipped", "<green>装備中 — タップで解除</green>")));
+                lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(gui("equipment.equipped", "<green>装備中 — タップで解除</green>")));
                 meta.lore(lore); icon.setItemMeta(meta);
             }
             inv.setItem(index, icon);
@@ -241,7 +241,7 @@ public final class GuiService implements Listener {
             if (holder.context.equals("invitations")) { openPartyAction(player, "respond", id, 0); return; }
             if (parties.invite(player.getUniqueId(), UUID.fromString(id))) {
                 Player target = Bukkit.getPlayer(UUID.fromString(id));
-                if (target != null) target.sendMessage(mini.deserialize(gui("party.invited", "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>")));
+                if (target != null) target.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(gui("party.invited", "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>")));
             }
         } else if (holder.context.equals("respond")) {
             if (slot == 11) parties.accept(player.getUniqueId(), UUID.fromString(holder.query));
@@ -314,6 +314,8 @@ public final class GuiService implements Listener {
         }
         if (type.equals("WEAPON")) inv.setItem(47, item("AMETHYST_SHARD", gui("enhancement.limit-break", "<light_purple>限界突破</light_purple>"), List.of(gui("enhancement.limit-break-lore", "<gray>同じ武器を1本消費</gray>"))));
         inv.setItem(49, item("LIME_CONCRETE", gui("enhancement.confirm", "<green>この内容で強化</green>"), List.of()));
+        inv.setItem(45, item("CHEST", gui("enhancement.select-all", "<green>全て選択</green>"), List.of(gui("enhancement.select-all-lore", "<gray>対応する実物・数値素材を全て選択します。確定するまで消費しません。</gray>"))));
+        inv.setItem(46, item("BARRIER", gui("enhancement.clear-selection", "<yellow>選択を解除</yellow>"), List.of()));
         back(inv); player.openInventory(inv);
     }
 
@@ -331,13 +333,51 @@ public final class GuiService implements Listener {
         back(inv); player.openInventory(inv);
     }
 
+    private void openLimitBreak(Player player, String targetId) {
+        ItemInstance target = items.instance(findInstance(player, targetId)).orElse(null);
+        if (target == null) { openEnhancement(player); return; }
+        Inventory inv = inventory(player, Screen.LIMIT_BREAK_SELECT, gui("enhancement.duplicate-title", "<light_purple>消費する同名武器を選択</light_purple>"), 54, targetId, 0, "");
+        Holder holder = (Holder) inv.getHolder();
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = player.getInventory().getItem(slot);
+            ItemInstance candidate = items.instance(stack).orElse(null);
+            if (EnhancementService.validDuplicate(target, candidate)) {
+                inv.setItem(slot, stack.clone()); holder.actions.put(slot, slot + ":" + candidate.getInstanceId());
+            }
+        }
+        if (holder.actions.isEmpty()) inv.setItem(22, item("BARRIER", gui("enhancement.no-duplicate", "<red>消費可能な同名武器がありません</red>"), List.of()));
+        back(inv); player.openInventory(inv);
+    }
+
+    private void handleLimitBreak(Player player, Holder holder, int slot) {
+        if (slot == 53) { openEnhanceDetail(player, Screen.ENHANCE_WEAPON, "WEAPON", holder.context); return; }
+        if (holder.screen == Screen.LIMIT_BREAK_SELECT) {
+            String candidate = holder.actions.get(slot); if (candidate == null) return;
+            Inventory inv = inventory(player, Screen.LIMIT_BREAK_CONFIRM, gui("enhancement.duplicate-confirm-title", "<red>この武器を消費しますか？</red>"), 54, holder.context, 0, candidate);
+            ItemStack target = findInstance(player, holder.context);
+            if (target != null) inv.setItem(11, target.clone());
+            ItemStack material = player.getInventory().getItem(Integer.parseInt(candidate.split(":", 2)[0]));
+            if (material != null) inv.setItem(15, material.clone());
+            inv.setItem(49, item("LIME_CONCRETE", gui("enhancement.duplicate-confirm", "<green>右の武器を1本消費して、左の武器を限界突破</green>"), List.of()));
+            back(inv); player.openInventory(inv); return;
+        }
+        if (slot != 49) return;
+        String[] material = holder.query.split(":", 2);
+        var result = enhancement.limitBreak(player, holder.context, Integer.parseInt(material[0]), material[1]);
+        player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(result.success()
+                ? gui("enhancement.limit-break-success", "<green>限界突破しました。</green>")
+                : gui("enhancement.failure", "<red>強化できません: <reason></red>").replace("<reason>", gui("enhancement.failure-reasons." + result.failure(), result.failure()))));
+        if (result.success()) { equipment.syncArmor(player); levels.apply(player, players.require(player), false); }
+        openEnhanceDetail(player, Screen.ENHANCE_WEAPON, "WEAPON", holder.context);
+    }
+
     private void openConversionDetail(Player player, String id) {
         Inventory inv = inventory(player, Screen.CONVERSION_DETAIL, gui("enhancement.conversion-title", "<light_purple>強化素材の変換</light_purple>"), 27, id, 0, "");
         ItemStack material = items.create(id, 1).orElse(null);
         if (material != null) {
             ItemMeta meta = material.getItemMeta();
             List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of()));
-            lore.add(mini.deserialize(gui("enhancement.conversion-count", "<gray>実物: <physical> / 数値: <virtual></gray>")
+            lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(gui("enhancement.conversion-count", "<gray>実物: <physical> / 数値: <virtual></gray>")
                     .replace("<physical>", Long.toString(physicalCount(player, id)))
                     .replace("<virtual>", Long.toString(players.require(player).getEnhancementMaterials().getOrDefault(id, 0L)))));
             meta.lore(lore); material.setItemMeta(meta); inv.setItem(4, material);
@@ -477,7 +517,7 @@ public final class GuiService implements Listener {
                     };
                     if (!hasPhysical && !players.require(player).getEquipment().containsKey(kind)) { openEquipmentList(player, kind); return; }
                     if (equipment.unequip(player, kind)) levels.apply(player, players.require(player), false);
-                    else player.sendMessage(mini.deserialize(gui("equipment.failed", "<red>変更できません。戦闘状態と所持品の空きを確認してください。</red>")));
+                    else player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(gui("equipment.failed", "<red>変更できません。戦闘状態と所持品の空きを確認してください。</red>")));
                     openEquipment(player);
                 } });
             }
@@ -487,13 +527,14 @@ public final class GuiService implements Listener {
                     String selected = holder.actions.get(slot);
                     ItemInstance actual = items.instance(player.getInventory().getItem(slot)).orElse(null);
                     if (selected != null && actual != null && selected.equals(actual.getInstanceId()) && equipment.equip(player, slot)) levels.apply(player, players.require(player), false);
-                    else player.sendMessage(mini.deserialize(gui("equipment.failed", "<red>装備できません。戦闘状態・所持品・設定を確認してください。</red>")));
+                    else player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(gui("equipment.failed", "<red>装備できません。戦闘状態・所持品・設定を確認してください。</red>")));
                     openEquipment(player);
                 }
             }
             case SKILL_TREE -> handleSkillTree(player, holder.context, slot, event.getCurrentItem());
-            case REBIRTH -> { if (slot == 13 && !combat.inCombat(player.getUniqueId())) openRebirth(player, true); else if (slot == 26) openMain(player); }
-            case REBIRTH_CONFIRM -> { if (slot == 13 && levels.rebirth(player, players.require(player))) player.closeInventory(); else if (slot == 26) openRebirth(player, false); }
+            case REBIRTH -> { if (slot == 13) { if (rebirthAllowed(player)) openRebirth(player, true); } else if (slot == 26) openMain(player); }
+            case REBIRTH_CONFIRM -> { if (slot == 13 && rebirthAllowed(player) && levels.rebirth(player, players.require(player))) player.closeInventory(); else if (slot == 26) openRebirth(player, false); }
+            case LIMIT_BREAK_SELECT, LIMIT_BREAK_CONFIRM -> handleLimitBreak(player, holder, slot);
             case PARTY -> handleParty(player, holder, slot);
             case PARTY_ACTION -> handlePartyAction(player, holder, slot);
             case ENHANCEMENT -> { if (slot == 10) openEnhancePlayer(player); else if (slot == 12) openEnhanceItems(player, "WEAPON"); else if (slot == 14) openEnhanceItems(player, "EQUIPMENT"); else if (slot == 16) openConversion(player); else if (slot == 26) openMain(player); }
@@ -509,7 +550,7 @@ public final class GuiService implements Listener {
                     case 16 -> enhancement.exchangeTier(player, holder.context, false);
                     default -> true;
                 };
-                if (!ok) player.sendMessage(mini.deserialize(gui("enhancement.conversion-failed", "<red>素材または空きが不足しています。</red>")));
+                if (!ok) player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(gui("enhancement.conversion-failed", "<red>素材または空きが不足しています。</red>")));
                 openConversionDetail(player, holder.context);
             }
             case SETTINGS -> { if (slot == 26) { openMain(player); return; } PlayerData data = players.require(player); if (slot == 11) data.setPvpEnabled(!data.isPvpEnabled()); if (slot == 15) data.setHudEnabled(!data.isHudEnabled()); openSettings(player); }
@@ -539,14 +580,18 @@ public final class GuiService implements Listener {
         int slot = event.getRawSlot(); String type = holder.query; Screen screen = holder.screen;
         if (slot == 53) { if (type.equals("PLAYER")) openEnhancement(player); else openEnhanceItems(player, type); return; }
         if (slot == 47 && type.equals("WEAPON")) {
-            EnhancementService.Result result = enhancement.limitBreak(player, holder.context);
-            player.sendMessage(mini.deserialize(result.success() ? gui("enhancement.limit-break-success", "<green>限界突破しました。</green>") : gui("enhancement.failure", "<red>強化できません: <reason></red>").replace("<reason>", result.failure())));
+            openLimitBreak(player, holder.context); return;
+        }
+        if (slot == 45 || slot == 46) {
+            Map<String, Long> selection = new LinkedHashMap<>();
+            if (slot == 45) for (var material : enhancement.materials(type)) selection.put(material.id(), enhancement.available(player, material.id()));
+            enhancementSelection.put(player.getUniqueId(), selection);
             openEnhanceDetail(player, screen, type, holder.context); return;
         }
         if (slot == 49) {
             Map<String, Long> selected = enhancementSelection.getOrDefault(player.getUniqueId(), Map.of());
             EnhancementService.Result result = type.equals("PLAYER") ? enhancement.enhancePlayer(player, levels, selected) : enhancement.enhanceItem(player, holder.context, selected);
-            player.sendMessage(mini.deserialize(result.success() ? gui("enhancement.success", "<green>強化しました。Lv.<level></green>").replace("<level>", Integer.toString(result.resultingLevel())) : gui("enhancement.failure", "<red>強化できません: <reason></red>").replace("<reason>", result.failure())));
+            player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(result.success() ? gui("enhancement.success", "<green>強化しました。Lv.<level></green>").replace("<level>", Integer.toString(result.resultingLevel())) : gui("enhancement.failure", "<red>強化できません: <reason></red>").replace("<reason>", result.failure())));
             if (result.success()) enhancementSelection.put(player.getUniqueId(), new LinkedHashMap<>());
             openEnhanceDetail(player, screen, type, holder.context); return;
         }
@@ -580,12 +625,12 @@ public final class GuiService implements Listener {
         if (slot == 48) { if (holder.context.isBlank()) openMain(player); else openEncyclopedia(player, "", 0, ""); return; }
         if (slot == 45) { openEncyclopedia(player, holder.context, Math.max(0, holder.page - 1), holder.query); return; }
         if (slot == 53) { openEncyclopedia(player, holder.context, holder.page + 1, holder.query); return; }
-        if (slot == 49 && !holder.context.isBlank()) { awaitingSearch.put(player.getUniqueId(), new SearchState(holder.context, holder.page)); player.closeInventory(); player.sendMessage(mini.deserialize("<aqua>検索する名前をChatへ入力してください。</aqua>")); return; }
+        if (slot == 49 && !holder.context.isBlank()) { awaitingSearch.put(player.getUniqueId(), new SearchState(holder.context, holder.page)); player.closeInventory(); player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse("<aqua>検索する名前をChatへ入力してください。</aqua>")); return; }
         if (!holder.context.isBlank() && holder.actions.containsKey(slot)) { openEncyclopediaDetail(player, holder, holder.actions.get(slot)); return; }
         if (holder.context.isBlank() && clicked != null) {
             String plain = PlainTextComponentSerializer.plainText().serialize(clicked.getItemMeta().itemName());
             ConfigurationSection categories = definitions.snapshot().config("encyclopedia.yml").getConfigurationSection("categories");
-            if (categories != null) for (String id : categories.getKeys(false)) if (PlainTextComponentSerializer.plainText().serialize(mini.deserialize(categories.getString(id + ".name", id))).equals(plain)) { openEncyclopedia(player, id, 0, ""); return; }
+            if (categories != null) for (String id : categories.getKeys(false)) if (PlainTextComponentSerializer.plainText().serialize(com.github.saku0817.combatcoresystems.util.ItemText.parse(categories.getString(id + ".name", id))).equals(plain)) { openEncyclopedia(player, id, 0, ""); return; }
         }
     }
 
@@ -607,13 +652,19 @@ public final class GuiService implements Listener {
     }
 
     private Inventory inventory(Player player, Screen screen, String title, int size, String context, int page, String query) {
-        Holder holder = new Holder(screen, player.getUniqueId(), context, page, query); Inventory inv = Bukkit.createInventory(holder, size, mini.deserialize(title)); holder.inventory = inv; return inv;
+        Holder holder = new Holder(screen, player.getUniqueId(), context, page, query); Inventory inv = Bukkit.createInventory(holder, size, com.github.saku0817.combatcoresystems.util.ItemText.parse(title)); holder.inventory = inv; return inv;
+    }
+    private boolean rebirthAllowed(Player player) {
+        if (!combat.inCombat(player.getUniqueId())) return true;
+        player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(definitions.snapshot().config("messages.yml")
+                .getString("rebirth-failure.combat", "<red>戦闘中は新生回帰できません。</red>")));
+        return false;
     }
     private void back(Inventory inv) { inv.setItem(inv.getSize() - 1, item("ARROW", "<yellow>Back</yellow>", List.of())); }
     private String gui(String path, String fallback) { return definitions.snapshot().config("gui.yml").getString(path, fallback); }
     private ItemStack materialIcon(EnhancementService.MaterialInfo material, List<String> extraLore) {
         ItemStack stack = items.create(material.id(), 1).orElse(item(material.material(), material.name(), List.of()));
-        ItemMeta meta = stack.getItemMeta(); List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of())); lore.addAll(extraLore.stream().map(mini::deserialize).toList()); meta.lore(lore); stack.setItemMeta(meta); return stack;
+        ItemMeta meta = stack.getItemMeta(); List<Component> lore = new ArrayList<>(Optional.ofNullable(meta.lore()).orElse(List.of())); lore.addAll(extraLore.stream().map(com.github.saku0817.combatcoresystems.util.ItemText::parse).toList()); meta.lore(lore); stack.setItemMeta(meta); return stack;
     }
     private ItemStack findInstance(Player player, String instanceId) {
         for (ItemStack stack : player.getInventory().getContents()) { ItemInstance value = items.instance(stack).orElse(null); if (value != null && value.getInstanceId().equals(instanceId)) return stack; }
@@ -624,7 +675,7 @@ public final class GuiService implements Listener {
         Material material = Material.matchMaterial(materialName); ItemStack item = new ItemStack(material == null ? Material.BARRIER : material); ItemMeta meta = item.getItemMeta();
         meta.setEnchantmentGlintOverride(definitions.snapshot().config("gui.yml").getBoolean("enchantment-glint", false));
         meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ATTRIBUTES, org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
-        meta.itemName(mini.deserialize(name)); meta.lore(lore.stream().map(mini::deserialize).toList()); item.setItemMeta(meta); return item;
+        meta.itemName(com.github.saku0817.combatcoresystems.util.ItemText.parse(name)); meta.lore(lore.stream().map(com.github.saku0817.combatcoresystems.util.ItemText::parse).toList()); item.setItemMeta(meta); return item;
     }
 
     private ItemStack abilityIcon(WeaponDefinition.SkillDefinition ability, String key, String label) {
@@ -644,7 +695,11 @@ public final class GuiService implements Listener {
                 String member = holder.actions.get(slot);
                 if (member != null) try { owner = UUID.fromString(member); } catch (IllegalArgumentException ignored) { }
             }
-            meta.setOwningPlayer(Bukkit.getOfflinePlayer(owner));
+            Component name = meta.itemName();
+            Player onlineOwner = Bukkit.getPlayer(owner);
+            if (onlineOwner != null) meta.setPlayerProfile(onlineOwner.getPlayerProfile());
+            else meta.setOwningPlayer(Bukkit.getOfflinePlayer(owner));
+            if (name != null) { meta.itemName(name); meta.displayName(name); }
             stack.setItemMeta(meta);
         }
     }
@@ -652,7 +707,7 @@ public final class GuiService implements Listener {
     private long round(double value) { return Math.round(value); } private String percent(double value) { return String.format(Locale.ROOT, "%.1f%%", value * 100); } private String onOff(boolean value) { return value ? "ON" : "OFF"; }
     private enum Screen { MAIN, STATS, EQUIPMENT, EQUIPMENT_LIST, SKILL_TREE, REBIRTH, REBIRTH_CONFIRM, PARTY, ENHANCEMENT,
         ENHANCE_PLAYER, ENHANCE_WEAPON_LIST, ENHANCE_WEAPON, ENHANCE_EQUIPMENT_LIST, ENHANCE_EQUIPMENT, ENHANCE_CONVERSION,
-        PARTY_ACTION, CONVERSION_DETAIL, SETTINGS, ENCYCLOPEDIA, ENCYCLOPEDIA_DETAIL }
+        PARTY_ACTION, CONVERSION_DETAIL, SETTINGS, ENCYCLOPEDIA, ENCYCLOPEDIA_DETAIL, LIMIT_BREAK_SELECT, LIMIT_BREAK_CONFIRM }
     private static final class Holder implements InventoryHolder {
         final Map<Integer, String> actions = new HashMap<>();
         final Screen screen; final UUID player; final String context; final int page; final String query; Inventory inventory;

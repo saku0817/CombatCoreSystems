@@ -141,13 +141,14 @@ public final class DefinitionRegistry {
 
         Map<String, ReactionDefinition> reactions = parseReactions(yaml.get("reactions.yml"), errors);
         Map<String, WeaponDefinition> weapons = parseWeapons(yaml.get("weapons.yml"), errors, warnings);
+        Map<String, List<WeaponDefinition>> weaponStages = parseWeaponStages(yaml.get("weapons.yml"), weapons, errors, warnings);
         Map<String, EquipmentDefinition> equipment = parseEquipment(yaml.get("equipment.yml"), errors, warnings);
         validateDivineHearts(yaml.get("divine_hearts.yml"), errors);
         Map<String, MobDefinition> mobs = parseMobs(yaml.get("mobs.yml"), "mobs", false, false, errors);
         Map<String, MobDefinition> vanillaMobs = parseMobs(yaml.get("mobs.yml"), "vanilla-mobs", false, true, errors);
         Map<String, MobDefinition> bosses = parseMobs(yaml.get("bosses.yml"), "bosses", true, false, errors);
         Map<String, BuffDefinition> buffs = parseBuffs(yaml.get("buffs.yml"), errors);
-        for (WeaponDefinition weapon : weapons.values()) {
+        for (WeaponDefinition weapon : weaponStages.values().stream().flatMap(List::stream).toList()) {
             for (var ability : Arrays.asList(weapon.skill(), weapon.ultimate())) {
                 if (ability == null) continue;
                 for (String id : java.util.stream.Stream.concat(ability.options().selfEffects().stream(), ability.options().targetEffects().stream()).toList())
@@ -162,7 +163,7 @@ public final class DefinitionRegistry {
             }
         }
 
-        Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions);
+        Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions, weaponStages);
         return new LoadResult(snapshot, warnings, errors, fatal);
     }
 
@@ -248,6 +249,40 @@ public final class DefinitionRegistry {
             } catch (IllegalArgumentException ex) { errors.add("weapon " + id + ": " + ex.getMessage()); }
         }
         return Map.copyOf(result);
+    }
+
+    private Map<String, List<WeaponDefinition>> parseWeaponStages(YamlConfiguration source, Map<String, WeaponDefinition> base,
+                                                                List<String> errors, List<String> warnings) {
+        Map<String, List<WeaponDefinition>> result = new LinkedHashMap<>();
+        for (String id : base.keySet()) {
+            var raw = source.getConfigurationSection("weapons." + id);
+            var effective = new YamlConfiguration();
+            overlay(effective.createSection("weapons." + id), raw);
+            effective.set("weapons." + id + ".limit-breaks", null);
+            List<WeaponDefinition> stages = new ArrayList<>();
+            for (int stage = 0; stage <= 5; stage++) {
+                var patch = raw.getConfigurationSection("limit-breaks." + stage);
+                if (patch != null) overlay(effective.getConfigurationSection("weapons." + id), patch);
+                WeaponDefinition value = parseWeapons(effective, errors, warnings).get(id);
+                if (value == null) { errors.add("weapon " + id + " has invalid limit-break stage " + stage); break; }
+                stages.add(value);
+            }
+            if (stages.size() == 6) result.put(id, List.copyOf(stages));
+        }
+        return Map.copyOf(result);
+    }
+
+    static void overlay(ConfigurationSection target, ConfigurationSection patch) {
+        for (String key : patch.getKeys(false)) {
+            var child = patch.getConfigurationSection(key);
+            if (child == null) target.set(key, patch.get(key));
+            else {
+                var existing = target.getConfigurationSection(key);
+                overlay(existing == null ? target.createSection(key) : existing, child);
+            }
+        }
+        // Legacy cooldown spelling must override an inherited canonical spelling as well.
+        if (patch.contains("cooldown") && !patch.contains("cooldown-seconds")) target.set("cooldown-seconds", patch.get("cooldown"));
     }
 
     private WeaponDefinition.SkillDefinition parseSkill(String fallbackId, ConfigurationSection s, List<String> warnings) {
@@ -452,8 +487,20 @@ public final class DefinitionRegistry {
     public record Snapshot(Map<String, YamlConfiguration> yaml, Map<String, ReactionDefinition> reactions,
                            Map<String, WeaponDefinition> weapons, Map<String, EquipmentDefinition> equipment,
                            Map<String, BuffDefinition> buffs, Map<String, MobDefinition> mobs, Map<String, MobDefinition> vanillaMobs,
-                           Map<String, MobDefinition> bosses, Map<String, RegionDefinition> regions) {
+                           Map<String, MobDefinition> bosses, Map<String, RegionDefinition> regions,
+                           Map<String, List<WeaponDefinition>> weaponStages) {
         public YamlConfiguration config(String file) { return yaml.get(file); }
+        public Snapshot(Map<String, YamlConfiguration> yaml, Map<String, ReactionDefinition> reactions,
+                        Map<String, WeaponDefinition> weapons, Map<String, EquipmentDefinition> equipment,
+                        Map<String, BuffDefinition> buffs, Map<String, MobDefinition> mobs, Map<String, MobDefinition> vanillaMobs,
+                        Map<String, MobDefinition> bosses, Map<String, RegionDefinition> regions) {
+            this(yaml, reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions, Map.of());
+        }
+        public WeaponDefinition weapon(ItemInstance instance) {
+            if (instance == null) return null;
+            var stages = weaponStages.get(instance.getDefinitionId());
+            return stages == null ? weapons.get(instance.getDefinitionId()) : stages.get(Math.clamp(instance.getLimitBreak(), 0, 5));
+        }
     }
 
     private record LoadResult(Snapshot snapshot, List<String> warnings, List<String> errors, List<String> fatalErrors) {}

@@ -40,7 +40,7 @@ public final class LevelService {
         if (amount <= 0 || data.getLevel() >= maxLevel) return;
         PlayerStats before = stats.recalculate(player, data);
         int oldLevel = data.getLevel();
-        long exp = data.getExp() + amount;
+        long exp = EnhancementService.saturatedExp(data.getExp(), amount);
         while (data.getLevel() < maxLevel && exp >= requiredExp(data.getLevel())) {
             exp -= requiredExp(data.getLevel());
             data.setLevel(data.getLevel() + 1);
@@ -63,7 +63,11 @@ public final class LevelService {
     }
 
     public boolean rebirth(Player player, PlayerData data) {
-        if (data.getLevel() != 100) return false;
+        if (data.getLevel() != 100) {
+            player.sendMessage(miniMessage.deserialize(message("rebirth-failure.level", "<red>必要レベルに達していません。新生回帰にはLv.<required>が必要です（現在Lv.<level>）。</red>")
+                    .replace("<required>", "100").replace("<level>", Integer.toString(data.getLevel()))));
+            return false;
+        }
         data.setRebirthCount(data.getRebirthCount() + 1);
         data.setLevel(1);
         data.setExp(0);

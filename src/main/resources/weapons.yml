@@ -1,4 +1,24 @@
 data-version: 1
+# v1.4.3: talent.hand は MAIN_HAND / OFF_HAND / EITHER_HAND / HOT_BAR / INVENTORY。
+# HOT_BAR=0～8、INVENTORY=0～35とオフハンド。これらは天賦の発動場所で、基礎ATKは手持ちだけ。
+# limit-breaks は0～5。指定キーだけ前段階へ累積上書きし、説明も実効果も同じ段階を使用します。
+# 例（武器IDの下へ追加）:
+# limit-breaks:
+#   1:
+#     base-atk: {level-1: 120, level-100: 600}
+#     attribute-bonus: {type: FIRE, value: 0.20}
+#     talent:
+#       hand: HOT_BAR
+#       modifiers: {HP_PERCENT: 0.60}
+#       description: ['ホットバーにある間、最大HP+60%。']
+#     skill:
+#       name: '<red>強化された出航</red>'
+#       cooldown-seconds: 25
+#       description: ['CT25秒。効果はself-effectsが参照するbuffs.ymlで設定。']
+#   2:
+#     ultimate:
+#       multiplier: 3
+#       description: ['ATK300%の攻撃。damage-componentsを定義した技では成分リストが優先。']
 # 各武器内に enchantment-glint: true / false を指定できます（省略時false）。
 # category/type: MELEE、RANGED、UNCATEGORIZED（同時所持制限なし）。type指定時はtypeを優先。
 # 下記は動作する実装例。既存サーバーでは buffs.yml の2つの定義も一緒に追加してください。

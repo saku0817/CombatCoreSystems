@@ -2,11 +2,15 @@
 
 Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドRPG基盤プラグインです。
 
-現在のバージョン: **v1.4.2**
+現在のバージョン: **v1.4.3**
+
+v1.4.3の負荷対策・ドロップ入力・Lore・限界突破・追加コマンドは [更新ガイド](docs/v1.4.3.md) を参照してください。
+
+ChatGPTで設定を作る場合は [引き継ぎ書](docs/ChatGPT-YAML-Handoff.md) と [YAML参照資料](docs/ChatGPT-YAML-Reference.md) を添付してください。Release Assetsに両資料と設定例をまとめた `CombatCoreSystems-ChatGPT-YAML-1.4.3.zip` を用意しています。
 
 v1.4.2の仮想Mob HP、BE入力補完、装備・神心ツールチップ、設定移行、Web管理画面は [更新ガイド](docs/v1.4.2.md) を参照してください。
 
-WebエディタはフォームからのYAML生成・ダウンロードにも対応します。Release Assetsの`CombatCoreSystems-YamlGenerator-1.4.2.html`はオフラインでも使えるため、追加ポートのないレンタル環境でも設定ファイルを作成できます。
+WebエディタはフォームからのYAML生成・ダウンロードにも対応します。Release Assetsの`CombatCoreSystems-YamlGenerator-1.4.3.html`はオフラインでも使えるため、追加ポートのないレンタル環境でも設定ファイルを作成できます。
 
 v1.4.1の表示・入力診断・移行設定は [更新ガイド](docs/v1.4.1.md) を参照してください。
 

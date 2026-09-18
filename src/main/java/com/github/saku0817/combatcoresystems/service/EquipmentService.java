@@ -67,11 +67,11 @@ public final class EquipmentService implements Listener {
     }
 
     @EventHandler(ignoreCancelled = true) public void onSwap(PlayerSwapHandItemsEvent event) { auditLater(event.getPlayer()); }
-    @EventHandler(ignoreCancelled = true) public void onDrop(PlayerDropItemEvent event) { auditLater(event.getPlayer()); }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true) public void onDrop(PlayerDropItemEvent event) { auditLater(event.getPlayer()); }
     @EventHandler(ignoreCancelled = true) public void onPickup(EntityPickupItemEvent event) { if (event.getEntity() instanceof Player player) auditLater(player); }
     @EventHandler(ignoreCancelled = true) public void onUse(PlayerInteractEvent event) {
         if (event.getItem() != null) markUsed(event.getPlayer(), event.getItem());
-        auditLater(event.getPlayer());
+        // A click/mining swing does not change inventory. Held/click/drop/pickup events audit actual changes.
     }
     @EventHandler(ignoreCancelled = true) public void onAttack(EntityDamageByEntityEvent event) {
         Player player = event.getDamager() instanceof Player direct ? direct
@@ -172,7 +172,7 @@ public final class EquipmentService implements Listener {
     public void markUsed(Player player, ItemStack item) {
         ItemInstance instance = items.instance(item).orElse(null);
         if (instance == null) return;
-        var definition = definitions.snapshot().weapons().get(instance.getDefinitionId());
+        var definition = definitions.snapshot().weapon(instance);
         if (definition == null) return;
         lastUsed.computeIfAbsent(player.getUniqueId(), ignored -> new EnumMap<>(com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category.class))
                 .put(definition.category(), instance.getInstanceId());
@@ -220,7 +220,7 @@ public final class EquipmentService implements Listener {
     @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) { synchronizedMaximum.remove(event.getPlayer().getUniqueId()); }
     private void collect(Map<com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category, List<WeaponSlot>> grouped, WeaponSlot slot) {
         ItemInstance instance = items.instance(slot.item).orElse(null); if (instance == null) return;
-        var definition = definitions.snapshot().weapons().get(instance.getDefinitionId()); if (definition == null) return;
+        var definition = definitions.snapshot().weapon(instance); if (definition == null) return;
         if (definition.category() == com.github.saku0817.combatcoresystems.model.WeaponDefinition.Category.UNCATEGORIZED) return;
         grouped.computeIfAbsent(definition.category(), ignored -> new ArrayList<>()).add(new WeaponSlot(slot.slot, slot.item, instance.getInstanceId()));
     }

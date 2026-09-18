@@ -48,6 +48,8 @@ public final class EnhancementService {
     }
 
     public Result enhancePlayer(Player player, LevelService levels, Map<String, Long> selection) {
+        int maximum = Math.clamp(definitions.snapshot().config("levels.yml").getInt("player.max-level", 100), 1, 100);
+        if (players.require(player).getLevel() >= maximum) return new Result(false, 0, maximum, "already_maximum");
         long gained = selectedExp(selection);
         if (gained <= 0) return new Result(false, 0, players.require(player).getLevel(), "no_player_materials");
         if (!consume(player, selection, "PLAYER")) return new Result(false, 0, players.require(player).getLevel(), "materials_changed");
@@ -68,7 +70,7 @@ public final class EnhancementService {
         long gained = selectedExp(selection);
         if (gained <= 0) return new Result(false, 0, instance.getLevel(), "no_materials");
         if (!consume(player, selection, type)) return new Result(false, 0, instance.getLevel(), "materials_changed");
-        instance.setExp(instance.getExp() + gained);
+        instance.setExp(saturatedExp(instance.getExp(), gained));
         while (instance.getLevel() < maximum) {
             long needed = required(instance.getLevel(), weapon);
             if (instance.getExp() < needed) break;
@@ -88,14 +90,14 @@ public final class EnhancementService {
         boolean weapon = definitions.snapshot().weapons().containsKey(original.getDefinitionId());
         EquipmentDefinition equipment = definitions.snapshot().equipment().get(original.getDefinitionId());
         int maximum = weapon ? 100 : equipment == null ? original.getLevel() : equipment.maxLevel();
-        int level = original.getLevel(); long exp = original.getExp() + selectedExp(selection);
+        int level = original.getLevel(); long exp = saturatedExp(original.getExp(), selectedExp(selection));
         while (level < maximum && exp >= required(level, weapon)) { exp -= required(level, weapon); level++; }
         if (level >= maximum) exp = 0;
         return new Preview(original.getLevel(), original.getExp(), level, exp, selectedExp(selection));
     }
 
     public Preview previewPlayer(Player player, LevelService levels, Map<String, Long> selection) {
-        PlayerData data = players.require(player); int level = data.getLevel(); long exp = data.getExp() + selectedExp(selection);
+        PlayerData data = players.require(player); int level = data.getLevel(); long exp = saturatedExp(data.getExp(), selectedExp(selection));
         int maximum = definitions.snapshot().config("levels.yml").getInt("player.max-level", 100);
         while (level < maximum && exp >= levels.requiredExp(level)) { exp -= levels.requiredExp(level); level++; }
         if (level >= maximum) exp = 0;
@@ -163,6 +165,8 @@ public final class EnhancementService {
         return total;
     }
 
+    static long saturatedExp(long current, long gain) { return current > Long.MAX_VALUE - gain ? Long.MAX_VALUE : current + gain; }
+
     private boolean consume(Player player, Map<String, Long> selection, String type) {
         for (var entry : selection.entrySet()) {
             ConfigurationSection material = definitions.snapshot().config("levels.yml").getConfigurationSection("materials." + entry.getKey());
@@ -192,18 +196,31 @@ public final class EnhancementService {
     }
 
     public Result limitBreak(Player player, String instanceId) {
+        // Compatibility entry point: never choose or consume a copy implicitly.
+        return new Result(false, 0, 0, "select_duplicate_weapon");
+    }
+
+    public Result limitBreak(Player player, String instanceId, int materialSlot, String materialInstanceId) {
         LocatedItem target = find(player, instanceId); ItemInstance instance = target == null ? null : target.instance;
         if (instance == null || !definitions.snapshot().weapons().containsKey(instance.getDefinitionId())) return new Result(false, 0, 0, "target_not_weapon");
         if (instance.getLimitBreak() >= 5) return new Result(false, 0, instance.getLevel(), "limit_break_maximum");
-        for (int slot = 0; slot < player.getInventory().getSize(); slot++) {
-            ItemStack candidate = player.getInventory().getItem(slot); if (candidate == null || candidate == target.stack) continue;
-            ItemInstance copy = items.instance(candidate).orElse(null); if (copy == null || !copy.getDefinitionId().equals(instance.getDefinitionId())) continue;
-            candidate.setAmount(candidate.getAmount() - 1); instance.setLimitBreak(instance.getLimitBreak() + 1); items.writeInstance(target.stack, instance);
-            player.getInventory().setItem(target.slot, target.stack);
+        if (materialSlot < 0 || materialSlot >= 36 || materialSlot == target.slot) return new Result(false, 0, instance.getLevel(), "invalid_material");
+        ItemStack candidate = player.getInventory().getItem(materialSlot);
+        ItemInstance copy = items.instance(candidate).orElse(null);
+        if (!validDuplicate(instance, copy) || !copy.getInstanceId().equals(materialInstanceId)) return new Result(false, 0, instance.getLevel(), "materials_changed");
+        // Prepare both stacks before committing; identity/slot checks protect the target from self-consumption.
+        ItemStack updated = target.stack.clone();
+        instance.setLimitBreak(instance.getLimitBreak() + 1); items.writeInstance(updated, instance);
+        ItemStack remaining = candidate.clone(); remaining.setAmount(remaining.getAmount() - 1);
+        player.getInventory().setItem(materialSlot, remaining.getAmount() <= 0 ? null : remaining);
+        player.getInventory().setItem(target.slot, updated);
             players.require(player).getEquipment().replaceAll((key, old) -> old.getInstanceId().equals(instance.getInstanceId()) ? instance : old);
             stats.invalidate(player.getUniqueId()); return new Result(true, 0, instance.getLevel(), "");
-        }
-        return new Result(false, 0, instance.getLevel(), "duplicate_weapon_required");
+    }
+
+    static boolean validDuplicate(ItemInstance target, ItemInstance material) {
+        return target != null && material != null && !target.getInstanceId().equals(material.getInstanceId())
+                && target.getDefinitionId().equals(material.getDefinitionId());
     }
 
     private long required(int level, boolean weapon) {

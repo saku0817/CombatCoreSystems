@@ -49,7 +49,7 @@ public final class CombatCoreSystems extends JavaPlugin {
         MobService mobs = new MobService(this, definitions);
         ElementService elements = new ElementService(this, definitions);
         DamageDisplayService displays = new DamageDisplayService(this, definitions);
-        DamageService damage = new DamageService(this, definitions, players, stats, combat, elements, mobs, parties, displays, regions, levels);
+        DamageService damage = new DamageService(this, definitions, players, stats, combat, elements, mobs, parties, displays, regions, levels, items);
         MobAbilityService mobAbilities = new MobAbilityService(this, definitions, mobs, damage, items);
         HealService healing = new HealService(players, stats, displays, levels, mobs);
         BuffService buffs = new BuffService(this, definitions, players, stats, damage, healing);

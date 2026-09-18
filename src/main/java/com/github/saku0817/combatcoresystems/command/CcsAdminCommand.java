@@ -43,6 +43,7 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         try {
             switch (root) {
                 case "debug" -> debug(sender, args);
+                case "itemlevel" -> itemLevel(sender, args);
                 case "reload" -> message(sender, definitions.reloadSafely() ? "<green>設定を再読み込みしました。</green>" : "<red>検証に失敗したため現在の設定を維持しました。</red>");
                 case "save" -> { parties.save(); players.saveAll().whenComplete((ok, error) -> main(() -> message(sender, error == null ? "<green>保存しました。</green>" : "<red>保存に失敗しました。</red>"))); }
                 case "backup" -> backup(sender, args);
@@ -72,6 +73,26 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
             player.getInventory().addItem(item).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
         }
         message(sender, "<green>アイテムを付与しました。</green>");
+    }
+
+    private void itemLevel(CommandSender sender, String[] args) {
+        if (args.length < 2 || args.length > 3) throw new IllegalArgumentException("/ccsadmin itemlevel <level> [player]");
+        Player target = args.length == 3 ? Bukkit.getPlayerExact(args[2]) : sender instanceof Player player ? player : null;
+        if (target == null) throw new IllegalArgumentException("対象のオンラインプレイヤーを指定してください。");
+        var data = players.find(target.getUniqueId()).orElseThrow(() -> new IllegalArgumentException("プレイヤーデータ読込中です。"));
+        ItemStack stack = target.getInventory().getItemInMainHand();
+        var instance = items.instance(stack).orElseThrow(() -> new IllegalArgumentException("利き手にCCS武器または装備を持ってください。"));
+        var equipment = definitions.snapshot().equipment().get(instance.getDefinitionId());
+        int maximum = definitions.snapshot().weapons().containsKey(instance.getDefinitionId()) ? 100 : equipment == null ? 0 : equipment.maxLevel();
+        if (maximum == 0) throw new IllegalArgumentException("このアイテムには強化レベルがありません。");
+        int level = Integer.parseInt(args[1]);
+        if (level < 1 || level > maximum) throw new IllegalArgumentException("レベルは1～" + maximum + "で指定してください。");
+        instance.setLevel(level); instance.setExp(0);
+        items.writeInstance(stack, instance); target.getInventory().setItemInMainHand(stack);
+        data.getEquipment().replaceAll((slot, old) -> old.getInstanceId().equals(instance.getInstanceId()) ? instance : old);
+        stats.invalidate(target.getUniqueId()); levels.apply(target, data, false);
+        message(sender, configuredMessage("command.itemlevel", "<green><player> の手持ちアイテムをLv.<level>にしました（残りEXPは0）。</green>",
+                Map.of("<player>", target.getName(), "<level>", Integer.toString(level))));
     }
 
     private void spawn(CommandSender sender, String[] args) {
@@ -180,6 +201,7 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         return value;
     }
     private void help(CommandSender sender) {
+        message(sender, "<gray>/ccsadmin itemlevel <level> [player] — 利き手のアイテムLvを設定</gray>");
         message(sender, "<gray>/ccsadmin debug on [10m] | off | status | schedule <delay> [duration] | cancel</gray>");
         message(sender, "<gold>/ccsadmin edit|give|spawn|region|backup|encyclopedia|reload|save</gold>");
         message(sender, "<gray>/ccsadmin edit attribute add|remove <player> <attribute></gray>");
@@ -188,7 +210,9 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     private void message(CommandSender sender, String text) { sender.sendMessage(mini.deserialize("<dark_gray>[<gold>CCS</gold>]</dark_gray> " + text)); }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return complete(args[0], List.of("edit", "give", "spawn", "region", "backup", "encyclopedia", "reload", "save", "debug"));
+        if (args.length == 1) return complete(args[0], List.of("edit", "give", "spawn", "region", "backup", "encyclopedia", "reload", "save", "debug", "itemlevel"));
+        if (args.length == 2 && args[0].equalsIgnoreCase("itemlevel")) return complete(args[1], List.of("1", "25", "100"));
+        if (args.length == 3 && args[0].equalsIgnoreCase("itemlevel")) return complete(args[2], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
         if (args.length == 2 && args[0].equalsIgnoreCase("debug")) return complete(args[1], List.of("on", "off", "status", "schedule", "cancel"));
         if (args.length >= 3 && args[0].equalsIgnoreCase("debug")) return complete(args[args.length - 1], List.of("30s", "5m", "10m", "1h"));
         if (args.length == 2 && args[0].equalsIgnoreCase("edit")) return complete(args[1], List.of("level", "exp", "buff", "attribute", "force"));

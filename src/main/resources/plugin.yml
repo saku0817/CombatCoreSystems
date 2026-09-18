@@ -57,6 +57,7 @@ permissions:
     default: op
     children:
       combatcoresystems.admin.level: true
+      combatcoresystems.admin.itemlevel: true
       combatcoresystems.admin.exp: true
       combatcoresystems.admin.give: true
       combatcoresystems.admin.spawn: true
