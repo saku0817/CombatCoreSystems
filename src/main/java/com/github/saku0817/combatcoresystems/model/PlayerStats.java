@@ -10,6 +10,13 @@ public final class PlayerStats {
     private final double atk;
     private final double def;
     private final EnumMap<StatKey, Double> advanced;
+    private Map<String, Map<StatKey, Double>> sources = Map.of();
+    public Map<String, Map<StatKey, Double>> sources() { return sources; }
+    public PlayerStats withSources(Map<String, Map<StatKey, Double>> value) {
+        Map<String, Map<StatKey, Double>> copy = new java.util.LinkedHashMap<>();
+        value.forEach((key, stats) -> copy.put(key, Map.copyOf(stats)));
+        sources = Collections.unmodifiableMap(copy); return this;
+    }
 
     public PlayerStats(int level, double maxHp, double atk, double def, Map<StatKey, Double> advanced) {
         this.level = level;

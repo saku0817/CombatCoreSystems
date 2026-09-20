@@ -1,6 +1,21 @@
 data-version: 1
 # セット追加例: sets.warrior.two-piece.modifiers.ATK_PERCENT: 0.15
 sets: {}
+# v1.4.4: two-piece/four-piece配下に triggers を追加可能。効果本体はbuffs.ymlに定義。
+#     two-piece:
+#       triggers:
+#         on_skill:
+#           event: SKILL # SKILL / ULTIMATE / HIT / TAKE_DAMAGE / HP_BELOW
+#           target: SELF # SELF=自身 / OTHER=命中対象・被弾時の攻撃者。HP_BELOWはSELFのみ
+#           effects: [attack_up] # buffs.ymlで定義済みのID。未定義なら再読込を拒否
+#           cooldown-seconds: 10 # 初期1秒、0～86400秒
+#         emergency:
+#           event: HP_BELOW
+#           hp-percent: 0.30 # 30%。HP条件は初めて満たした時に発動（5tickごと判定）
+#           target: SELF
+#           effects: [emergency_shield]
+#           cooldown-seconds: 30
+# 残響もセット数に含みます。外すと新たな発動は止まりますが付与済み効果はbuffs.ymlの寿命に従います。
 # 実装例（equipment.ymlのfictional_traveler_chestと組み合わせる）:
 # sets:
 #   fictional_traveler:

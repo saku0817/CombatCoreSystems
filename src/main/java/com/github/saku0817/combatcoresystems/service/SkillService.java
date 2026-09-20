@@ -21,6 +21,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class SkillService implements Listener {
+    private SetEffectService setEffects;
+    public void bindSetEffects(SetEffectService value) { setEffects = value; }
     private final DefinitionRegistry definitions;
     private final PlayerDataService players;
     private final StatService stats;
@@ -247,7 +249,7 @@ public final class SkillService implements Listener {
                     .replace("<seconds>", String.format(Locale.ROOT, "%.1f", state.remainingSeconds()))));
             return true;
         }
-        combat.touch(player, weaponId);
+        // Enter combat only after a successful hit, not merely on casting.
         String announcement = definitions.snapshot().config("messages.yml").getString(
                 "ability-announcement." + (ultimate ? "ultimate" : "skill"), "<aqua>発動：<name></aqua>");
         if (!announcement.isBlank()) player.sendMessage(mini.deserialize(announcement.replace("<name>", ability.name())));
@@ -256,6 +258,8 @@ public final class SkillService implements Listener {
         if (buffs != null) for (String id : ability.options().selfEffects()) buffs.apply(player, id, player.getUniqueId());
         stats.invalidate(player.getUniqueId());
         trace("cast success", player, "weapon=" + weaponId + " kind=" + (ultimate ? "ultimate" : "skill") + " empty=" + emptyCast);
+        if (setEffects != null) setEffects.fire(player, ultimate ? com.github.saku0817.combatcoresystems.model.SetTrigger.Event.ULTIMATE
+                : com.github.saku0817.combatcoresystems.model.SetTrigger.Event.SKILL, target != null && damage.canAffect(player, target) ? target : null);
         if (emptyCast) WeaponVisuals.play(player, ability.options().visual());
         Element activeElement = element;
         for (LivingEntity current : targets) {

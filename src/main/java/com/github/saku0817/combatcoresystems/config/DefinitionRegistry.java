@@ -163,6 +163,11 @@ public final class DefinitionRegistry {
             }
         }
 
+        var setRoot = yaml.get("sets.yml").getConfigurationSection("sets");
+        if (setRoot != null) for (String id : setRoot.getKeys(false)) for (String tier : List.of("two-piece", "four-piece")) {
+            try { SetTrigger.parse(setRoot.getConfigurationSection(id + "." + tier + ".triggers"), buffs.keySet()); }
+            catch (IllegalArgumentException ex) { errors.add("set " + id + ": " + ex.getMessage()); }
+        }
         Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions, weaponStages);
         return new LoadResult(snapshot, warnings, errors, fatal);
     }
@@ -323,7 +328,12 @@ public final class DefinitionRegistry {
             StatKey main;
             try {
                 slot = EquipmentSlot.valueOf(s.getString("slot", "").toUpperCase(Locale.ROOT));
-                main = StatKey.valueOf(s.getString("main-stat.type", "").toUpperCase(Locale.ROOT));
+                var mainPool = EquipmentRolls.candidates(s.getConfigurationSection("main-stat-candidates"), true);
+                if (s.contains("main-stat-candidates") && mainPool.isEmpty()) throw new IllegalArgumentException("Empty main-stat-candidates");
+                main = s.contains("main-stat.type") || mainPool.isEmpty() ? StatKey.valueOf(s.getString("main-stat.type", "").toUpperCase(Locale.ROOT)) : mainPool.getFirst().key();
+                for (var candidate : mainPool) if (!mainAllowed(slot, candidate.key())) throw new IllegalArgumentException("Main stat not allowed for slot");
+                var subPool = EquipmentRolls.candidates(s.getConfigurationSection("substat-candidates"), false);
+                if (s.contains("substat-candidates") && subPool.isEmpty()) throw new IllegalArgumentException("Empty substat-candidates");
             } catch (IllegalArgumentException ex) { errors.add("equipment " + id + " has invalid slot or main stat"); continue; }
             if (!mainAllowed(slot, main)) { errors.add("equipment " + id + " main stat is not allowed for its slot"); continue; }
             int rarity = s.getInt("rarity");
@@ -344,15 +354,19 @@ public final class DefinitionRegistry {
                 try { StatKey key = StatKey.valueOf(raw.toUpperCase(Locale.ROOT)); if (!candidates.contains(key)) candidates.add(key); }
                 catch (IllegalArgumentException ex) { errors.add("equipment " + id + " contains invalid substat " + raw); }
             }
+            var mainPool = EquipmentRolls.candidates(s.getConfigurationSection("main-stat-candidates"), true);
+            double first = s.getDouble("main-stat.level-1", mainPool.isEmpty() ? 0 : mainPool.getFirst().first());
+            double last = s.getDouble("main-stat.max-level", mainPool.isEmpty() ? 0 : mainPool.getFirst().last());
+            if (!Double.isFinite(first) || !Double.isFinite(last)) { errors.add("equipment " + id + " has non-finite main stat"); continue; }
             result.put(id, new EquipmentDefinition(id, s.getString("name", id), material.name(), slot, rarity, maxLevel,
-                    main, s.getDouble("main-stat.level-1"), s.getDouble("main-stat.max-level"), List.copyOf(candidates),
+                    main, first, last, List.copyOf(candidates),
                     s.getString("set", ""), s.contains("custom-model-data") ? s.getInt("custom-model-data") : null,
                     s.getStringList("lore")));
         }
         return Map.copyOf(result);
     }
 
-    private boolean mainAllowed(EquipmentSlot slot, StatKey key) {
+    public static boolean mainAllowed(EquipmentSlot slot, StatKey key) {
         return switch (slot) {
             case HEAD -> Set.of(StatKey.HP_FLAT, StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT).contains(key);
             case CHEST -> Set.of(StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE).contains(key);
@@ -371,6 +385,9 @@ public final class DefinitionRegistry {
         for (String id : root.getKeys(false)) {
             ConfigurationSection s = root.getConfigurationSection(id);
             if (s == null) continue;
+            if (s.contains("material") && (Material.matchMaterial(s.getString("material", "")) == null || Material.matchMaterial(s.getString("material", "")).isAir())) {
+                errors.add(rootName + "." + id + ".material must be a non-air item material"); continue;
+            }
             try { EntityType.valueOf(s.getString("entity-type", "").toUpperCase(Locale.ROOT)); }
             catch (IllegalArgumentException ex) { errors.add((boss ? "boss " : "mob ") + id + " has invalid entity type"); continue; }
             if (!EntityType.valueOf(s.getString("entity-type").toUpperCase(Locale.ROOT)).isAlive()) {

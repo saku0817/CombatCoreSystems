@@ -54,7 +54,7 @@ public final class PlayerLifecycleListener implements Listener {
     }
 
     @EventHandler public void onRespawn(PlayerRespawnEvent event) {
-        Bukkit.getScheduler().runTask(plugin, () -> players.find(event.getPlayer().getUniqueId()).ifPresent(data -> levels.apply(event.getPlayer(), data, true)));
+        Bukkit.getScheduler().runTask(plugin, () -> players.find(event.getPlayer().getUniqueId()).ifPresent(data -> { equipment.syncArmor(event.getPlayer()); levels.apply(event.getPlayer(), data, true); }));
     }
 
     @EventHandler public void onDeath(PlayerDeathEvent event) {

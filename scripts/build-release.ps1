@@ -39,6 +39,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "src/main/resources/web-editor.html") -Destination (Join-Path $backupDir "CombatCoreSystems-YamlGenerator-$version-$stamp.html")
     $handoffName = "CombatCoreSystems-ChatGPT-YAML-$version.zip"
     $handoffFiles = @((Join-Path $projectRoot 'docs/ChatGPT-YAML-Handoff.md'), (Join-Path $projectRoot 'docs/ChatGPT-YAML-Reference.md'))
+    $delta = Join-Path $projectRoot "docs/ChatGPT-YAML-v$version.md"
+    if (Test-Path -LiteralPath $delta) { $handoffFiles += $delta }
     $handoffFiles += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src/main/resources') -Filter '*.yml' | Where-Object Name -ne 'plugin.yml' | Select-Object -ExpandProperty FullName
     Compress-Archive -LiteralPath $handoffFiles -DestinationPath (Join-Path $releaseDir $handoffName) -Force
     Copy-Item -LiteralPath (Join-Path $releaseDir $handoffName) -Destination (Join-Path $backupDir "CombatCoreSystems-ChatGPT-YAML-$version-$stamp.zip")

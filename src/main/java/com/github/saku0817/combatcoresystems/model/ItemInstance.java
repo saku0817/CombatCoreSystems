@@ -13,6 +13,19 @@ public final class ItemInstance {
     private Map<String, Double> substats = new LinkedHashMap<>();
     private Map<String, Integer> substatUpgrades = new LinkedHashMap<>();
     private int unlockedSubstats;
+    private StatKey mainStat;
+    private double mainAtLevel1;
+    private double mainAtMaxLevel;
+
+    public StatKey mainStat(EquipmentDefinition definition) { return mainStat == null ? definition.mainStat() : mainStat; }
+    public double mainValue(EquipmentDefinition definition) {
+        return com.github.saku0817.combatcoresystems.util.CoreMath.linear(mainStat == null ? definition.mainAtLevel1() : mainAtLevel1,
+                mainStat == null ? definition.mainAtMaxLevel() : mainAtMaxLevel, level, definition.maxLevel());
+    }
+    public void setMainStat(StatKey key, double first, double last) {
+        if (key == null || !Double.isFinite(first) || !Double.isFinite(last)) throw new IllegalArgumentException("Invalid main stat");
+        mainStat = key; mainAtLevel1 = first; mainAtMaxLevel = last;
+    }
 
     public String getInstanceId() { return instanceId; }
     public String getDefinitionId() { return definitionId; }

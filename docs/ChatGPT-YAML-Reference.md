@@ -1,6 +1,46 @@
-# CombatCoreSystems v1.4.3 — YAML完全参照
+# CombatCoreSystems v1.4.4 — YAML・実装参照資料
 
-この資料は配布ソースの既定YAMLをそのまま収録しています。コメント例も参照してください。運用中のパスワードやプレイヤーデータは含みません。後半に読み取り・条件判定コードを収録し、任意キーが実装されているか確認できます。コードは仕様確認用の引用資料です。
+この資料は配布ソースから機械的に収録しています。生成時は引き継ぎ書・ChatGPT-YAML-v1.4.4.mdも参照してください。運用中の秘密情報は含めないでください。
+
+## bosses.yml
+
+```yaml
+data-version: 1
+# v1.4.4: bosses.ID.material: DRAGON_HEAD で図鑑アイコンを指定。
+# Boss追加例: bosses.dragon: {name: "<red>Dragon</red>", entity-type: ENDER_DRAGON, level: {min: 100, max: 100}, custom-exp: 10000}
+bosses: {}
+```
+
+## buffs.yml
+
+```yaml
+data-version: 1
+# Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
+# 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
+buffs:
+  departure_crit:
+    name: 出航
+    kind: BUFF
+    target: SELF
+    duration: 30
+    max-stacks: 1
+    reapply: REFRESH
+    modifiers:
+      flat:
+        CRIT_DAMAGE: 0.48
+  sunset:
+    name: 落日
+    kind: DEBUFF
+    target: ENEMY
+    duration: 3
+    max-stacks: 1
+    reapply: REFRESH
+    modifiers:
+      percent:
+        ATK_PERCENT: -0.3
+        # 対象が攻撃を受ける際、その時点の有効防御力の40%を無視します。
+        DEF_IGNORED_WHEN_HIT: 0.4
+```
 
 ## config.yml
 
@@ -84,206 +124,6 @@ rarity-colors:
   5: "#ffaa00"
 ```
 
-## weapons.yml
-
-```yaml
-data-version: 1
-# v1.4.3: talent.hand は MAIN_HAND / OFF_HAND / EITHER_HAND / HOT_BAR / INVENTORY。
-# HOT_BAR=0～8、INVENTORY=0～35とオフハンド。これらは天賦の発動場所で、基礎ATKは手持ちだけ。
-# limit-breaks は0～5。指定キーだけ前段階へ累積上書きし、説明も実効果も同じ段階を使用します。
-# 例（武器IDの下へ追加）:
-# limit-breaks:
-#   1:
-#     base-atk: {level-1: 120, level-100: 600}
-#     attribute-bonus: {type: FIRE, value: 0.20}
-#     talent:
-#       hand: HOT_BAR
-#       modifiers: {HP_PERCENT: 0.60}
-#       description: ['ホットバーにある間、最大HP+60%。']
-#     skill:
-#       name: '<red>強化された出航</red>'
-#       cooldown-seconds: 25
-#       description: ['CT25秒。効果はself-effectsが参照するbuffs.ymlで設定。']
-#   2:
-#     ultimate:
-#       multiplier: 3
-#       description: ['ATK300%の攻撃。damage-componentsを定義した技では成分リストが優先。']
-# 各武器内に enchantment-glint: true / false を指定できます（省略時false）。
-# category/type: MELEE、RANGED、UNCATEGORIZED（同時所持制限なし）。type指定時はtypeを優先。
-# 下記は動作する実装例。既存サーバーでは buffs.yml の2つの定義も一緒に追加してください。
-# 倍率・割合: 0.3=30%、2.0=200%。descriptionは説明のみ、効果は別キーで設定します。
-weapons:
-  guiding_star:
-    name: '<red><bold>夜を照らす導きの星</bold></red>'
-    material: DIAMOND_SWORD
-    category: MELEE
-    rarity: 5
-    base-atk:
-      level-1: 100
-      level-100: 100
-    attribute-bonus:
-      type: FIRE
-      value: 0.15
-    equip-level:
-      min: 1
-      max: 100
-    normal-attack:
-      attribute: FIRE
-      visual:
-        particle: FLAME
-        count: 12
-        spread: 0.4
-    talent:
-      name: '<red>ナビゲーター</red>'
-      description:
-        - 'この武器を利き手に所持しているとき、常に自身の最大HP<yellow><u>+50%</u></yellow>。'
-      # MAIN_HAND / OFF_HAND / EITHER_HAND。multiplierはmodifiers全体に掛けます。
-      hand: MAIN_HAND
-      multiplier: 1.0
-      modifiers:
-        HP_PERCENT: 0.5
-    skill:
-      id: departure
-      name: '<red>出航</red>'
-      description:
-        - '現在の<yellow><u>HP30%</u></yellow>を消費し、自身に会心ダメージ<yellow><u>+48%</u></yellow>のバフを<yellow><u>30</u></yellow>秒間付与する。'
-        - '現在のHPが最大HPの<yellow><u>30%</u></yellow>を下回っている場合は発動できない。CT<yellow><u>30</u></yellow>秒。'
-      target: SELF
-      damage-enabled: false
-      reference: ATK
-      multiplier: 1.0
-      cooldown-seconds: 30
-      charges: 1
-      conditions:
-        min-hp-percent: 0.3
-      cost:
-        current-hp-percent: 0.3
-      self-effects: [departure_crit]
-      visual:
-        particle: ENCHANT
-        count: 40
-        spread: 0.8
-        sound: minecraft:entity.player.levelup
-        volume: 0.7
-        pitch: 1.2
-    ultimate:
-      id: morning_star
-      name: '<red>今宵、明けの明星が墜ちる</red>'
-      description:
-        - '攻撃した敵単体に<yellow><u>攻撃力200%</u></yellow>＋<yellow><u>攻撃力100%に炎属性補正を適用した値</u></yellow>の炎属性ダメージを与える。'
-        - 'デバフ「落日」を<yellow><u>3</u></yellow>秒間付与する。CT<yellow><u>80</u></yellow>秒。'
-      target: ENEMY
-      radius: 0
-      attribute: FIRE
-      reference: ATK
-      # damage-components指定時は、各項の合計にこのmultiplierを掛けます。
-      multiplier: 1.0
-      damage-components:
-        - reference: ATK
-          multiplier: 2.0
-          # PHYSICAL = この項には属性ダメージ補正を掛けない。
-          bonus-attribute: PHYSICAL
-        - reference: ATK
-          multiplier: 1.0
-          bonus-attribute: FIRE
-      cooldown-seconds: 80
-      charges: 1
-      conditions:
-        requires-target: true
-        max-distance: 16
-      target-effects: [sunset]
-      visual:
-        particle: FLAME
-        count: 80
-        spread: 1.0
-        sound: minecraft:entity.blaze.shoot
-        volume: 1.0
-        pitch: 0.8
-    lore:
-      - '<gray>「開拓の旅は、今この瞬間から始まる」</gray>'
-      - '<gray>列車は広大な宇宙を駆け抜け、ナビゲーターと仲間たちが肩を並べて進んだ旅の奇跡は、揺るがぬ強固なレールとなる。</gray>'
-      - '<gray>「一緒に、群星が照らす未来へ向かいましょう！」</gray>'
-```
-
-## equipment.yml
-
-```yaml
-data-version: 1
-# 各装備内に enchantment-glint: true / false を指定できます（省略時false）。
-# 正式名は equipment.yml。equipments.yml の equipment: / equipments: も互換読込します。
-# 同じIDを両方に定義しないでください。以下は equipment: {} を置き換える例です。
-# equipment:
-#   iron_head:
-#     name: "<gray>鉄の兜</gray>"
-#     material: IRON_HELMET
-#     slot: HEAD
-#     rarity: 3
-#     max-level: 9
-#     main-stat:
-#       type: DEF_FLAT
-#       level-1: 5
-#       max-level: 20
-#     substats:
-#       - HP_PERCENT
-#       - CRIT_RATE
-#     lore:
-#       - "<gray>守りを固める兜</gray>"
-#   flame_resonance:
-#     name: "<red>炎の残響</red>"
-#     material: BLAZE_POWDER
-#     slot: RESONANCE
-#     rarity: 4
-#     max-level: 12
-#     main-stat:
-#       type: FIRE_DAMAGE
-#       level-1: 0.05
-#       max-level: 0.20
-#     substats: [ATK_PERCENT, CRIT_RATE]
-# 割合は 0.20 = 20%。表示は日本語、設定キーは英語のままです。
-# HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
-# 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
-equipment: {}
-# 完全なツールチップ・固定サブステータス例:
-# equipment:
-#   fictional_traveler_chest:
-#     name: '<blue><bold>虚構の旅人のチェストプレート</bold></blue>'
-#     material: DIAMOND_CHESTPLATE
-#     slot: CHEST
-#     rarity: 5
-#     max-level: 25
-#     initial-level: 9 # 作成時のレベル。省略時1。既存アイテムには適用しません。
-#     main-stat: {type: CRIT_DAMAGE, level-1: 0.60, max-level: 0.60}
-#     substats: [ATK_PERCENT, HP_FLAT, CRIT_RATE, CRIT_DAMAGE]
-#     initial-substats: {ATK_PERCENT: 0.10, HP_FLAT: 50, CRIT_RATE: 0.05, CRIT_DAMAGE: 0.05}
-#     initial-upgrades: {ATK_PERCENT: 1, HP_FLAT: 1, CRIT_RATE: 0, CRIT_DAMAGE: 0}
-#     initial-unlocked-substats: 3
-#     set: fictional_traveler
-#     lore:
-#       - '<gray>「真実だけを辿れば、いつか世界の果てへ着けると思っていた。」</gray>'
-#       - '<gray>旅人は幾つもの星を渡り、幾つもの物語を見届けた。</gray>'
-#       - '<gray>「歴史とは、起きた出来事の集積ではない。」</gray>'
-#       - '<gray>だから旅人は歩き続ける。</gray>'
-#       - '<gray>虚構と現実の境界がとうに失われた道を、その足跡を残して...</gray>'
-```
-
-## sets.yml
-
-```yaml
-data-version: 1
-# セット追加例: sets.warrior.two-piece.modifiers.ATK_PERCENT: 0.15
-sets: {}
-# 実装例（equipment.ymlのfictional_traveler_chestと組み合わせる）:
-# sets:
-#   fictional_traveler:
-#     name: 虚構辿る旅人の軌跡
-#     two-piece:
-#       description: 会心ダメージ+16%
-#       modifiers: {CRIT_DAMAGE: 0.16}
-#     four-piece:
-#       description: 敵にダメージを与える時、敵の防御力を10%無視する。
-#       modifiers: {DEF_IGNORE: 0.10}
-```
-
 ## divine_hearts.yml
 
 ```yaml
@@ -347,35 +187,568 @@ divine-hearts: {}
 #     lore: ['<gray>太陽のように光り輝いている。</gray>']
 ```
 
-## buffs.yml
+## encyclopedia.yml
 
 ```yaml
 data-version: 1
-# Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
-# 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
-buffs:
-  departure_crit:
-    name: 出航
-    kind: BUFF
-    target: SELF
-    duration: 30
-    max-stacks: 1
-    reapply: REFRESH
-    modifiers:
-      flat:
-        CRIT_DAMAGE: 0.48
-  sunset:
-    name: 落日
-    kind: DEBUFF
-    target: ENEMY
-    duration: 3
-    max-stacks: 1
-    reapply: REFRESH
-    modifiers:
-      percent:
-        ATK_PERCENT: -0.3
-        # 対象が攻撃を受ける際、その時点の有効防御力の40%を無視します。
-        DEF_IGNORED_WHEN_HIT: 0.4
+# 図鑑カテゴリ例: categories.custom: {name: "<yellow>特殊</yellow>", icon: BOOK, discovery: PUBLIC}
+categories:
+  weapons:
+    name: "<gold>武器</gold>"
+    icon: IRON_SWORD
+    discovery: PUBLIC
+  equipment:
+    name: "<blue>装備</blue>"
+    icon: DIAMOND_CHESTPLATE
+    discovery: PUBLIC
+  divine_hearts:
+    name: "<light_purple>神心</light_purple>"
+    icon: NETHER_STAR
+    discovery: PUBLIC
+  materials:
+    name: "<green>強化素材</green>"
+    icon: EXPERIENCE_BOTTLE
+    discovery: PUBLIC
+  mobs:
+    name: "<red>敵Mob</red>"
+    icon: ZOMBIE_HEAD
+    discovery: ENCOUNTER
+  bosses:
+    name: "<dark_red>敵Boss</dark_red>"
+    icon: DRAGON_HEAD
+    discovery: ENCOUNTER
+custom-entries: {}
+```
+
+## equipment.yml
+
+```yaml
+data-version: 1
+# 各装備内に enchantment-glint: true / false を指定できます（省略時false）。
+# 正式名は equipment.yml。equipments.yml の equipment: / equipments: も互換読込します。
+# 同じIDを両方に定義しないでください。以下は equipment: {} を置き換える例です。
+# equipment:
+#   iron_head:
+#     name: "<gray>鉄の兜</gray>"
+#     material: IRON_HELMET
+#     slot: HEAD
+#     rarity: 3
+#     max-level: 9
+#     main-stat:
+#       type: DEF_FLAT
+#       level-1: 5
+#       max-level: 20
+#     substats:
+#       - HP_PERCENT
+#       - CRIT_RATE
+#     lore:
+#       - "<gray>守りを固める兜</gray>"
+#   flame_resonance:
+#     name: "<red>炎の残響</red>"
+#     material: BLAZE_POWDER
+#     slot: RESONANCE
+#     rarity: 4
+#     max-level: 12
+#     main-stat:
+#       type: FIRE_DAMAGE
+#       level-1: 0.05
+#       max-level: 0.20
+#     substats: [ATK_PERCENT, CRIT_RATE]
+# 割合は 0.20 = 20%。表示は日本語、設定キーは英語のままです。
+# HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
+# 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
+equipment: {}
+# v1.4.4 抽選例（equipment.ID 配下。割合は0.05=5%。獲得時に選び個体へ保存）:
+#     main-stat-candidates:
+#       CRIT_RATE: {level-1: 0.05, max-level: 0.30, weight: 1}
+#       CRIT_DAMAGE: {level-1: 0.10, max-level: 0.60, weight: 1}
+#     substat-candidates:
+#       ATK_PERCENT: {value: 0.05, weight: 1}
+#       HP_FLAT: {value: 25, weight: 2}
+#       CRIT_RATE: {value: 0.05, weight: 1}
+#       CRIT_DAMAGE: {value: 0.10, weight: 1}
+#       DEF_PERCENT: {value: 0.05, weight: 1}
+#     initial-unlocked-substats: 0
+# main-stat-candidates はメイン1個、substat-candidates は最大 rarity-1 個（上限4）を重複なしで抽選。
+# メインとサブの重複は許可。weight は正の相対抽選重み。部位別メイン制限は従来どおり。
+# サブ抽選指定時は initial-substats より優先。省略時は従来の固定例／substatsを互換読込。
+# 既存個体は再抽選しません。新形式の main-stat は個体にレベル1と最大レベルの値を保存。
+# 強化時のサブステ増加量は従来どおり固定値25／割合0.05です。
+# 完全なツールチップ・固定サブステータス例:
+# equipment:
+#   fictional_traveler_chest:
+#     name: '<blue><bold>虚構の旅人のチェストプレート</bold></blue>'
+#     material: DIAMOND_CHESTPLATE
+#     slot: CHEST
+#     rarity: 5
+#     max-level: 25
+#     initial-level: 9 # 作成時のレベル。省略時1。既存アイテムには適用しません。
+#     main-stat: {type: CRIT_DAMAGE, level-1: 0.60, max-level: 0.60}
+#     substats: [ATK_PERCENT, HP_FLAT, CRIT_RATE, CRIT_DAMAGE]
+#     initial-substats: {ATK_PERCENT: 0.10, HP_FLAT: 50, CRIT_RATE: 0.05, CRIT_DAMAGE: 0.05}
+#     initial-upgrades: {ATK_PERCENT: 1, HP_FLAT: 1, CRIT_RATE: 0, CRIT_DAMAGE: 0}
+#     initial-unlocked-substats: 3
+#     set: fictional_traveler
+#     lore:
+#       - '<gray>「真実だけを辿れば、いつか世界の果てへ着けると思っていた。」</gray>'
+#       - '<gray>旅人は幾つもの星を渡り、幾つもの物語を見届けた。</gray>'
+#       - '<gray>「歴史とは、起きた出来事の集積ではない。」</gray>'
+#       - '<gray>だから旅人は歩き続ける。</gray>'
+#       - '<gray>虚構と現実の境界がとうに失われた道を、その足跡を残して...</gray>'
+```
+
+## gui.yml
+
+```yaml
+data-version: 1
+# GUI用アイコン全体のエンチャント光。実物のCCSアイテムは各定義を参照します。
+enchantment-glint: false
+stats:
+  other-name: '<white>その他の補正</white>'
+  source-line: '<white><source>：<stat> <yellow><value></yellow></white>'
+  chat-title: '<gold>自分のステータス</gold>'
+  title: "<dark_aqua>✦ ステータス ✦</dark_aqua>"
+  border-material: GRAY_STAINED_GLASS_PANE
+  health-name: "<red>♥ 体力</red>"
+  attack-name: "<gold>⚔ 攻撃力</gold>"
+  defense-name: "<aqua>◆ 防御力</aqua>"
+  critical-name: "<light_purple>✧ 会心</light_purple>"
+# GUI表示例: name: "<aqua>表示名</aqua>"。MiniMessage形式を使用できます。
+main-menu:
+  title: "<dark_gray>CombatCoreSystems</dark_gray>"
+  size: 54
+  entries:
+    stats:
+      slot: 10
+      icon: PLAYER_HEAD
+      name: "<aqua>ステータス</aqua>"
+    equipment:
+      slot: 12
+      icon: DIAMOND_CHESTPLATE
+      name: "<gold>装備</gold>"
+    skilltree:
+      slot: 14
+      icon: OAK_SAPLING
+      name: "<green>スキルツリー</green>"
+    rebirth:
+      slot: 16
+      icon: NETHER_STAR
+      name: "<light_purple>新生回帰</light_purple>"
+    party:
+      slot: 29
+      icon: TOTEM_OF_UNDYING
+      name: "<yellow>Party</yellow>"
+    enhancement:
+      slot: 31
+      icon: ANVIL
+      name: "<blue>強化</blue>"
+    encyclopedia:
+      slot: 33
+      icon: KNOWLEDGE_BOOK
+      name: "<aqua>図鑑</aqua>"
+    settings:
+      slot: 40
+      icon: COMPARATOR
+      name: "<gray>設定</gray>"
+enhancement:
+  select-all: "<green>全て選択</green>"
+  select-all-lore: "<gray>対応する実物・数値素材を全て選択します。確定するまで消費しません。</gray>"
+  clear-selection: "<yellow>選択を解除</yellow>"
+  duplicate-title: "<light_purple>消費する同名武器を選択</light_purple>"
+  duplicate-confirm-title: "<red>この武器を消費しますか？</red>"
+  duplicate-confirm: "<green>右の武器を1本消費して、左の武器を限界突破</green>"
+  no-duplicate: "<red>消費可能な同名武器がありません</red>"
+  failure-reasons:
+    target_not_weapon: "対象の武器が見つかりません。選び直してください。"
+    limit_break_maximum: "限界突破段階が最大です。"
+    invalid_material: "対象武器自身は素材にできません。"
+    materials_changed: "選択した素材が移動・変更されました。選び直してください。"
+    select_duplicate_weapon: "GUIで消費する同名武器を選んでください。"
+  title: "<blue>強化</blue>"
+  player:
+    name: "<green>プレイヤーレベルアップ</green>"
+    lore: "<gray>3種類の素材を選んでレベルアップ</gray>"
+  weapon:
+    name: "<aqua>武器レベルアップ＆限界突破</aqua>"
+    lore: "<gray>所持武器から選択</gray>"
+  equipment:
+    name: "<gold>装備レベルアップ</gold>"
+    lore: "<gray>所持・装備中の装備から選択</gray>"
+  conversion:
+    name: "<light_purple>変換</light_purple>"
+    lore: "<gray>実物素材・数値素材・等級を相互変換</gray>"
+  weapon-list-title: "<aqua>武器を選択</aqua>"
+  equipment-list-title: "<gold>装備を選択</gold>"
+  detail-title: "<blue>新強化GUI</blue>"
+  conversion-title: "<light_purple>強化素材の変換</light_purple>"
+  preview-name: "<white>強化プレビュー</white>"
+  player-target: "<yellow>プレイヤー Lv.<level></yellow>"
+  preview-before: "<gray>強化前: Lv.<level> EXP <exp></gray>"
+  preview-after: "<green>強化後: Lv.<level> EXP <exp></green>"
+  preview-gain: "<yellow>上昇幅: Lv. +<levels> / EXP +<exp></yellow>"
+  material-count: "<gray>選択: <selected> / 所持: <available></gray>"
+  material-exp: "<gray>獲得EXP: <exp></gray>"
+  tap-controls: "<yellow>上下のボタンで使用数を変更</yellow>"
+  add-one: "<green>1個増やす</green>"
+  remove-one: "<red>1個減らす</red>"
+  limit-break: "<light_purple>限界突破</light_purple>"
+  limit-break-lore: "<gray>同じ武器を1本消費</gray>"
+  confirm: "<green>この内容で強化</green>"
+  success: "<green>強化しました。Lv.<level></green>"
+  limit-break-success: "<green>限界突破しました。</green>"
+  failure: "<red>強化できません: <reason></red>"
+  conversion-failed: "<red>変換に必要な素材または空きがありません。</red>"
+  conversion-count: "<gray>実物: <physical> / 数値: <virtual></gray>"
+  conversion-select: "<yellow>タップして変換方法を選択</yellow>"
+  deposit: "<green>実物1個 → 数値1個</green>"
+  withdraw: "<green>数値1個 → 実物1個</green>"
+  upgrade-tier: "<yellow>数値10個 → 上級1個</yellow>"
+  downgrade-tier: "<yellow>数値1個 → 下級10個</yellow>"
+equipment:
+  manage-equipped: '<green>装備中 — タップで交換・解除</green>'
+  unequip: '<yellow>この部位を外す</yellow>'
+  equipped: "<green>装備中 — タップで解除</green>"
+  failed: "<red>装備を変更できません。戦闘状態・所持品の空き・設定を確認してください。</red>"
+  select: "<green>所持品から装備を選ぶ</green>"
+  list-title: "<gold>タップして装備</gold>"
+encyclopedia:
+  rarity-title: '<gold>レア度を選択</gold>'
+  all-rarities: '<white>全レア度</white>'
+  detail-title: "<aqua>図鑑・詳細</aqua>"
+party:
+  leave: "<red>退出</red>"
+  invite: "<green>プレイヤーを招待</green>"
+  disband: "<red>パーティを解散</red>"
+  invitations: "<yellow>届いた招待</yellow>"
+  actions-title: "<yellow>パーティ操作</yellow>"
+  kick: "<red>メンバーを除名</red>"
+  transfer: "<yellow>リーダーを移譲</yellow>"
+  accept: "<green>招待を承認</green>"
+  decline: "<red>招待を辞退</red>"
+  confirm: "<green>実行する</green>"
+  invited: "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>"
+hud:
+  # 複数スタックの技は戦闘外でも残数を表示します。
+  ability-actionbar: '<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>'
+  ability-ready: 発動可能
+  ability-undefined: 未設定
+  ability-cooldown: 'あと<seconds>秒'
+  ability-stacks: '<remaining>/<maximum> <status>'
+  target-health: "<hp> / <max_hp>"
+  # sidebar-linesで使用可能: <server>, <player>, <level>, <exp>, <required_exp>, <exp_remaining>, <hp>, <max_hp>, <atk>, <def>
+  sidebar-title: "<gold><server></gold>"
+  sidebar-lines:
+  - "<white><player></white>"
+  - ""
+  - "<yellow>Lv.<level></yellow>"
+  - "<gray>次のレベルまで、あと <exp_remaining></gray>"
+  - ""
+  - "<red>HP <hp> / <max_hp></red>"
+  # 使用可能: <combat_remaining>, <skill_status>, <ultimate_status>
+  combat-actionbar: "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>"
+  attribute-actionbar: "<attributes>"
+
+# v1.4.4: Java/BE共通の単一タップ操作。
+navigation:
+  previous: '<yellow>前のページ</yellow>'
+  next: '<yellow>次のページ</yellow>'
+  back: '<yellow>戻る</yellow>'
+  search: '<aqua>検索</aqua>'
+  search-hint: '<gray>チャットへ名前を入力</gray>'
+admin:
+  title: '<dark_red>CCS 管理メニュー</dark_red>'
+  target: '<yellow>対象：<target></yellow>'
+  target-hint: '<white>名前またはセレクターを入力（初期値 @s）</white>'
+  target-prompt: '対象の名前／セレクターを入力してください。'
+  items: '<green>独自アイテムを取り出す</green>'
+  item-stats: '<gold>利き手の装備ステータスを編集</gold>'
+  item-stats-hint: '<white>メイン・サブステを個体単位で編集。YAML定義は変更しません。</white>'
+  commands: '<aqua>管理コマンド操作</aqua>'
+  close: '<yellow>閉じる</yellow>'
+  back: '<yellow>戻る</yellow>'
+  previous: '<yellow>前のページ</yellow>'
+  next: '<yellow>次のページ</yellow>'
+  denied: '<red>権限がありません。</red>'
+  edit-title: '<gold>装備個体の編集</gold>'
+  choose-stat: '<gold>ステータスを選択</gold>'
+  main-stat: '<yellow>メインステを変更</yellow>'
+  main-values: 'Lv.1の値 最大Lvの値 を空白区切りで入力（例 0.05 0.60）'
+  add-substat: '<green>サブステを追加</green>'
+  sub-value: '値を入力（5%なら0.05）。既存のサブステとの重複はできません。'
+  unlocked: '<aqua>開放済みサブステ数</aqua>'
+  sub-edit-hint: '<white>値 強化回数 を入力。deleteでこのサブステを削除。</white>'
+  updated: '<green>装備個体を更新しました。</green>'
+  input-cancel: 'cancelで中止。対象に@s等を使用できます。'
+  confirm-title: '<red>実行内容を確認</red>'
+  confirm-summary: '<white>実行する操作</white>'
+  confirm: '<green>確定して実行</green>'
+  cancel: '<yellow>中止</yellow>'
+  # 例: command-names.edit-level: プレイヤーレベル変更
+  command-names: {}
+```
+
+## levels.yml
+
+```yaml
+data-version: 1
+# materials.<ID>.enchantment-glint: true / false で素材の光を指定（省略時false）。
+# 独自レベル設定例: mode は QUADRATIC / LINEAR / FIXED / TABLE を指定できます。
+player:
+  max-level: 100
+  # Minecraftのハート表示を常に1行（10個）に縮尺表示します。
+  minecraft-health-scale: 20.0
+  # Minecraft内部の上限を超えるHPは仮想HPとして保持し、この値までの実HPへ比例変換します。
+  minecraft-max-health: 1024.0
+  hp:
+    start: 20.0
+    end: 3000.0
+  atk:
+    start: 2.0
+    end: 200.0
+  def:
+    start: 0.0
+    end: 100.0
+  required-exp:
+    mode: QUADRATIC
+    base: 100
+    growth: 25
+  # TABLE使用例:
+  # values: {1: 100, 2: 150, 3: 225}
+  # バニラ武器の攻撃力をCCS ATKへ加算します。値と倍率は自由に変更できます。
+  vanilla-weapons:
+    enabled: true
+    conversion-multiplier: 1.0
+    attack-values:
+      WOODEN_SWORD: 4.0
+      GOLDEN_SWORD: 4.0
+      STONE_SWORD: 5.0
+      IRON_SWORD: 6.0
+      DIAMOND_SWORD: 7.0
+      NETHERITE_SWORD: 8.0
+      WOODEN_AXE: 7.0
+      GOLDEN_AXE: 7.0
+      STONE_AXE: 9.0
+      IRON_AXE: 9.0
+      DIAMOND_AXE: 9.0
+      NETHERITE_AXE: 10.0
+      TRIDENT: 9.0
+      MACE: 6.0
+      BOW: 6.0
+      CROSSBOW: 9.0
+  rebirth:
+    hp: 100.0
+    atk: 20.0
+    def: 10.0
+weapon-exp:
+  mode: QUADRATIC
+  base: 100
+  growth: 25
+equipment-exp:
+  mode: QUADRATIC
+  base: 100
+  growth: 25
+materials:
+  # 素材追加例: custom_book: {name: "<green>修練書</green>", material: BOOK, exp: 250, type: PLAYER}
+  player_exp_low:
+    name: "<white>初級修練書</white>"
+    material: PAPER
+    exp: 100
+    type: PLAYER
+  player_exp_mid:
+    name: "<aqua>中級修練書</aqua>"
+    material: BOOK
+    exp: 1000
+    type: PLAYER
+  player_exp_high:
+    name: "<gold>上級修練書</gold>"
+    material: ENCHANTED_BOOK
+    exp: 10000
+    type: PLAYER
+  weapon_exp_low:
+    name: "<white>粗製強化鉱</white>"
+    material: RAW_IRON
+    exp: 100
+    type: WEAPON
+  weapon_exp_mid:
+    name: "<aqua>精製強化鉱</aqua>"
+    material: IRON_INGOT
+    exp: 1000
+    type: WEAPON
+  weapon_exp_high:
+    name: "<gold>高純度強化鉱</gold>"
+    material: DIAMOND
+    exp: 10000
+    type: WEAPON
+  equipment_exp_low:
+    name: "<white>微光の繊維</white>"
+    material: STRING
+    exp: 100
+    type: EQUIPMENT
+  equipment_exp_mid:
+    name: "<aqua>輝光の繊維</aqua>"
+    material: GLOWSTONE_DUST
+    exp: 1000
+    type: EQUIPMENT
+  equipment_exp_high:
+    name: "<gold>星光の繊維</gold>"
+    material: PRISMARINE_CRYSTALS
+    exp: 10000
+    type: EQUIPMENT
+```
+
+## messages.yml
+
+```yaml
+data-version: 1
+# 空文字にすると発動通知を省略できます（天賦は所持条件を満たした時だけ通知）。
+ability-announcement:
+  skill: "<aqua>スキル発動：<name></aqua>"
+  ultimate: "<gold>必殺技発動：<name></gold>"
+  talent: "<green>天賦発動：<name></green>"
+material-tooltip:
+  usage: "<gray>用途：<yellow><target>強化用</yellow></gray>"
+  targets:
+    PLAYER: プレイヤー
+    WEAPON: 武器
+    EQUIPMENT: 装備
+equipment-tooltip:
+  slot: '<white>装備部位：<u><slot></u></white>'
+  level: '<white>Lv.<yellow><level></yellow> / <yellow><max_level></yellow></white>'
+  main-stat: '<yellow>➽ <stat> +<value></yellow>'
+  substat-open: '<white>・<stat> <yellow>+<value></yellow> <aqua>[+<upgrades>]</aqua></white>'
+  substat-locked: '<gray>・<stat> +<value> [未開放]</gray>'
+  set-title: '<yellow><u>「<set>」</u></yellow> <white>シリーズ</white>'
+  set-active: '<green>・<pieces>セット <description> [発動中]</green>'
+  set-inactive: '<gray>・<pieces>セット <description> [未発動]</gray>'
+  slots:
+    HEAD: ヘルメット
+    CHEST: チェストプレート
+    LEGS: レギンス
+    FEET: ブーツ
+    RESONANCE: 残響
+divine-heart-tooltip:
+  slot: '<white>装備部位：<u>神心</u></white>'
+  talent-title: '<yellow>➽ <talent_color><u><b>「<name>」</b></u></talent_color></yellow>'
+# v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
+weapon-tooltip:
+  # description未指定の既存武器に表示する要約です。
+  ability-summary: '<white><reference> × <multiplier> / <attribute> / CT <cooldown>秒 / <charges>スタック</white>'
+  categories:
+    MELEE: 近接
+    RANGED: 遠距離
+    UNCATEGORIZED: 未指定
+  colors:
+    FIRE: '#ff0000'
+    WATER: '#55aaff'
+    WIND: '#55ffaa'
+    THUNDER: '#cc88ff'
+    MOON: '#ddddff'
+    PHYSICAL: '#ffffff'
+  header:
+    - '<white>カテゴリ：<u><category></u></white>'
+    - "<hover:show_text:'<white>次のレベルまであと <yellow><exp_remaining></yellow></white>'><white>Lv.<yellow><level></yellow> / <yellow>100</yellow></white></hover>"
+    - '<white>限界突破段階：<yellow><break></yellow> / <yellow>5</yellow></white>'
+    - '<white>武器攻撃力: <yellow><attack></yellow></white>'
+    - '<attribute_color><attribute></attribute_color><white>ダメージ <yellow><bonus>%</yellow></white>'
+    - '<white>装備可能レベル: <yellow><min_level></yellow> ~ <yellow><max_level></yellow></white>'
+  talent-title: '<#adff2f>➽ 天賦 <u><b><name></b></u></#adff2f>'
+  skill-title: '<#adff2f>➽ スキル <u><b><name></b></u></#adff2f>'
+  ultimate-title: '<#adff2f>➽ 必殺技 <u><b><name></b></u></#adff2f>'
+# 表示名のみを変更します。設定キー・保存データは変更しません。
+# 例: FIRE_DAMAGE: "炎属性ダメージ"
+display-names: {}
+skill-failure:
+  loading: "<yellow>プレイヤーデータを読み込み中です。</yellow>"
+  weapon: "<red>スキルを設定したCCS武器を手に持ってください。</red>"
+  unknown-weapon: "<red>この武器の設定が読み込まれていません。</red>"
+  equip-level: "<red>武器の装備可能レベルを満たしていません。</red>"
+  undefined: "<red>この武器には使用する技が設定されていません。</red>"
+  conditions: "<red>技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。</red>"
+  target: "<red>対象が見つかりません。対象に照準を合わせてください。</red>"
+item-lore:
+  # 神心ルール・セット効果。利用可能: <label>, <key>, <value>
+  effect: "<gray><label>: <key> = <value></gray>"
+# MiniMessage形式で全表示文を編集できます。例: <red>赤文字</red>
+prefix: "<dark_gray>[<gold>CCS</gold>]</dark_gray> "
+no-permission: "<red>権限がありません。</red>"
+player-only: "<red>プレイヤーのみ実行できます。</red>"
+combat-command-blocked: "<red>戦闘中は一般CCSコマンドを使用できません。</red>"
+reloaded: "<green>設定を再読み込みしました。</green>"
+reload-failed: "<red>設定の検証に失敗したため、現在の正常な設定を維持しました。</red>"
+saved: "<green>データを保存しました。</green>"
+backup-created: "<green>バックアップを作成しました: <id></green>"
+exp-gained: "<aqua>独自EXP +<amount>（<current>/<required>）</aqua>"
+level-up: "<green>Lv.<old_level> → Lv.<level>！ HP +<hp_gain> / ATK +<atk_gain> / DEF +<def_gain></green>"
+weapon-audit-moved: "<yellow>同カテゴリの武器はホットバー/オフハンドに1本だけ置けます。余分な武器を移動しました。</yellow>"
+rebirth-complete: "<light_purple>新生回帰を行いました。回数: <count></light_purple>"
+party-friendly-fire: "<yellow>同じPartyのメンバーには攻撃できません。</yellow>"
+encyclopedia-unlock: "<aqua>図鑑に新しい対象を登録しました: <name></aqua>"
+attribute:
+  attached: "<gray><attribute>属性が付与されています。残り: <seconds>秒</gray>"
+  reaction: "<aqua><reaction> <damage></aqua>"
+damage-display:
+  normal: "<white><damage></white>"
+  critical: "<gold>CRIT <damage></gold>"
+  reaction: "<aqua><reaction> <damage></aqua>"
+  # v1.2.1以降、オーバーダメージもnormal/critical/reactionと同じ形式で総ダメージを表示します。
+  overdamage: "<white><damage></white>"
+  heal: "<green>+<heal></green>"
+command:
+  itemlevel: "<green><player> の手持ちアイテムをLv.<level>にしました（残りEXPは0）。</green>"
+  updated: "<green>設定を更新しました。</green>"
+  force: "<green><player> の戦闘状態を <state> にしました。</green>"
+rebirth-failure:
+  level: "<red>必要レベルに達していません。新生回帰にはLv.<required>が必要です（現在Lv.<level>）。</red>"
+  combat: "<red>戦闘中は新生回帰できません。</red>"
+damage-chat:
+  # <damage>には属性色・会心・反応名を含むダメージ表示が入ります。
+  format: "<gray>[ダメージ]</gray> <damage>"
+```
+
+## mobs.yml
+
+```yaml
+data-version: 1
+# v1.4.4: mobs.ID.material: ZOMBIE_HEAD で図鑑アイコンを指定（vanilla-mobs.ID.materialも同様）。
+virtual-health:
+  # Minecraft内部へ同期する表示用HPの上限。CCS上のMob HP自体には上限を設けません。
+  physical-cap: 1024
+# 個別定義のないバニラMobの報酬。個別定義のcustom-exp/drop-custom-expが優先されます。
+vanilla-defaults:
+  custom-exp: 5
+  drop-custom-exp: true
+# CCS独自Mob追加例:
+# mobs:
+#   flame_zombie:
+#     name: "<red>炎のゾンビ</red>"
+#     entity-type: ZOMBIE
+#     level: {min: 1, max: 10}
+#     stats:
+#       hp: {min: 30.0, max: 120.0}
+#       atk: {min: 4.0, max: 15.0}
+#       def: {min: 0.0, max: 10.0}
+#     native-attribute: FIRE
+#     custom-exp: 25
+#     drop-custom-exp: true
+#     show-level: true
+mobs: {}
+
+# バニラMob編集例。未登録のバニラMobもMinecraft armorを0として扱います。
+# 同じentity-typeは1定義だけ登録してください。
+# vanilla-mobs:
+#   zombie:
+#     name: "<green>ゾンビ</green>"
+#     entity-type: ZOMBIE
+#     level: {min: 1, max: 5}
+#     stats:
+#       hp: {min: 20.0, max: 40.0}
+#       atk: {min: 3.0, max: 6.0}
+#       def: {min: 0.0, max: 0.0}
+#     native-attribute: PHYSICAL
+#     custom-exp: 10
+#     drop-custom-exp: true
+#     show-level: true
+vanilla-mobs: {}
 ```
 
 ## reactions.yml
@@ -512,420 +885,53 @@ reactions:
       MOON: 1.5
 ```
 
-## levels.yml
+## regions.yml
 
 ```yaml
 data-version: 1
-# materials.<ID>.enchantment-glint: true / false で素材の光を指定（省略時false）。
-# 独自レベル設定例: mode は QUADRATIC / LINEAR / FIXED / TABLE を指定できます。
-player:
-  max-level: 100
-  # Minecraftのハート表示を常に1行（10個）に縮尺表示します。
-  minecraft-health-scale: 20.0
-  # Minecraft内部の上限を超えるHPは仮想HPとして保持し、この値までの実HPへ比例変換します。
-  minecraft-max-health: 1024.0
-  hp:
-    start: 20.0
-    end: 3000.0
-  atk:
-    start: 2.0
-    end: 200.0
-  def:
-    start: 0.0
-    end: 100.0
-  required-exp:
-    mode: QUADRATIC
-    base: 100
-    growth: 25
-  # TABLE使用例:
-  # values: {1: 100, 2: 150, 3: 225}
-  # バニラ武器の攻撃力をCCS ATKへ加算します。値と倍率は自由に変更できます。
-  vanilla-weapons:
-    enabled: true
-    conversion-multiplier: 1.0
-    attack-values:
-      WOODEN_SWORD: 4.0
-      GOLDEN_SWORD: 4.0
-      STONE_SWORD: 5.0
-      IRON_SWORD: 6.0
-      DIAMOND_SWORD: 7.0
-      NETHERITE_SWORD: 8.0
-      WOODEN_AXE: 7.0
-      GOLDEN_AXE: 7.0
-      STONE_AXE: 9.0
-      IRON_AXE: 9.0
-      DIAMOND_AXE: 9.0
-      NETHERITE_AXE: 10.0
-      TRIDENT: 9.0
-      MACE: 6.0
-      BOW: 6.0
-      CROSSBOW: 9.0
-  rebirth:
-    hp: 100.0
-    atk: 20.0
-    def: 10.0
-weapon-exp:
-  mode: QUADRATIC
-  base: 100
-  growth: 25
-equipment-exp:
-  mode: QUADRATIC
-  base: 100
-  growth: 25
-materials:
-  # 素材追加例: custom_book: {name: "<green>修練書</green>", material: BOOK, exp: 250, type: PLAYER}
-  player_exp_low:
-    name: "<white>初級修練書</white>"
-    material: PAPER
-    exp: 100
-    type: PLAYER
-  player_exp_mid:
-    name: "<aqua>中級修練書</aqua>"
-    material: BOOK
-    exp: 1000
-    type: PLAYER
-  player_exp_high:
-    name: "<gold>上級修練書</gold>"
-    material: ENCHANTED_BOOK
-    exp: 10000
-    type: PLAYER
-  weapon_exp_low:
-    name: "<white>粗製強化鉱</white>"
-    material: RAW_IRON
-    exp: 100
-    type: WEAPON
-  weapon_exp_mid:
-    name: "<aqua>精製強化鉱</aqua>"
-    material: IRON_INGOT
-    exp: 1000
-    type: WEAPON
-  weapon_exp_high:
-    name: "<gold>高純度強化鉱</gold>"
-    material: DIAMOND
-    exp: 10000
-    type: WEAPON
-  equipment_exp_low:
-    name: "<white>微光の繊維</white>"
-    material: STRING
-    exp: 100
-    type: EQUIPMENT
-  equipment_exp_mid:
-    name: "<aqua>輝光の繊維</aqua>"
-    material: GLOWSTONE_DUST
-    exp: 1000
-    type: EQUIPMENT
-  equipment_exp_high:
-    name: "<gold>星光の繊維</gold>"
-    material: PRISMARINE_CRYSTALS
-    exp: 10000
-    type: EQUIPMENT
+# Region追加例: regions.field: {world: world, full-height: true, pos1: {x: 0, z: 0}, pos2: {x: 100, z: 100}, flags: {pvp: allow}}
+regions: {}
 ```
 
-## mobs.yml
+## sets.yml
 
 ```yaml
 data-version: 1
-virtual-health:
-  # Minecraft内部へ同期する表示用HPの上限。CCS上のMob HP自体には上限を設けません。
-  physical-cap: 1024
-# 個別定義のないバニラMobの報酬。個別定義のcustom-exp/drop-custom-expが優先されます。
-vanilla-defaults:
-  custom-exp: 5
-  drop-custom-exp: true
-# CCS独自Mob追加例:
-# mobs:
-#   flame_zombie:
-#     name: "<red>炎のゾンビ</red>"
-#     entity-type: ZOMBIE
-#     level: {min: 1, max: 10}
-#     stats:
-#       hp: {min: 30.0, max: 120.0}
-#       atk: {min: 4.0, max: 15.0}
-#       def: {min: 0.0, max: 10.0}
-#     native-attribute: FIRE
-#     custom-exp: 25
-#     drop-custom-exp: true
-#     show-level: true
-mobs: {}
-
-# バニラMob編集例。未登録のバニラMobもMinecraft armorを0として扱います。
-# 同じentity-typeは1定義だけ登録してください。
-# vanilla-mobs:
-#   zombie:
-#     name: "<green>ゾンビ</green>"
-#     entity-type: ZOMBIE
-#     level: {min: 1, max: 5}
-#     stats:
-#       hp: {min: 20.0, max: 40.0}
-#       atk: {min: 3.0, max: 6.0}
-#       def: {min: 0.0, max: 0.0}
-#     native-attribute: PHYSICAL
-#     custom-exp: 10
-#     drop-custom-exp: true
-#     show-level: true
-vanilla-mobs: {}
+# セット追加例: sets.warrior.two-piece.modifiers.ATK_PERCENT: 0.15
+sets: {}
+# v1.4.4: two-piece/four-piece配下に triggers を追加可能。効果本体はbuffs.ymlに定義。
+#     two-piece:
+#       triggers:
+#         on_skill:
+#           event: SKILL # SKILL / ULTIMATE / HIT / TAKE_DAMAGE / HP_BELOW
+#           target: SELF # SELF=自身 / OTHER=命中対象・被弾時の攻撃者。HP_BELOWはSELFのみ
+#           effects: [attack_up] # buffs.ymlで定義済みのID。未定義なら再読込を拒否
+#           cooldown-seconds: 10 # 初期1秒、0～86400秒
+#         emergency:
+#           event: HP_BELOW
+#           hp-percent: 0.30 # 30%。HP条件は初めて満たした時に発動（5tickごと判定）
+#           target: SELF
+#           effects: [emergency_shield]
+#           cooldown-seconds: 30
+# 残響もセット数に含みます。外すと新たな発動は止まりますが付与済み効果はbuffs.ymlの寿命に従います。
+# 実装例（equipment.ymlのfictional_traveler_chestと組み合わせる）:
+# sets:
+#   fictional_traveler:
+#     name: 虚構辿る旅人の軌跡
+#     two-piece:
+#       description: 会心ダメージ+16%
+#       modifiers: {CRIT_DAMAGE: 0.16}
+#     four-piece:
+#       description: 敵にダメージを与える時、敵の防御力を10%無視する。
+#       modifiers: {DEF_IGNORE: 0.10}
 ```
 
-## bosses.yml
+## skill_trees.yml
 
 ```yaml
 data-version: 1
-# Boss追加例: bosses.dragon: {name: "<red>Dragon</red>", entity-type: ENDER_DRAGON, level: {min: 100, max: 100}, custom-exp: 10000}
-bosses: {}
-```
-
-## gui.yml
-
-```yaml
-data-version: 1
-# GUI用アイコン全体のエンチャント光。実物のCCSアイテムは各定義を参照します。
-enchantment-glint: false
-stats:
-  title: "<dark_aqua>✦ ステータス ✦</dark_aqua>"
-  border-material: GRAY_STAINED_GLASS_PANE
-  health-name: "<red>♥ 体力</red>"
-  attack-name: "<gold>⚔ 攻撃力</gold>"
-  defense-name: "<aqua>◆ 防御力</aqua>"
-  critical-name: "<light_purple>✧ 会心</light_purple>"
-# GUI表示例: name: "<aqua>表示名</aqua>"。MiniMessage形式を使用できます。
-main-menu:
-  title: "<dark_gray>CombatCoreSystems</dark_gray>"
-  size: 54
-  entries:
-    stats:
-      slot: 10
-      icon: PLAYER_HEAD
-      name: "<aqua>ステータス</aqua>"
-    equipment:
-      slot: 12
-      icon: DIAMOND_CHESTPLATE
-      name: "<gold>装備</gold>"
-    skilltree:
-      slot: 14
-      icon: OAK_SAPLING
-      name: "<green>スキルツリー</green>"
-    rebirth:
-      slot: 16
-      icon: NETHER_STAR
-      name: "<light_purple>新生回帰</light_purple>"
-    party:
-      slot: 29
-      icon: TOTEM_OF_UNDYING
-      name: "<yellow>Party</yellow>"
-    enhancement:
-      slot: 31
-      icon: ANVIL
-      name: "<blue>強化</blue>"
-    encyclopedia:
-      slot: 33
-      icon: KNOWLEDGE_BOOK
-      name: "<aqua>図鑑</aqua>"
-    settings:
-      slot: 40
-      icon: COMPARATOR
-      name: "<gray>設定</gray>"
-enhancement:
-  select-all: "<green>全て選択</green>"
-  select-all-lore: "<gray>対応する実物・数値素材を全て選択します。確定するまで消費しません。</gray>"
-  clear-selection: "<yellow>選択を解除</yellow>"
-  duplicate-title: "<light_purple>消費する同名武器を選択</light_purple>"
-  duplicate-confirm-title: "<red>この武器を消費しますか？</red>"
-  duplicate-confirm: "<green>右の武器を1本消費して、左の武器を限界突破</green>"
-  no-duplicate: "<red>消費可能な同名武器がありません</red>"
-  failure-reasons:
-    target_not_weapon: "対象の武器が見つかりません。選び直してください。"
-    limit_break_maximum: "限界突破段階が最大です。"
-    invalid_material: "対象武器自身は素材にできません。"
-    materials_changed: "選択した素材が移動・変更されました。選び直してください。"
-    select_duplicate_weapon: "GUIで消費する同名武器を選んでください。"
-  title: "<blue>強化</blue>"
-  player:
-    name: "<green>プレイヤーレベルアップ</green>"
-    lore: "<gray>3種類の素材を選んでレベルアップ</gray>"
-  weapon:
-    name: "<aqua>武器レベルアップ＆限界突破</aqua>"
-    lore: "<gray>所持武器から選択</gray>"
-  equipment:
-    name: "<gold>装備レベルアップ</gold>"
-    lore: "<gray>所持・装備中の装備から選択</gray>"
-  conversion:
-    name: "<light_purple>変換</light_purple>"
-    lore: "<gray>実物素材・数値素材・等級を相互変換</gray>"
-  weapon-list-title: "<aqua>武器を選択</aqua>"
-  equipment-list-title: "<gold>装備を選択</gold>"
-  detail-title: "<blue>新強化GUI</blue>"
-  conversion-title: "<light_purple>強化素材の変換</light_purple>"
-  preview-name: "<white>強化プレビュー</white>"
-  player-target: "<yellow>プレイヤー Lv.<level></yellow>"
-  preview-before: "<gray>強化前: Lv.<level> EXP <exp></gray>"
-  preview-after: "<green>強化後: Lv.<level> EXP <exp></green>"
-  preview-gain: "<yellow>上昇幅: Lv. +<levels> / EXP +<exp></yellow>"
-  material-count: "<gray>選択: <selected> / 所持: <available></gray>"
-  material-exp: "<gray>獲得EXP: <exp></gray>"
-  tap-controls: "<yellow>上下のボタンで使用数を変更</yellow>"
-  add-one: "<green>1個増やす</green>"
-  remove-one: "<red>1個減らす</red>"
-  limit-break: "<light_purple>限界突破</light_purple>"
-  limit-break-lore: "<gray>同じ武器を1本消費</gray>"
-  confirm: "<green>この内容で強化</green>"
-  success: "<green>強化しました。Lv.<level></green>"
-  limit-break-success: "<green>限界突破しました。</green>"
-  failure: "<red>強化できません: <reason></red>"
-  conversion-failed: "<red>変換に必要な素材または空きがありません。</red>"
-  conversion-count: "<gray>実物: <physical> / 数値: <virtual></gray>"
-  conversion-select: "<yellow>タップして変換方法を選択</yellow>"
-  deposit: "<green>実物1個 → 数値1個</green>"
-  withdraw: "<green>数値1個 → 実物1個</green>"
-  upgrade-tier: "<yellow>数値10個 → 上級1個</yellow>"
-  downgrade-tier: "<yellow>数値1個 → 下級10個</yellow>"
-equipment:
-  equipped: "<green>装備中 — タップで解除</green>"
-  failed: "<red>装備を変更できません。戦闘状態・所持品の空き・設定を確認してください。</red>"
-  select: "<green>所持品から装備を選ぶ</green>"
-  list-title: "<gold>タップして装備</gold>"
-encyclopedia:
-  detail-title: "<aqua>図鑑・詳細</aqua>"
-party:
-  leave: "<red>退出</red>"
-  invite: "<green>プレイヤーを招待</green>"
-  disband: "<red>パーティを解散</red>"
-  invitations: "<yellow>届いた招待</yellow>"
-  actions-title: "<yellow>パーティ操作</yellow>"
-  kick: "<red>メンバーを除名</red>"
-  transfer: "<yellow>リーダーを移譲</yellow>"
-  accept: "<green>招待を承認</green>"
-  decline: "<red>招待を辞退</red>"
-  confirm: "<green>実行する</green>"
-  invited: "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>"
-hud:
-  # 複数スタックの技は戦闘外でも残数を表示します。
-  ability-actionbar: '<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>'
-  ability-ready: 発動可能
-  ability-undefined: 未設定
-  ability-cooldown: 'あと<seconds>秒'
-  ability-stacks: '<remaining>/<maximum> <status>'
-  target-health: "<hp> / <max_hp>"
-  # sidebar-linesで使用可能: <server>, <player>, <level>, <exp>, <required_exp>, <exp_remaining>, <hp>, <max_hp>, <atk>, <def>
-  sidebar-title: "<gold><server></gold>"
-  sidebar-lines:
-  - "<white><player></white>"
-  - ""
-  - "<yellow>Lv.<level></yellow>"
-  - "<gray>次のレベルまで、あと <exp_remaining></gray>"
-  - ""
-  - "<red>HP <hp> / <max_hp></red>"
-  # 使用可能: <combat_remaining>, <skill_status>, <ultimate_status>
-  combat-actionbar: "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>"
-  attribute-actionbar: "<attributes>"
-```
-
-## messages.yml
-
-```yaml
-data-version: 1
-# 空文字にすると発動通知を省略できます（天賦は所持条件を満たした時だけ通知）。
-ability-announcement:
-  skill: "<aqua>スキル発動：<name></aqua>"
-  ultimate: "<gold>必殺技発動：<name></gold>"
-  talent: "<green>天賦発動：<name></green>"
-material-tooltip:
-  usage: "<gray>用途：<yellow><target>強化用</yellow></gray>"
-  targets:
-    PLAYER: プレイヤー
-    WEAPON: 武器
-    EQUIPMENT: 装備
-equipment-tooltip:
-  slot: '<white>装備部位：<u><slot></u></white>'
-  level: '<white>Lv.<yellow><level></yellow> / <yellow><max_level></yellow></white>'
-  main-stat: '<yellow>➽ <stat> +<value></yellow>'
-  substat-open: '<white>・<stat> <yellow>+<value></yellow> <aqua>[+<upgrades>]</aqua></white>'
-  substat-locked: '<gray>・<stat> +<value> [未開放]</gray>'
-  set-title: '<yellow><u>「<set>」</u></yellow> <white>シリーズ</white>'
-  set-active: '<green>・<pieces>セット <description> [発動中]</green>'
-  set-inactive: '<gray>・<pieces>セット <description> [未発動]</gray>'
-  slots:
-    HEAD: ヘルメット
-    CHEST: チェストプレート
-    LEGS: レギンス
-    FEET: ブーツ
-    RESONANCE: 残響
-divine-heart-tooltip:
-  slot: '<white>装備部位：<u>神心</u></white>'
-  talent-title: '<yellow>➽ <talent_color><u><b>「<name>」</b></u></talent_color></yellow>'
-# v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
-weapon-tooltip:
-  # description未指定の既存武器に表示する要約です。
-  ability-summary: '<white><reference> × <multiplier> / <attribute> / CT <cooldown>秒 / <charges>スタック</white>'
-  categories:
-    MELEE: 近接
-    RANGED: 遠距離
-    UNCATEGORIZED: 未指定
-  colors:
-    FIRE: '#ff0000'
-    WATER: '#55aaff'
-    WIND: '#55ffaa'
-    THUNDER: '#cc88ff'
-    MOON: '#ddddff'
-    PHYSICAL: '#ffffff'
-  header:
-    - '<white>カテゴリ：<u><category></u></white>'
-    - "<hover:show_text:'<white>次のレベルまであと <yellow><exp_remaining></yellow></white>'><white>Lv.<yellow><level></yellow> / <yellow>100</yellow></white></hover>"
-    - '<white>限界突破段階：<yellow><break></yellow> / <yellow>5</yellow></white>'
-    - '<white>武器攻撃力: <yellow><attack></yellow></white>'
-    - '<attribute_color><attribute></attribute_color><white>ダメージ <yellow><bonus>%</yellow></white>'
-    - '<white>装備可能レベル: <yellow><min_level></yellow> ~ <yellow><max_level></yellow></white>'
-  talent-title: '<#adff2f>➽ 天賦 <u><b><name></b></u></#adff2f>'
-  skill-title: '<#adff2f>➽ スキル <u><b><name></b></u></#adff2f>'
-  ultimate-title: '<#adff2f>➽ 必殺技 <u><b><name></b></u></#adff2f>'
-# 表示名のみを変更します。設定キー・保存データは変更しません。
-# 例: FIRE_DAMAGE: "炎属性ダメージ"
-display-names: {}
-skill-failure:
-  loading: "<yellow>プレイヤーデータを読み込み中です。</yellow>"
-  weapon: "<red>スキルを設定したCCS武器を手に持ってください。</red>"
-  unknown-weapon: "<red>この武器の設定が読み込まれていません。</red>"
-  equip-level: "<red>武器の装備可能レベルを満たしていません。</red>"
-  undefined: "<red>この武器には使用する技が設定されていません。</red>"
-  conditions: "<red>技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。</red>"
-  target: "<red>対象が見つかりません。対象に照準を合わせてください。</red>"
-item-lore:
-  # 神心ルール・セット効果。利用可能: <label>, <key>, <value>
-  effect: "<gray><label>: <key> = <value></gray>"
-# MiniMessage形式で全表示文を編集できます。例: <red>赤文字</red>
-prefix: "<dark_gray>[<gold>CCS</gold>]</dark_gray> "
-no-permission: "<red>権限がありません。</red>"
-player-only: "<red>プレイヤーのみ実行できます。</red>"
-combat-command-blocked: "<red>戦闘中は一般CCSコマンドを使用できません。</red>"
-reloaded: "<green>設定を再読み込みしました。</green>"
-reload-failed: "<red>設定の検証に失敗したため、現在の正常な設定を維持しました。</red>"
-saved: "<green>データを保存しました。</green>"
-backup-created: "<green>バックアップを作成しました: <id></green>"
-exp-gained: "<aqua>独自EXP +<amount>（<current>/<required>）</aqua>"
-level-up: "<green>Lv.<old_level> → Lv.<level>！ HP +<hp_gain> / ATK +<atk_gain> / DEF +<def_gain></green>"
-weapon-audit-moved: "<yellow>同カテゴリの武器はホットバー/オフハンドに1本だけ置けます。余分な武器を移動しました。</yellow>"
-rebirth-complete: "<light_purple>新生回帰を行いました。回数: <count></light_purple>"
-party-friendly-fire: "<yellow>同じPartyのメンバーには攻撃できません。</yellow>"
-encyclopedia-unlock: "<aqua>図鑑に新しい対象を登録しました: <name></aqua>"
-attribute:
-  attached: "<gray><attribute>属性が付与されています。残り: <seconds>秒</gray>"
-  reaction: "<aqua><reaction> <damage></aqua>"
-damage-display:
-  normal: "<white><damage></white>"
-  critical: "<gold>CRIT <damage></gold>"
-  reaction: "<aqua><reaction> <damage></aqua>"
-  # v1.2.1以降、オーバーダメージもnormal/critical/reactionと同じ形式で総ダメージを表示します。
-  overdamage: "<white><damage></white>"
-  heal: "<green>+<heal></green>"
-command:
-  itemlevel: "<green><player> の手持ちアイテムをLv.<level>にしました（残りEXPは0）。</green>"
-  updated: "<green>設定を更新しました。</green>"
-  force: "<green><player> の戦闘状態を <state> にしました。</green>"
-rebirth-failure:
-  level: "<red>必要レベルに達していません。新生回帰にはLv.<required>が必要です（現在Lv.<level>）。</red>"
-  combat: "<red>戦闘中は新生回帰できません。</red>"
-damage-chat:
-  # <damage>には属性色・会心・反応名を含むダメージ表示が入ります。
-  format: "<gray>[ダメージ]</gray> <damage>"
+# スキルツリー追加例: trees.combat.name: "戦闘ツリー"
+trees: {}
 ```
 
 ## spawns.yml
@@ -936,20 +942,142 @@ data-version: 1
 spawns: {}
 ```
 
-## regions.yml
+## storage.yml
 
 ```yaml
 data-version: 1
-# Region追加例: regions.field: {world: world, full-height: true, pos1: {x: 0, z: 0}, pos2: {x: 100, z: 100}, flags: {pvp: allow}}
-regions: {}
+# MySQL使用例: backendを MYSQL に変更し、下の接続情報を設定してください。
+backend: SQLITE
+sqlite:
+  file: data.db
+mysql:
+  host: localhost
+  port: 3306
+  database: combatcoresystems
+  username: root
+  password: ""
+  use-ssl: false
 ```
 
-## skill_trees.yml
+## weapons.yml
 
 ```yaml
 data-version: 1
-# スキルツリー追加例: trees.combat.name: "戦闘ツリー"
-trees: {}
+# v1.4.3: talent.hand は MAIN_HAND / OFF_HAND / EITHER_HAND / HOT_BAR / INVENTORY。
+# HOT_BAR=0～8、INVENTORY=0～35とオフハンド。これらは天賦の発動場所で、基礎ATKは手持ちだけ。
+# limit-breaks は0～5。指定キーだけ前段階へ累積上書きし、説明も実効果も同じ段階を使用します。
+# 例（武器IDの下へ追加）:
+# limit-breaks:
+#   1:
+#     base-atk: {level-1: 120, level-100: 600}
+#     attribute-bonus: {type: FIRE, value: 0.20}
+#     talent:
+#       hand: HOT_BAR
+#       modifiers: {HP_PERCENT: 0.60}
+#       description: ['ホットバーにある間、最大HP+60%。']
+#     skill:
+#       name: '<red>強化された出航</red>'
+#       cooldown-seconds: 25
+#       description: ['CT25秒。効果はself-effectsが参照するbuffs.ymlで設定。']
+#   2:
+#     ultimate:
+#       multiplier: 3
+#       description: ['ATK300%の攻撃。damage-componentsを定義した技では成分リストが優先。']
+# 各武器内に enchantment-glint: true / false を指定できます（省略時false）。
+# category/type: MELEE、RANGED、UNCATEGORIZED（同時所持制限なし）。type指定時はtypeを優先。
+# 下記は動作する実装例。既存サーバーでは buffs.yml の2つの定義も一緒に追加してください。
+# 倍率・割合: 0.3=30%、2.0=200%。descriptionは説明のみ、効果は別キーで設定します。
+weapons:
+  guiding_star:
+    name: '<red><bold>夜を照らす導きの星</bold></red>'
+    material: DIAMOND_SWORD
+    category: MELEE
+    rarity: 5
+    base-atk:
+      level-1: 100
+      level-100: 100
+    attribute-bonus:
+      type: FIRE
+      value: 0.15
+    equip-level:
+      min: 1
+      max: 100
+    normal-attack:
+      attribute: FIRE
+      visual:
+        particle: FLAME
+        count: 12
+        spread: 0.4
+    talent:
+      name: '<red>ナビゲーター</red>'
+      description:
+        - 'この武器を利き手に所持しているとき、常に自身の最大HP<yellow><u>+50%</u></yellow>。'
+      # MAIN_HAND / OFF_HAND / EITHER_HAND。multiplierはmodifiers全体に掛けます。
+      hand: MAIN_HAND
+      multiplier: 1.0
+      modifiers:
+        HP_PERCENT: 0.5
+    skill:
+      id: departure
+      name: '<red>出航</red>'
+      description:
+        - '現在の<yellow><u>HP30%</u></yellow>を消費し、自身に会心ダメージ<yellow><u>+48%</u></yellow>のバフを<yellow><u>30</u></yellow>秒間付与する。'
+        - '現在のHPが最大HPの<yellow><u>30%</u></yellow>を下回っている場合は発動できない。CT<yellow><u>30</u></yellow>秒。'
+      target: SELF
+      damage-enabled: false
+      reference: ATK
+      multiplier: 1.0
+      cooldown-seconds: 30
+      charges: 1
+      conditions:
+        min-hp-percent: 0.3
+      cost:
+        current-hp-percent: 0.3
+      self-effects: [departure_crit]
+      visual:
+        particle: ENCHANT
+        count: 40
+        spread: 0.8
+        sound: minecraft:entity.player.levelup
+        volume: 0.7
+        pitch: 1.2
+    ultimate:
+      id: morning_star
+      name: '<red>今宵、明けの明星が墜ちる</red>'
+      description:
+        - '攻撃した敵単体に<yellow><u>攻撃力200%</u></yellow>＋<yellow><u>攻撃力100%に炎属性補正を適用した値</u></yellow>の炎属性ダメージを与える。'
+        - 'デバフ「落日」を<yellow><u>3</u></yellow>秒間付与する。CT<yellow><u>80</u></yellow>秒。'
+      target: ENEMY
+      radius: 0
+      attribute: FIRE
+      reference: ATK
+      # damage-components指定時は、各項の合計にこのmultiplierを掛けます。
+      multiplier: 1.0
+      damage-components:
+        - reference: ATK
+          multiplier: 2.0
+          # PHYSICAL = この項には属性ダメージ補正を掛けない。
+          bonus-attribute: PHYSICAL
+        - reference: ATK
+          multiplier: 1.0
+          bonus-attribute: FIRE
+      cooldown-seconds: 80
+      charges: 1
+      conditions:
+        requires-target: true
+        max-distance: 16
+      target-effects: [sunset]
+      visual:
+        particle: FLAME
+        count: 80
+        spread: 1.0
+        sound: minecraft:entity.blaze.shoot
+        volume: 1.0
+        pitch: 0.8
+    lore:
+      - '<gray>「開拓の旅は、今この瞬間から始まる」</gray>'
+      - '<gray>列車は広大な宇宙を駆け抜け、ナビゲーターと仲間たちが肩を並べて進んだ旅の奇跡は、揺るがぬ強固なレールとなる。</gray>'
+      - '<gray>「一緒に、群星が照らす未来へ向かいましょう！」</gray>'
 ```
 
 ## 実装参照: config/DefinitionRegistry.java
@@ -1120,6 +1248,11 @@ public final class DefinitionRegistry {
             }
         }
 
+        var setRoot = yaml.get("sets.yml").getConfigurationSection("sets");
+        if (setRoot != null) for (String id : setRoot.getKeys(false)) for (String tier : List.of("two-piece", "four-piece")) {
+            try { SetTrigger.parse(setRoot.getConfigurationSection(id + "." + tier + ".triggers"), buffs.keySet()); }
+            catch (IllegalArgumentException ex) { errors.add("set " + id + ": " + ex.getMessage()); }
+        }
         Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions, weaponStages);
         return new LoadResult(snapshot, warnings, errors, fatal);
     }
@@ -1280,7 +1413,12 @@ public final class DefinitionRegistry {
             StatKey main;
             try {
                 slot = EquipmentSlot.valueOf(s.getString("slot", "").toUpperCase(Locale.ROOT));
-                main = StatKey.valueOf(s.getString("main-stat.type", "").toUpperCase(Locale.ROOT));
+                var mainPool = EquipmentRolls.candidates(s.getConfigurationSection("main-stat-candidates"), true);
+                if (s.contains("main-stat-candidates") && mainPool.isEmpty()) throw new IllegalArgumentException("Empty main-stat-candidates");
+                main = s.contains("main-stat.type") || mainPool.isEmpty() ? StatKey.valueOf(s.getString("main-stat.type", "").toUpperCase(Locale.ROOT)) : mainPool.getFirst().key();
+                for (var candidate : mainPool) if (!mainAllowed(slot, candidate.key())) throw new IllegalArgumentException("Main stat not allowed for slot");
+                var subPool = EquipmentRolls.candidates(s.getConfigurationSection("substat-candidates"), false);
+                if (s.contains("substat-candidates") && subPool.isEmpty()) throw new IllegalArgumentException("Empty substat-candidates");
             } catch (IllegalArgumentException ex) { errors.add("equipment " + id + " has invalid slot or main stat"); continue; }
             if (!mainAllowed(slot, main)) { errors.add("equipment " + id + " main stat is not allowed for its slot"); continue; }
             int rarity = s.getInt("rarity");
@@ -1301,15 +1439,19 @@ public final class DefinitionRegistry {
                 try { StatKey key = StatKey.valueOf(raw.toUpperCase(Locale.ROOT)); if (!candidates.contains(key)) candidates.add(key); }
                 catch (IllegalArgumentException ex) { errors.add("equipment " + id + " contains invalid substat " + raw); }
             }
+            var mainPool = EquipmentRolls.candidates(s.getConfigurationSection("main-stat-candidates"), true);
+            double first = s.getDouble("main-stat.level-1", mainPool.isEmpty() ? 0 : mainPool.getFirst().first());
+            double last = s.getDouble("main-stat.max-level", mainPool.isEmpty() ? 0 : mainPool.getFirst().last());
+            if (!Double.isFinite(first) || !Double.isFinite(last)) { errors.add("equipment " + id + " has non-finite main stat"); continue; }
             result.put(id, new EquipmentDefinition(id, s.getString("name", id), material.name(), slot, rarity, maxLevel,
-                    main, s.getDouble("main-stat.level-1"), s.getDouble("main-stat.max-level"), List.copyOf(candidates),
+                    main, first, last, List.copyOf(candidates),
                     s.getString("set", ""), s.contains("custom-model-data") ? s.getInt("custom-model-data") : null,
                     s.getStringList("lore")));
         }
         return Map.copyOf(result);
     }
 
-    private boolean mainAllowed(EquipmentSlot slot, StatKey key) {
+    public static boolean mainAllowed(EquipmentSlot slot, StatKey key) {
         return switch (slot) {
             case HEAD -> Set.of(StatKey.HP_FLAT, StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT).contains(key);
             case CHEST -> Set.of(StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE).contains(key);
@@ -1328,6 +1470,9 @@ public final class DefinitionRegistry {
         for (String id : root.getKeys(false)) {
             ConfigurationSection s = root.getConfigurationSection(id);
             if (s == null) continue;
+            if (s.contains("material") && (Material.matchMaterial(s.getString("material", "")) == null || Material.matchMaterial(s.getString("material", "")).isAir())) {
+                errors.add(rootName + "." + id + ".material must be a non-air item material"); continue;
+            }
             try { EntityType.valueOf(s.getString("entity-type", "").toUpperCase(Locale.ROOT)); }
             catch (IllegalArgumentException ex) { errors.add((boss ? "boss " : "mob ") + id + " has invalid entity type"); continue; }
             if (!EntityType.valueOf(s.getString("entity-type").toUpperCase(Locale.ROOT)).isAlive()) {
@@ -1568,6 +1713,234 @@ public enum StatKey {
 }
 ```
 
+## 実装参照: model/EquipmentRolls.java
+
+```java
+package com.github.saku0817.combatcoresystems.model;
+
+import org.bukkit.configuration.ConfigurationSection;
+import java.util.*;
+import java.util.random.RandomGenerator;
+
+/** Weighted draws are performed once on acquisition; selected values are persisted in ItemInstance. */
+public final class EquipmentRolls {
+    private EquipmentRolls() {}
+    public record Candidate(StatKey key, double first, double last, double weight) {}
+    public static List<Candidate> candidates(ConfigurationSection section, boolean main) {
+        if (section == null) return List.of();
+        List<Candidate> result = new ArrayList<>();
+        for (String raw : section.getKeys(false)) {
+            StatKey key = StatKey.valueOf(raw.toUpperCase(Locale.ROOT));
+            if (result.stream().anyMatch(c -> c.key() == key)) throw new IllegalArgumentException("Duplicate stat: " + raw);
+            ConfigurationSection value = section.getConfigurationSection(raw);
+            if (value == null) throw new IllegalArgumentException("Stat candidate must be a map: " + raw);
+            double first = value.getDouble(main ? "level-1" : "value", key.name().endsWith("_FLAT") ? 25 : 0.05);
+            double last = main ? value.getDouble("max-level", first) : first;
+            double weight = value.getDouble("weight", 1);
+            if (!Double.isFinite(first) || !Double.isFinite(last) || !Double.isFinite(weight) || weight <= 0)
+                throw new IllegalArgumentException("Invalid candidate value/weight: " + raw);
+            result.add(new Candidate(key, first, last, weight));
+        }
+        double total = result.stream().mapToDouble(Candidate::weight).sum();
+        if (!Double.isFinite(total)) throw new IllegalArgumentException("Candidate weights overflow");
+        return List.copyOf(result);
+    }
+    public static List<Candidate> draw(List<Candidate> candidates, int count, RandomGenerator random) {
+        List<Candidate> pool = new ArrayList<>(candidates), result = new ArrayList<>();
+        while (!pool.isEmpty() && result.size() < count) {
+            double pick = random.nextDouble() * pool.stream().mapToDouble(Candidate::weight).sum();
+            int index = 0;
+            while (index < pool.size() - 1 && (pick -= pool.get(index).weight()) >= 0) index++;
+            Candidate chosen = pool.remove(index); result.add(chosen);
+            pool.removeIf(candidate -> candidate.key() == chosen.key());
+        }
+        return result;
+    }
+}
+```
+
+## 実装参照: model/SetTrigger.java
+
+```java
+package com.github.saku0817.combatcoresystems.model;
+
+import org.bukkit.configuration.ConfigurationSection;
+import java.util.*;
+
+public record SetTrigger(String id, Event event, double hpBelow, long cooldownMillis, Target target, List<String> effects) {
+    public enum Event { SKILL, ULTIMATE, HIT, TAKE_DAMAGE, HP_BELOW }
+    public enum Target { SELF, OTHER }
+    public static List<SetTrigger> parse(ConfigurationSection section, Set<String> knownBuffs) {
+        if (section == null) return List.of();
+        List<SetTrigger> result = new ArrayList<>();
+        for (String id : section.getKeys(false)) {
+            ConfigurationSection s = section.getConfigurationSection(id);
+            if (s == null) throw new IllegalArgumentException("Set trigger must be a map: " + id);
+            Event event = Event.valueOf(s.getString("event", "").toUpperCase(Locale.ROOT));
+            Target target = Target.valueOf(s.getString("target", "SELF").toUpperCase(Locale.ROOT));
+            double hp = s.getDouble("hp-percent", 0.5), cooldown = s.getDouble("cooldown-seconds", 1);
+            if (!Double.isFinite(hp) || hp < 0 || hp > 1 || !Double.isFinite(cooldown) || cooldown < 0 || cooldown > 86400)
+                throw new IllegalArgumentException("Invalid set trigger HP/cooldown: " + id);
+            if (event == Event.HP_BELOW && target != Target.SELF) throw new IllegalArgumentException("HP_BELOW requires SELF");
+            List<String> effects = s.getStringList("effects");
+            if (effects.isEmpty() || !knownBuffs.containsAll(effects)) throw new IllegalArgumentException("Unknown/empty buffs.yml effects: " + id);
+            result.add(new SetTrigger(id, event, hp, Math.round(cooldown * 1000), target, List.copyOf(effects)));
+        }
+        return List.copyOf(result);
+    }
+}
+```
+
+## 実装参照: model/ItemInstance.java
+
+```java
+package com.github.saku0817.combatcoresystems.model;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+
+public final class ItemInstance {
+    private String instanceId = UUID.randomUUID().toString();
+    private String definitionId = "";
+    private int level = 1;
+    private long exp;
+    private int limitBreak;
+    private Map<String, Double> substats = new LinkedHashMap<>();
+    private Map<String, Integer> substatUpgrades = new LinkedHashMap<>();
+    private int unlockedSubstats;
+    private StatKey mainStat;
+    private double mainAtLevel1;
+    private double mainAtMaxLevel;
+
+    public StatKey mainStat(EquipmentDefinition definition) { return mainStat == null ? definition.mainStat() : mainStat; }
+    public double mainValue(EquipmentDefinition definition) {
+        return com.github.saku0817.combatcoresystems.util.CoreMath.linear(mainStat == null ? definition.mainAtLevel1() : mainAtLevel1,
+                mainStat == null ? definition.mainAtMaxLevel() : mainAtMaxLevel, level, definition.maxLevel());
+    }
+    public void setMainStat(StatKey key, double first, double last) {
+        if (key == null || !Double.isFinite(first) || !Double.isFinite(last)) throw new IllegalArgumentException("Invalid main stat");
+        mainStat = key; mainAtLevel1 = first; mainAtMaxLevel = last;
+    }
+
+    public String getInstanceId() { return instanceId; }
+    public String getDefinitionId() { return definitionId; }
+    public int getLevel() { return level; }
+    public long getExp() { return exp; }
+    public int getLimitBreak() { return limitBreak; }
+    public Map<String, Double> getSubstats() { return substats; }
+    public Map<String, Integer> getSubstatUpgrades() { return substatUpgrades; }
+    public int getUnlockedSubstats() { return unlockedSubstats; }
+    public void setDefinitionId(String definitionId) { this.definitionId = definitionId; }
+    public void setLevel(int level) { this.level = Math.max(1, Math.min(100, level)); }
+    public void setExp(long exp) { this.exp = Math.max(0L, exp); }
+    public void setLimitBreak(int limitBreak) { this.limitBreak = Math.max(0, Math.min(5, limitBreak)); }
+    public void setUnlockedSubstats(int count) { this.unlockedSubstats = Math.max(0, Math.min(4, count)); }
+}
+```
+
+## 実装参照: service/SetEffectService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.api.v1.event.AfterDamageEvent;
+import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
+import com.github.saku0817.combatcoresystems.model.*;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.event.*;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.plugin.java.JavaPlugin;
+import java.util.*;
+
+public final class SetEffectService implements Listener {
+    private final JavaPlugin plugin;
+    private final DefinitionRegistry definitions;
+    private final PlayerDataService players;
+    private final StatService stats;
+    private final BuffService buffs;
+    private DefinitionRegistry.Snapshot snapshot;
+    private final Map<String, List<SetTrigger>> rules = new HashMap<>();
+    private final Map<UUID, Map<String, Long>> cooldowns = new HashMap<>();
+    private final Map<UUID, Set<String>> hpActive = new HashMap<>();
+    public SetEffectService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats, BuffService buffs) {
+        this.plugin = plugin; this.definitions = definitions; this.players = players; this.stats = stats; this.buffs = buffs;
+    }
+    public static Map<String, Integer> counts(DefinitionRegistry.Snapshot snapshot, PlayerData data) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.RESONANCE)) {
+            ItemInstance item = data.getEquipment().get(slot);
+            EquipmentDefinition definition = item == null ? null : snapshot.equipment().get(item.getDefinitionId());
+            if (definition != null && !definition.setId().isBlank()) counts.merge(definition.setId(), 1, Integer::sum);
+        }
+        return counts;
+    }
+    public void start() { Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+        refresh();
+        if (rules.values().stream().flatMap(Collection::stream).noneMatch(r -> r.event() == SetTrigger.Event.HP_BELOW)) return;
+        for (Player player : Bukkit.getOnlinePlayers()) fire(player, SetTrigger.Event.HP_BELOW, null);
+    }, 5, 5); }
+    private void refresh() {
+        if (snapshot == definitions.snapshot()) return;
+        snapshot = definitions.snapshot(); rules.clear(); hpActive.clear();
+        var root = snapshot.config("sets.yml").getConfigurationSection("sets");
+        if (root != null) for (String id : root.getKeys(false)) for (String tier : List.of("two-piece", "four-piece")) {
+            try { rules.put(id + ":" + tier, SetTrigger.parse(root.getConfigurationSection(id + "." + tier + ".triggers"), snapshot.buffs().keySet())); }
+            catch (IllegalArgumentException ignored) { /* Already reported by DefinitionRegistry; omit invalid initial definitions. */ }
+        }
+    }
+    public void fire(Player player, SetTrigger.Event event, LivingEntity other) {
+        refresh();
+        PlayerData data = players.find(player.getUniqueId()).orElse(null);
+        if (data == null || player.isDead()) return;
+        Set<String> active = hpActive.computeIfAbsent(player.getUniqueId(), ignored -> new HashSet<>());
+        Set<String> seen = new HashSet<>();
+        for (var set : counts(snapshot, data).entrySet()) for (String tier : List.of("two-piece", "four-piece")) {
+            if (set.getValue() < (tier.equals("two-piece") ? 2 : 4)) continue;
+            String prefix = set.getKey() + ":" + tier;
+            for (SetTrigger rule : rules.getOrDefault(prefix, List.of())) {
+                if (rule.event() != event) continue;
+                String key = prefix + ":" + rule.id();
+                if (event == SetTrigger.Event.HP_BELOW) {
+                    if (data.getHealth() / Math.max(1, stats.get(player, data).maxHp()) > rule.hpBelow()) continue;
+                    seen.add(key);
+                    if (!active.add(key)) continue;
+                }
+                LivingEntity target = rule.target() == SetTrigger.Target.SELF ? player : other;
+                if (target == null || target.isDead()) continue;
+                long now = System.currentTimeMillis();
+                Map<String, Long> timers = cooldowns.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>());
+                if (timers.getOrDefault(key, 0L) > now) continue;
+                timers.put(key, now + rule.cooldownMillis());
+                for (String effect : rule.effects()) buffs.apply(target, effect, player.getUniqueId());
+            }
+        }
+        if (event == SetTrigger.Event.HP_BELOW) active.retainAll(seen);
+    }
+    @EventHandler public void onDamage(AfterDamageEvent event) {
+        if (!event.getResult().applied() || event.getResult().finalDamage() <= 0) return;
+        refresh();
+        if (rules.values().stream().flatMap(Collection::stream).noneMatch(rule -> rule.event() == SetTrigger.Event.HIT || rule.event() == SetTrigger.Event.TAKE_DAMAGE)) return;
+        var request = event.getRequest();
+        var attacker = request.attacker() == null ? null : Bukkit.getEntity(request.attacker());
+        var target = Bukkit.getEntity(request.target());
+        // DOT callbacks may run while BuffService iterates effects. Apply new effects on the next tick.
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (attacker instanceof Player player && player.isOnline() && target instanceof LivingEntity other && !player.equals(other)) fire(player, SetTrigger.Event.HIT, other);
+            if (target instanceof Player player && player.isOnline()) fire(player, SetTrigger.Event.TAKE_DAMAGE, attacker instanceof LivingEntity other ? other : null);
+        });
+    }
+    @EventHandler public void onQuit(PlayerQuitEvent event) { cooldowns.remove(event.getPlayer().getUniqueId()); hpActive.remove(event.getPlayer().getUniqueId()); }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEnvironmentDamage(org.bukkit.event.entity.EntityDamageEvent event) {
+        if (event instanceof org.bukkit.event.entity.EntityDamageByEntityEvent || event.getFinalDamage() <= 0 || !(event.getEntity() instanceof Player player)) return;
+        Bukkit.getScheduler().runTask(plugin, () -> { if (player.isOnline()) fire(player, SetTrigger.Event.TAKE_DAMAGE, null); });
+    }
+}
+```
+
 ## 実装参照: service/SkillService.java
 
 ```java
@@ -1594,6 +1967,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class SkillService implements Listener {
+    private SetEffectService setEffects;
+    public void bindSetEffects(SetEffectService value) { setEffects = value; }
     private final DefinitionRegistry definitions;
     private final PlayerDataService players;
     private final StatService stats;
@@ -1820,7 +2195,7 @@ public final class SkillService implements Listener {
                     .replace("<seconds>", String.format(Locale.ROOT, "%.1f", state.remainingSeconds()))));
             return true;
         }
-        combat.touch(player, weaponId);
+        // Enter combat only after a successful hit, not merely on casting.
         String announcement = definitions.snapshot().config("messages.yml").getString(
                 "ability-announcement." + (ultimate ? "ultimate" : "skill"), "<aqua>発動：<name></aqua>");
         if (!announcement.isBlank()) player.sendMessage(mini.deserialize(announcement.replace("<name>", ability.name())));
@@ -1829,6 +2204,8 @@ public final class SkillService implements Listener {
         if (buffs != null) for (String id : ability.options().selfEffects()) buffs.apply(player, id, player.getUniqueId());
         stats.invalidate(player.getUniqueId());
         trace("cast success", player, "weapon=" + weaponId + " kind=" + (ultimate ? "ultimate" : "skill") + " empty=" + emptyCast);
+        if (setEffects != null) setEffects.fire(player, ultimate ? com.github.saku0817.combatcoresystems.model.SetTrigger.Event.ULTIMATE
+                : com.github.saku0817.combatcoresystems.model.SetTrigger.Event.SKILL, target != null && damage.canAffect(player, target) ? target : null);
         if (emptyCast) WeaponVisuals.play(player, ability.options().visual());
         Element activeElement = element;
         for (LivingEntity current : targets) {

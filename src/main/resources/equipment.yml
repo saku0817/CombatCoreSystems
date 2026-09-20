@@ -33,6 +33,22 @@ data-version: 1
 # HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
 # 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
 equipment: {}
+# v1.4.4 抽選例（equipment.ID 配下。割合は0.05=5%。獲得時に選び個体へ保存）:
+#     main-stat-candidates:
+#       CRIT_RATE: {level-1: 0.05, max-level: 0.30, weight: 1}
+#       CRIT_DAMAGE: {level-1: 0.10, max-level: 0.60, weight: 1}
+#     substat-candidates:
+#       ATK_PERCENT: {value: 0.05, weight: 1}
+#       HP_FLAT: {value: 25, weight: 2}
+#       CRIT_RATE: {value: 0.05, weight: 1}
+#       CRIT_DAMAGE: {value: 0.10, weight: 1}
+#       DEF_PERCENT: {value: 0.05, weight: 1}
+#     initial-unlocked-substats: 0
+# main-stat-candidates はメイン1個、substat-candidates は最大 rarity-1 個（上限4）を重複なしで抽選。
+# メインとサブの重複は許可。weight は正の相対抽選重み。部位別メイン制限は従来どおり。
+# サブ抽選指定時は initial-substats より優先。省略時は従来の固定例／substatsを互換読込。
+# 既存個体は再抽選しません。新形式の main-stat は個体にレベル1と最大レベルの値を保存。
+# 強化時のサブステ増加量は従来どおり固定値25／割合0.05です。
 # 完全なツールチップ・固定サブステータス例:
 # equipment:
 #   fictional_traveler_chest:

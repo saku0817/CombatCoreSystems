@@ -18,6 +18,8 @@ import java.util.*;
 import java.util.function.Consumer;
 
 public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
+    private Consumer<Player> adminGui;
+    public void bindGui(Consumer<Player> value) { adminGui = value; }
     private final DebugService debug;
     private final JavaPlugin plugin; private final DefinitionRegistry definitions; private final StorageService storage;
     private final PlayerDataService players; private final LevelService levels; private final StatService stats;
@@ -41,7 +43,18 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         String permission = switch (root) { case "edit" -> args.length > 1 ? args[1].toLowerCase(Locale.ROOT) : "*"; case "spawn" -> "spawn"; default -> root; };
         if (!sender.hasPermission("combatcoresystems.admin." + permission) && !sender.hasPermission("combatcoresystems.admin.*")) { message(sender, "<red>権限がありません。</red>"); return true; }
         try {
+            int targetIndex = targetIndex(args);
+            if (targetIndex >= 0 && args.length > targetIndex && args[targetIndex].startsWith("@")) {
+                var targets = Bukkit.selectEntities(sender, args[targetIndex]).stream().filter(Player.class::isInstance).map(Player.class::cast).toList();
+                if (targets.isEmpty()) throw new IllegalArgumentException("対象のオンラインプレイヤーが見つかりません。");
+                for (Player target : targets) {
+                    String[] expanded = args.clone(); expanded[targetIndex] = target.getName();
+                    onCommand(sender, command, label, expanded);
+                }
+                return true;
+            }
             switch (root) {
+                case "menu" -> { if (!(sender instanceof Player player) || adminGui == null) throw new IllegalArgumentException("ゲーム内から実行してください。"); adminGui.accept(player); }
                 case "debug" -> debug(sender, args);
                 case "itemlevel" -> itemLevel(sender, args);
                 case "reload" -> message(sender, definitions.reloadSafely() ? "<green>設定を再読み込みしました。</green>" : "<red>検証に失敗したため現在の設定を維持しました。</red>");
@@ -67,7 +80,8 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     private void give(CommandSender sender, String[] args) {
         if (args.length < 5 || !args[1].equalsIgnoreCase("item")) throw new IllegalArgumentException("/ccsadmin give item <player> <id> <amount>");
         Player player = Bukkit.getPlayerExact(args[2]); if (player == null) throw new IllegalArgumentException("player");
-        int amount = Math.max(1, Integer.parseInt(args[4]));
+        int amount = Integer.parseInt(args[4]);
+        if (amount < 1 || amount > 2304) throw new IllegalArgumentException("数量は1～2304で指定してください。");
         for (int i = 0; i < amount; i++) {
             ItemStack item = items.create(args[3], 1).orElseThrow(() -> new IllegalArgumentException("item id"));
             player.getInventory().addItem(item).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
@@ -194,6 +208,18 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         } catch (ArithmeticException ex) { throw new IllegalArgumentException("時間が大きすぎます。"); }
     }
 
+    public static int targetIndex(String[] args) {
+        if (args.length == 0) return -1;
+        return switch (args[0].toLowerCase(Locale.ROOT)) {
+            case "give", "encyclopedia", "itemlevel" -> 2;
+            case "edit" -> args.length < 2 ? -1 : switch (args[1].toLowerCase(Locale.ROOT)) {
+                case "level", "exp" -> 2;
+                case "buff", "attribute", "element", "force" -> 3;
+                default -> -1;
+            };
+            default -> -1;
+        };
+    }
     private void main(Runnable action) { Bukkit.getScheduler().runTask(plugin, action); }
     private String configuredMessage(String path, String fallback, Map<String, String> replacements) {
         String value = definitions.snapshot().config("messages.yml").getString(path, fallback);
@@ -210,7 +236,13 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
     private void message(CommandSender sender, String text) { sender.sendMessage(mini.deserialize("<dark_gray>[<gold>CCS</gold>]</dark_gray> " + text)); }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return complete(args[0], List.of("edit", "give", "spawn", "region", "backup", "encyclopedia", "reload", "save", "debug", "itemlevel"));
+        if (args.length == 1) return complete(args[0], List.of("menu", "edit", "give", "spawn", "region", "backup", "encyclopedia", "reload", "save", "debug", "itemlevel"));
+        int targetIndex = targetIndex(args);
+        if (targetIndex >= 0 && args.length == targetIndex + 1) {
+            List<String> targets = new ArrayList<>(List.of("@s", "@p", "@a", "@r", "@e[type=player]"));
+            targets.addAll(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
+            return complete(args[targetIndex], targets);
+        }
         if (args.length == 2 && args[0].equalsIgnoreCase("itemlevel")) return complete(args[1], List.of("1", "25", "100"));
         if (args.length == 3 && args[0].equalsIgnoreCase("itemlevel")) return complete(args[2], Bukkit.getOnlinePlayers().stream().map(Player::getName).toList());
         if (args.length == 2 && args[0].equalsIgnoreCase("debug")) return complete(args[1], List.of("on", "off", "status", "schedule", "cancel"));

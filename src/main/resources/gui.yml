@@ -2,6 +2,9 @@ data-version: 1
 # GUI用アイコン全体のエンチャント光。実物のCCSアイテムは各定義を参照します。
 enchantment-glint: false
 stats:
+  other-name: '<white>その他の補正</white>'
+  source-line: '<white><source>：<stat> <yellow><value></yellow></white>'
+  chat-title: '<gold>自分のステータス</gold>'
   title: "<dark_aqua>✦ ステータス ✦</dark_aqua>"
   border-material: GRAY_STAINED_GLASS_PANE
   health-name: "<red>♥ 体力</red>"
@@ -100,11 +103,15 @@ enhancement:
   upgrade-tier: "<yellow>数値10個 → 上級1個</yellow>"
   downgrade-tier: "<yellow>数値1個 → 下級10個</yellow>"
 equipment:
+  manage-equipped: '<green>装備中 — タップで交換・解除</green>'
+  unequip: '<yellow>この部位を外す</yellow>'
   equipped: "<green>装備中 — タップで解除</green>"
   failed: "<red>装備を変更できません。戦闘状態・所持品の空き・設定を確認してください。</red>"
   select: "<green>所持品から装備を選ぶ</green>"
   list-title: "<gold>タップして装備</gold>"
 encyclopedia:
+  rarity-title: '<gold>レア度を選択</gold>'
+  all-rarities: '<white>全レア度</white>'
   detail-title: "<aqua>図鑑・詳細</aqua>"
 party:
   leave: "<red>退出</red>"
@@ -138,3 +145,41 @@ hud:
   # 使用可能: <combat_remaining>, <skill_status>, <ultimate_status>
   combat-actionbar: "<red>⚔ 戦闘中 <combat_remaining>秒</red> <gray>|</gray> <yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>"
   attribute-actionbar: "<attributes>"
+
+# v1.4.4: Java/BE共通の単一タップ操作。
+navigation:
+  previous: '<yellow>前のページ</yellow>'
+  next: '<yellow>次のページ</yellow>'
+  back: '<yellow>戻る</yellow>'
+  search: '<aqua>検索</aqua>'
+  search-hint: '<gray>チャットへ名前を入力</gray>'
+admin:
+  title: '<dark_red>CCS 管理メニュー</dark_red>'
+  target: '<yellow>対象：<target></yellow>'
+  target-hint: '<white>名前またはセレクターを入力（初期値 @s）</white>'
+  target-prompt: '対象の名前／セレクターを入力してください。'
+  items: '<green>独自アイテムを取り出す</green>'
+  item-stats: '<gold>利き手の装備ステータスを編集</gold>'
+  item-stats-hint: '<white>メイン・サブステを個体単位で編集。YAML定義は変更しません。</white>'
+  commands: '<aqua>管理コマンド操作</aqua>'
+  close: '<yellow>閉じる</yellow>'
+  back: '<yellow>戻る</yellow>'
+  previous: '<yellow>前のページ</yellow>'
+  next: '<yellow>次のページ</yellow>'
+  denied: '<red>権限がありません。</red>'
+  edit-title: '<gold>装備個体の編集</gold>'
+  choose-stat: '<gold>ステータスを選択</gold>'
+  main-stat: '<yellow>メインステを変更</yellow>'
+  main-values: 'Lv.1の値 最大Lvの値 を空白区切りで入力（例 0.05 0.60）'
+  add-substat: '<green>サブステを追加</green>'
+  sub-value: '値を入力（5%なら0.05）。既存のサブステとの重複はできません。'
+  unlocked: '<aqua>開放済みサブステ数</aqua>'
+  sub-edit-hint: '<white>値 強化回数 を入力。deleteでこのサブステを削除。</white>'
+  updated: '<green>装備個体を更新しました。</green>'
+  input-cancel: 'cancelで中止。対象に@s等を使用できます。'
+  confirm-title: '<red>実行内容を確認</red>'
+  confirm-summary: '<white>実行する操作</white>'
+  confirm: '<green>確定して実行</green>'
+  cancel: '<yellow>中止</yellow>'
+  # 例: command-names.edit-level: プレイヤーレベル変更
+  command-names: {}

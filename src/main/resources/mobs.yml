@@ -1,4 +1,5 @@
 data-version: 1
+# v1.4.4: mobs.ID.material: ZOMBIE_HEAD で図鑑アイコンを指定（vanilla-mobs.ID.materialも同様）。
 virtual-health:
   # Minecraft内部へ同期する表示用HPの上限。CCS上のMob HP自体には上限を設けません。
   physical-cap: 1024

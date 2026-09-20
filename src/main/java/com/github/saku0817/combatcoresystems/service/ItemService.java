@@ -85,6 +85,12 @@ public final class ItemService {
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(id);
             if (equipment != null) {
                 value.setLevel(Math.clamp(definitions.snapshot().config("equipment.yml").getInt("equipment." + id + ".initial-level", 1), 1, equipment.maxLevel()));
+                ConfigurationSection settings = definitions.snapshot().config("equipment.yml").getConfigurationSection("equipment." + id);
+                var pool = EquipmentRolls.candidates(settings.getConfigurationSection("main-stat-candidates"), true);
+                if (!pool.isEmpty()) {
+                    var selected = EquipmentRolls.draw(pool, 1, ThreadLocalRandom.current()).getFirst();
+                    value.setMainStat(selected.key(), selected.first(), selected.last());
+                } else value.setMainStat(equipment.mainStat(), equipment.mainAtLevel1(), equipment.mainAtMaxLevel());
                 generateSubstats(value, equipment);
             }
             pdc.set(instanceKey, PersistentDataType.STRING, gson.toJson(value));
@@ -186,9 +192,9 @@ public final class ItemService {
         lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(messages.getString("equipment-tooltip.level", "<white>Lv.<yellow><level></yellow> / <yellow><max_level></yellow></white>")
                 .replace("<level>", Integer.toString(instance.getLevel())).replace("<max_level>", Integer.toString(definition.maxLevel()))));
         lore.add(Component.empty());
-        double main = com.github.saku0817.combatcoresystems.util.CoreMath.linear(definition.mainAtLevel1(), definition.mainAtMaxLevel(), instance.getLevel(), definition.maxLevel());
+        double main = instance.mainValue(definition);
         lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(messages.getString("equipment-tooltip.main-stat", "<yellow>➽ <stat> +<value></yellow>")
-                .replace("<stat>", displayName(definition.mainStat().name())).replace("<value>", statValue(definition.mainStat().name(), main))));
+                .replace("<stat>", displayName(instance.mainStat(definition).name())).replace("<value>", statValue(instance.mainStat(definition).name(), main))));
         int index = 0;
         for (var entry : instance.getSubstats().entrySet()) {
             boolean open = index++ < instance.getUnlockedSubstats();
@@ -307,6 +313,16 @@ public final class ItemService {
     }
 
     private void generateSubstats(ItemInstance instance, EquipmentDefinition definition) {
+        ConfigurationSection settings = definitions.snapshot().config("equipment.yml").getConfigurationSection("equipment." + definition.id());
+        var pool = EquipmentRolls.candidates(settings.getConfigurationSection("substat-candidates"), false);
+        if (!pool.isEmpty()) {
+            for (var chosen : EquipmentRolls.draw(pool, Math.min(4, definition.rarity() - 1), ThreadLocalRandom.current())) {
+                instance.getSubstats().put(chosen.key().name(), chosen.first());
+                instance.getSubstatUpgrades().put(chosen.key().name(), 0);
+            }
+            instance.setUnlockedSubstats(Math.min(instance.getSubstats().size(), settings.getInt("initial-unlocked-substats", 0)));
+            return;
+        }
         ConfigurationSection fixed = definitions.snapshot().config("equipment.yml").getConfigurationSection("equipment." + definition.id() + ".initial-substats");
         if (fixed != null) {
             fixed.getKeys(false).stream().limit(4).forEach(key -> {

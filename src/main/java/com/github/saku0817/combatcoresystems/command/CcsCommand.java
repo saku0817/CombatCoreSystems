@@ -22,6 +22,11 @@ public final class CcsCommand implements CommandExecutor, TabCompleter {
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) { sender.sendMessage("Players only."); return true; }
+        if (args.length == 1 && args[0].equalsIgnoreCase("status")) {
+            if (!player.hasPermission("combatcoresystems.command.status")) { message(player, "<red>権限がありません。</red>"); return true; }
+            if (players.find(player.getUniqueId()).isEmpty()) { message(player, "<yellow>データを読み込み中です。</yellow>"); return true; }
+            gui.sendStatus(player); return true;
+        }
         if (args.length == 1 && Set.of("skill", "ultimate").contains(args[0].toLowerCase(Locale.ROOT))) {
             if (!player.hasPermission("combatcoresystems.command." + args[0].toLowerCase(Locale.ROOT))) { message(player, "<red>権限がありません。</red>"); return true; }
             skills.activate(player, args[0].equalsIgnoreCase("ultimate"));
@@ -114,7 +119,7 @@ public final class CcsCommand implements CommandExecutor, TabCompleter {
     private void message(CommandSender sender, String value) { sender.sendMessage(mini.deserialize("<dark_gray>[<gold>CCS</gold>]</dark_gray> " + value)); }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return complete(args[0], List.of("help", "menu", "open", "setting", "skill", "ultimate"));
+        if (args.length == 1) return complete(args[0], List.of("help", "menu", "open", "setting", "skill", "ultimate", "status"));
         if (args.length == 2 && args[0].equalsIgnoreCase("open")) return complete(args[1], List.of("stats", "equipments", "skilltree", "rebirth", "party", "encyclopedia", "enhancement", "settings"));
         if (args.length >= 3 && args[0].equalsIgnoreCase("open") && args[1].equalsIgnoreCase("party")) return onTabComplete(sender, command, alias, Arrays.copyOfRange(args, 1, args.length));
         if (args.length == 2 && args[0].equalsIgnoreCase("party")) return complete(args[1], List.of("create", "invite", "accept", "decline", "leave", "kick", "leader", "disband", "list", "chat"));

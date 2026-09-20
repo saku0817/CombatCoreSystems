@@ -45,7 +45,7 @@ public final class DamageDisplayService {
         String number = Long.toString(amount);
         if (element != null) number = second == null ? "<" + color(element) + ">" + number + "</" + color(element) + ">"
                 : "<gradient:" + color(element) + ":" + color(second) + ">" + number + "</gradient>";
-        Component text = mini.deserialize(template(path, fallback).replace("<reaction>", reaction == null ? "" : reaction)
+        Component text = mini.deserialize(template(path, fallback).replace("<reaction>", reaction == null ? "" : "<white>" + reaction + "</white>")
                 .replace("<damage>", number).replace("<overdamage>", Long.toString(overdamage)));
         if (definitions.snapshot().config("config.yml").getBoolean("damage-chat.enabled", false)) {
             var player = owner == null ? null : Bukkit.getPlayer(owner);

@@ -19,6 +19,9 @@ public final class PlayerData {
     private int activePreset = 1;
     private long presetCooldownEnd;
     private EnumMap<EquipmentSlot, ItemInstance> equipment = new EnumMap<>(EquipmentSlot.class);
+    private String resonanceItem = "";
+    public String getResonanceItem() { return resonanceItem == null ? "" : resonanceItem; }
+    public void setResonanceItem(String value) { resonanceItem = value == null ? "" : value; }
     private boolean pvpEnabled = true;
     private boolean hudEnabled = true;
     private String controls = "DEFAULT";

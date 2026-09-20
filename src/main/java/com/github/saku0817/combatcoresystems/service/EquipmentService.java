@@ -104,13 +104,26 @@ public final class EquipmentService implements Listener {
             for (EquipmentSlot accessory : List.of(EquipmentSlot.RESONANCE, EquipmentSlot.DIVINE_HEART)) {
                 ItemInstance registered = data.getEquipment().get(accessory);
                 if (registered == null) continue;
+                if (accessory == EquipmentSlot.RESONANCE && !data.getResonanceItem().isBlank()) continue;
                 ItemInstance actual = Arrays.stream(player.getInventory().getContents()).map(items::instance).flatMap(Optional::stream)
                         .filter(value -> value.getInstanceId().equals(registered.getInstanceId())).findFirst().orElse(null);
                 if (actual == null) data.getEquipment().remove(accessory);
-                else data.getEquipment().put(accessory, actual);
+                else {
+                    data.getEquipment().put(accessory, actual);
+                    if (accessory == EquipmentSlot.RESONANCE) {
+                        // One-time migration from inventory registration to a dedicated persisted slot.
+                        for (int i = 0; i < player.getInventory().getSize(); i++) {
+                            ItemStack stack = player.getInventory().getItem(i);
+                            if (items.instance(stack).map(value -> value.getInstanceId().equals(actual.getInstanceId())).orElse(false)) {
+                                data.setResonanceItem(Base64.getEncoder().encodeToString(stack.serializeAsBytes()));
+                                player.getInventory().setItem(i, null); break;
+                            }
+                        }
+                    }
+                }
             }
             Map<String, Integer> setCounts = new HashMap<>();
-            for (EquipmentSlot armor : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
+            for (EquipmentSlot armor : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.RESONANCE)) {
                 ItemInstance equipped = data.getEquipment().get(armor);
                 EquipmentDefinition definition = equipped == null ? null : definitions.snapshot().equipment().get(equipped.getDefinitionId());
                 if (definition != null && !definition.setId().isBlank()) setCounts.merge(definition.setId(), 1, Integer::sum);
@@ -136,6 +149,12 @@ public final class EquipmentService implements Listener {
             ItemStack previous = player.getInventory().getItem(physical);
             player.getInventory().setItem(physical, stack);
             player.getInventory().setItem(inventorySlot, previous);
+        } else if (slot == EquipmentSlot.RESONANCE) {
+            var data = players.require(player);
+            ItemStack previous = storedResonance(data);
+            data.setResonanceItem(Base64.getEncoder().encodeToString(stack.serializeAsBytes()));
+            data.getEquipment().put(slot, instance);
+            player.getInventory().setItem(inventorySlot, previous);
         } else {
             // Accessory registration refers to the real inventory instance; no duplicate item is created.
             players.require(player).getEquipment().put(slot, instance);
@@ -153,6 +172,16 @@ public final class EquipmentService implements Listener {
 
     public boolean unequip(Player player, EquipmentSlot slot) {
         if (combat.inCombat(player.getUniqueId())) return false;
+        if (slot == EquipmentSlot.RESONANCE) {
+            var data = players.require(player);
+            ItemStack stored = storedResonance(data);
+            if (stored != null) {
+                int empty = player.getInventory().firstEmpty();
+                if (empty < 0 || empty >= 36) return false;
+                player.getInventory().setItem(empty, stored);
+                data.setResonanceItem("");
+            }
+        }
         int physical = physicalSlot(slot);
         if (physical >= 0) {
             int empty = player.getInventory().firstEmpty();
@@ -167,6 +196,29 @@ public final class EquipmentService implements Listener {
 
     private int physicalSlot(EquipmentSlot slot) {
         return switch (slot) { case HEAD -> 39; case CHEST -> 38; case LEGS -> 37; case FEET -> 36; default -> -1; };
+    }
+
+    public ItemStack storedResonance(com.github.saku0817.combatcoresystems.model.PlayerData data) {
+        if (data.getResonanceItem().isBlank()) return null;
+        ItemStack stack = ItemStack.deserializeBytes(Base64.getDecoder().decode(data.getResonanceItem()));
+        ItemInstance instance = data.getEquipment().get(EquipmentSlot.RESONANCE);
+        if (instance != null) {
+            EquipmentDefinition definition = definitions.snapshot().equipment().get(instance.getDefinitionId());
+            int count = definition == null ? 0 : SetEffectService.counts(definitions.snapshot(), data).getOrDefault(definition.setId(), 0);
+            items.writeInstance(stack, instance, count);
+        }
+        return stack;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onDeath(org.bukkit.event.entity.PlayerDeathEvent event) {
+        if (event.getKeepInventory()) return;
+        players.find(event.getPlayer().getUniqueId()).ifPresent(data -> {
+            ItemStack stored = storedResonance(data);
+            if (stored == null) return;
+            event.getDrops().add(stored); data.setResonanceItem(""); data.getEquipment().remove(EquipmentSlot.RESONANCE);
+            stats.invalidate(event.getPlayer().getUniqueId());
+        });
     }
 
     public void markUsed(Player player, ItemStack item) {

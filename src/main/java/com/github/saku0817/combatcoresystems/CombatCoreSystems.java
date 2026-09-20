@@ -64,17 +64,22 @@ public final class CombatCoreSystems extends JavaPlugin {
         SpawnService spawns = new SpawnService(this, definitions, mobs, combat);
         debug = new DebugService(this);
         skills.bindDebug(debug);
+        SetEffectService setEffects = new SetEffectService(this, definitions, players, stats, buffs);
+        skills.bindSetEffects(setEffects);
         HudService hud = new HudService(this, definitions, players, stats, levels, combat, elements, skills, mobs);
         GuiService gui = new GuiService(this, definitions, players, stats, levels, combat, equipment, skillTrees, parties, enhancement, items);
         BackupService backups = new BackupService(this, definitions, storage, players, parties, stats, levels, elements);
         web = new AdminWebService(this, definitions);
 
-        registerListeners(List.of(regions, mobs, stats, damage, equipment, skills, encyclopedia, gui, mobAbilities, debug,
+        registerListeners(List.of(regions, mobs, stats, damage, equipment, skills, encyclopedia, gui, mobAbilities, debug, setEffects,
                 new PlayerLifecycleListener(this, players, levels, combat, elements, buffs, equipment, hud, mobs)));
 
         CcsCommand general = new CcsCommand(players, combat, gui, parties, debug, skills);
         CcsAdminCommand admin = new CcsAdminCommand(this, definitions, storage, players, levels, stats, buffs, elements,
                 items, mobs, regions, backups, encyclopedia, parties, combat, debug);
+        AdminGuiService adminGui = new AdminGuiService(this, definitions, players, items, equipment, stats, levels);
+        admin.bindGui(adminGui::open);
+        Bukkit.getPluginManager().registerEvents(adminGui, this);
         configureCommand("ccs", general, general);
         configureCommand("ccsadmin", admin, admin);
 
@@ -84,7 +89,7 @@ public final class CombatCoreSystems extends JavaPlugin {
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) new CcsPlaceholderExpansion(this, definitions, players, stats, levels, combat, elements, skills, parties, items).register();
         if (Bukkit.getPluginManager().getPlugin("floodgate") != null) getLogger().info("Floodgate detected; Bedrock players use the common CCS controls and GUI flow.");
 
-        combat.start(); mobs.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule(); web.start();
+        combat.start(); mobs.start(); elements.start(); displays.start(); buffs.start(); spawns.start(); mobAbilities.start(); debug.start(); hud.start(); players.schedule(); backups.schedule(); web.start(); setEffects.start();
         Bukkit.getOnlinePlayers().forEach(player -> players.load(player, data -> { elements.resumePlayer(data); equipment.syncArmor(player); levels.restore(player, data); }));
         getLogger().info("CombatCoreSystems v" + getPluginMeta().getVersion() + " enabled with " + storage.backend() + " storage.");
     }

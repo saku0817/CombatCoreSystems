@@ -80,7 +80,8 @@ public final class EnhancementService {
         }
         if (instance.getLevel() >= maximum) instance.setExp(0);
         items.writeInstance(located.stack, instance);
-        player.getInventory().setItem(located.slot, located.stack);
+        if (located.slot >= 0) player.getInventory().setItem(located.slot, located.stack);
+        else players.require(player).setResonanceItem(Base64.getEncoder().encodeToString(located.stack.serializeAsBytes()));
         players.require(player).getEquipment().replaceAll((slot, old) -> old.getInstanceId().equals(instance.getInstanceId()) ? instance : old);
         stats.invalidate(player.getUniqueId());
         return new Result(true, gained, instance.getLevel(), "");
@@ -186,6 +187,12 @@ public final class EnhancementService {
 
     private LocatedItem find(Player player, String instanceId) {
         for (int slot = 0; slot < player.getInventory().getSize(); slot++) { ItemStack stack = player.getInventory().getItem(slot); ItemInstance value = items.instance(stack).orElse(null); if (value != null && value.getInstanceId().equals(instanceId)) return new LocatedItem(slot, stack, value); }
+        PlayerData data = players.require(player);
+        ItemInstance stored = data.getEquipment().get(com.github.saku0817.combatcoresystems.model.EquipmentSlot.RESONANCE);
+        if (stored != null && stored.getInstanceId().equals(instanceId) && !data.getResonanceItem().isBlank()) {
+            ItemStack stack = ItemStack.deserializeBytes(Base64.getDecoder().decode(data.getResonanceItem()));
+            return new LocatedItem(-1, stack, stored);
+        }
         return null;
     }
     private void setVirtual(PlayerData data, String id, long amount) { if (amount <= 0) data.getEnhancementMaterials().remove(id); else data.getEnhancementMaterials().put(id, amount); }

@@ -203,6 +203,10 @@ public final class DamageService implements DamageApi, Listener {
         DamageResult result = calculate(request, attacker, target);
         if (!result.applied()) return result;
         if (attacker != null && !allowed(attacker, target)) return DamageResult.failed(request.source(), "not_allowed");
+        if (entersCombat(result.finalDamage(), attacker == null ? null : attacker.getUniqueId(), target.getUniqueId())) {
+            combat.touch(attacker, weaponId(attacker, attacker));
+            combat.touch(target, "");
+        }
         if (result.finalDamage() > 0 && attacker instanceof Player player) target.setKiller(player);
         long overdamage = overdamage(target, result.finalDamage());
         subtractHealth(target, result.finalDamage());
@@ -258,6 +262,8 @@ public final class DamageService implements DamageApi, Listener {
                 defenseCoefficient, resistance, request.source(), "");
     }
 
+    static boolean entersCombat(long damage, UUID attacker, UUID target) { return damage > 0 && attacker != null && !attacker.equals(target); }
+
     static double componentAmount(WeaponOptions.Component component, double hp, double atk, double def, double bonus) {
         double reference = switch (component.reference()) { case HP -> hp; case ATK -> atk; case DEF -> def; };
         return Math.max(0, reference * component.multiplier() * (component.bonusElement() == Element.PHYSICAL ? 1 : Math.max(0, 1 + bonus)));
@@ -295,6 +301,12 @@ public final class DamageService implements DamageApi, Listener {
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
             displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage, trigger.incoming(), null);
+            if (entersCombat(rounded, attacker.getUniqueId(), target.getUniqueId())) {
+                combat.touch(attacker, weaponId(attacker, attacker)); combat.touch(target, "");
+            }
+            Bukkit.getPluginManager().callEvent(new AfterDamageEvent(
+                    new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), referenceStat, 1, trigger.incoming(), false, true, rounded, "reaction:" + trigger.definition().id()),
+                    new DamageResult(true, rounded, critical, trigger.incoming(), total, 1, 0, "reaction:" + trigger.definition().id(), "")));
             if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
             if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
                     trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());

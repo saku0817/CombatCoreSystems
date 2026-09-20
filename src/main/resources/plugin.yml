@@ -21,6 +21,7 @@ permissions:
     default: true
     children:
       combatcoresystems.command.help: true
+      combatcoresystems.command.status: true
       combatcoresystems.command.menu: true
       combatcoresystems.command.open.stats: true
       combatcoresystems.command.open.equipments: true
@@ -57,6 +58,8 @@ permissions:
     default: op
     children:
       combatcoresystems.admin.level: true
+      combatcoresystems.admin.menu: true
+      combatcoresystems.admin.itemstats: true
       combatcoresystems.admin.itemlevel: true
       combatcoresystems.admin.exp: true
       combatcoresystems.admin.give: true

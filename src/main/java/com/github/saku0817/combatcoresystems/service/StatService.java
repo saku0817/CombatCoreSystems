@@ -49,7 +49,7 @@ public final class StatService implements Listener {
     }
 
     public PlayerStats recalculate(Player player, PlayerData data) {
-        PlayerStats stats = calculate(player, data);
+        PlayerStats stats = calculate(player, data, false);
         synchronizeAttackAttribute(player, stats.atk());
         cache.put(player.getUniqueId(), stats);
         cacheTicks.put(player.getUniqueId(), org.bukkit.Bukkit.getCurrentTick());
@@ -72,7 +72,9 @@ public final class StatService implements Listener {
         plugin.getServer().getScheduler().runTask(plugin, () -> invalidate(event.getPlayer().getUniqueId()));
     }
 
-    private PlayerStats calculate(Player player, PlayerData data) {
+    public PlayerStats describe(Player player, PlayerData data) { return calculate(player, data, true); }
+
+    private PlayerStats calculate(Player player, PlayerData data, boolean detailed) {
         if (talentDefinitions != definitions.snapshot()) {
             talentDefinitions = definitions.snapshot();
             talentHands = java.util.stream.Stream.concat(talentDefinitions.weapons().values().stream(),
@@ -91,7 +93,11 @@ public final class StatService implements Listener {
                 + levels.getDouble("player.rebirth.def", 10) * rebirth;
 
         EnumMap<StatKey, Double> modifiers = defaults();
+        Map<String, Map<StatKey, Double>> sources = new LinkedHashMap<>();
+        if (detailed) sources.put("基礎値", Map.of(StatKey.HP_FLAT, baseHp, StatKey.ATK_FLAT, playerBaseAtk, StatKey.DEF_FLAT, baseDef,
+                StatKey.CRIT_RATE, modifiers.get(StatKey.CRIT_RATE), StatKey.CRIT_DAMAGE, modifiers.get(StatKey.CRIT_DAMAGE), StatKey.ATTACK_SPEED, modifiers.get(StatKey.ATTACK_SPEED)));
         double weaponAtk = vanillaWeaponAttack(player, levels);
+        if (detailed && weaponAtk != 0) sources.put("バニラ武器から", Map.of(StatKey.ATK_FLAT, weaponAtk));
         Set<String> currentTalents = new HashSet<>();
         Set<String> previousTalents = activeTalents.getOrDefault(player.getUniqueId(), Set.of());
         Set<String> counted = new HashSet<>();
@@ -109,11 +115,15 @@ public final class StatService implements Listener {
             if (!weapon.canEquip(level)) continue;
             if (slot == selected || slot == 40) {
                 weaponAtk += weapon.attackFor(level, instance.getLevel());
+                if (detailed) sources.computeIfAbsent("武器：" + weapon.name(), ignored -> new EnumMap<>(StatKey.class)).merge(StatKey.ATK_FLAT, weapon.attackFor(level, instance.getLevel()), Double::sum);
                 if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
+                if (detailed && weapon.bonusElement() != Element.PHYSICAL) sources.get("武器：" + weapon.name()).merge(damageKey(weapon.bonusElement()), weapon.elementBonus(), Double::sum);
             }
             WeaponOptions.Talent talent = weapon.options().talent();
             if (talent != null && talent.hand().includes(slot, selected)) {
+                EnumMap<StatKey, Double> beforeTalent = detailed ? new EnumMap<>(modifiers) : null;
                 talent.modifiers().forEach((key, value) -> add(modifiers, key, value * talent.multiplier()));
+                recordDelta(sources, "天賦：" + talent.name(), beforeTalent, modifiers);
                 String activation = instance.getInstanceId() + ":" + talent.name();
                 currentTalents.add(activation);
                 if (!previousTalents.contains(activation)) {
@@ -123,29 +133,52 @@ public final class StatService implements Listener {
             }
         }
         activeTalents.put(player.getUniqueId(), currentTalents);
+        EnumMap<StatKey, Double> beforeEquipment = detailed ? new EnumMap<>(modifiers) : null;
         for (Map.Entry<EquipmentSlot, ItemInstance> equipped : data.getEquipment().entrySet()) {
             ItemInstance item = equipped.getValue();
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
             if (equipment != null) {
-                add(modifiers, equipment.mainStat(), CoreMath.linear(equipment.mainAtLevel1(), equipment.mainAtMaxLevel(), item.getLevel(), equipment.maxLevel()));
+                add(modifiers, item.mainStat(equipment), item.mainValue(equipment));
                 item.getSubstats().entrySet().stream().limit(item.getUnlockedSubstats()).forEach(entry -> {
                     String key = entry.getKey(); double value = entry.getValue();
                     try { add(modifiers, StatKey.valueOf(key), value); } catch (IllegalArgumentException ignored) {}
                 });
             }
         }
-        applyEffects(data, modifiers);
-        applySkillTree(data, modifiers);
-        applySetBonuses(data, modifiers);
-        applyDivineHeart(data, modifiers);
+        recordDelta(sources, "装備から", beforeEquipment, modifiers);
+        for (TimedEffect effect : java.util.stream.Stream.concat(data.getBuffs().stream(), data.getDebuffs().stream()).toList()) {
+            EnumMap<StatKey, Double> before = detailed ? new EnumMap<>(modifiers) : null;
+            applyEffect(effect, modifiers);
+            recordDelta(sources, "バフ・デバフ：" + definitions.snapshot().config("buffs.yml").getString("buffs." + effect.getId() + ".name", effect.getId()), before, modifiers);
+        }
+        EnumMap<StatKey, Double> beforeTree = detailed ? new EnumMap<>(modifiers) : null;
+        applySkillTree(data, modifiers); recordDelta(sources, "スキルツリーから", beforeTree, modifiers);
+        for (var set : SetEffectService.counts(definitions.snapshot(), data).entrySet()) {
+            EnumMap<StatKey, Double> before = detailed ? new EnumMap<>(modifiers) : null;
+            var config = definitions.snapshot().config("sets.yml");
+            if (set.getValue() >= 2) applyModifierSection(config.getConfigurationSection("sets." + set.getKey() + ".two-piece.modifiers"), modifiers);
+            if (set.getValue() >= 4) applyModifierSection(config.getConfigurationSection("sets." + set.getKey() + ".four-piece.modifiers"), modifiers);
+            recordDelta(sources, "セット効果：" + config.getString("sets." + set.getKey() + ".name", set.getKey()), before, modifiers);
+        }
+        EnumMap<StatKey, Double> beforeHeart = detailed ? new EnumMap<>(modifiers) : null;
+        applyDivineHeart(data, modifiers); recordDelta(sources, "神心から", beforeHeart, modifiers);
 
         double vanillaArmor = 0;
         AttributeInstance armor = player.getAttribute(Attribute.ARMOR);
         if (armor != null) vanillaArmor = armor.getValue();
+        if (detailed && vanillaArmor != 0) sources.put("バニラ防具から", Map.of(StatKey.DEF_FLAT, vanillaArmor));
         double hp = baseHp * (1 + modifiers.get(StatKey.HP_PERCENT)) + modifiers.get(StatKey.HP_FLAT);
         double atk = CoreMath.attack(playerBaseAtk, weaponAtk, modifiers.get(StatKey.ATK_PERCENT), modifiers.get(StatKey.ATK_FLAT));
         double def = (baseDef + vanillaArmor) * (1 + modifiers.get(StatKey.DEF_PERCENT)) + modifiers.get(StatKey.DEF_FLAT);
-        return new PlayerStats(level, hp, atk, def, modifiers);
+        return new PlayerStats(level, hp, atk, def, modifiers).withSources(sources);
+    }
+
+    private void recordDelta(Map<String, Map<StatKey, Double>> sources, String label, Map<StatKey, Double> before, Map<StatKey, Double> after) {
+        if (before == null) return;
+        for (StatKey key : StatKey.values()) {
+            double delta = after.getOrDefault(key, 0.0) - before.getOrDefault(key, 0.0);
+            if (Math.abs(delta) > 1e-12) sources.computeIfAbsent(label, ignored -> new EnumMap<>(StatKey.class)).merge(key, delta, Double::sum);
+        }
     }
 
     private double vanillaWeaponAttack(Player player, YamlConfiguration levels) {
@@ -214,7 +247,7 @@ public final class StatService implements Listener {
 
     private void applySetBonuses(PlayerData data, EnumMap<StatKey, Double> modifiers) {
         Map<String, Integer> counts = new HashMap<>();
-        for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
+        for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.RESONANCE)) {
             ItemInstance item = data.getEquipment().get(slot);
             EquipmentDefinition definition = item == null ? null : definitions.snapshot().equipment().get(item.getDefinitionId());
             if (definition != null && !definition.setId().isBlank()) counts.merge(definition.setId(), 1, Integer::sum);
