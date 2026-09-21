@@ -8,6 +8,9 @@ public final class TimedEffect {
     private int stacks = 1;
     private long remainingMillis;
     private boolean permanent;
+    private long appliedOrder;
+    public long getAppliedOrder() { return appliedOrder; }
+    public void setAppliedOrder(long value) { appliedOrder=value; }
 
     public TimedEffect() {}
 

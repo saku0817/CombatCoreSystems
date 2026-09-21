@@ -45,6 +45,8 @@ public final class DamageService implements DamageApi, Listener {
     private final Map<String, Long> heartReactionCooldowns = new HashMap<>();
     private long nextHeartCooldownCleanup;
     private BuffService buffs;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService triggers) { this.triggers=triggers; }
     public void bindBuffs(BuffService buffs) { this.buffs = buffs; }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -58,6 +60,13 @@ public final class DamageService implements DamageApi, Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBow(org.bukkit.event.entity.EntityShootBowEvent event) {
         event.getProjectile().getPersistentDataContainer().set(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, (double) event.getForce());
+        var data=event.getProjectile().getPersistentDataContainer();
+        data.remove(projectileWeaponKey); data.remove(projectileStageKey);
+        ItemInstance instance=items.instance(event.getBow()).orElse(null);
+        if (instance!=null) {
+            data.set(projectileWeaponKey,PersistentDataType.STRING,instance.getDefinitionId());
+            data.set(projectileStageKey,PersistentDataType.INTEGER,instance.getLimitBreak());
+        }
     }
 
     private record AttackCharge(int tick, double value) {}
@@ -85,6 +94,7 @@ public final class DamageService implements DamageApi, Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onLaunch(ProjectileLaunchEvent event) {
         if (!(event.getEntity().getShooter() instanceof Player player)) return;
+        if (event.getEntity().getPersistentDataContainer().has(new NamespacedKey(plugin,"shot_force"))) return;
         String weapon = player.getInventory().getItemInMainHand().getPersistentDataContainer().get(itemIdKey, PersistentDataType.STRING);
         if (weapon != null) event.getEntity().getPersistentDataContainer().set(projectileWeaponKey, PersistentDataType.STRING, weapon);
         ItemInstance instance = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
@@ -109,7 +119,7 @@ public final class DamageService implements DamageApi, Listener {
             double cooled = charge != null && charge.tick() == Bukkit.getCurrentTick() ? charge.value() : player.getAttackCooldown();
             multiplier = attackMultiplier(cooled);
         } else if (event.getDamager() instanceof Projectile projectile) {
-            multiplier = Math.max(0, Math.min(1, projectile.getPersistentDataContainer().getOrDefault(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, 1.0)));
+            multiplier = bowAttackMultiplier(projectile.getPersistentDataContainer().getOrDefault(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, 1.0));
         }
         Element element = mobs.definition(attacker).map(MobDefinition::nativeElement).orElse(Element.PHYSICAL);
         if (attacker instanceof Player player) {
@@ -168,6 +178,12 @@ public final class DamageService implements DamageApi, Listener {
         return 0.2 + clamped * clamped * 0.8;
     }
 
+    static double bowAttackMultiplier(double force) {
+        // Vanilla force=(draw^2+2*draw)/3. Recover draw time, never projectile velocity.
+        double draw = Math.sqrt(1 + 3 * Math.clamp(Double.isFinite(force) ? force : 0, 0, 1)) - 1;
+        return attackMultiplier(draw);
+    }
+
     private LivingEntity resolveAttacker(Entity damager) {
         if (damager instanceof LivingEntity living) return living;
         if (damager instanceof Projectile projectile && projectile.getShooter() instanceof LivingEntity living) return living;
@@ -188,6 +204,10 @@ public final class DamageService implements DamageApi, Listener {
 
     @Override public DamageResult apply(DamageRequest request) {
         if (!Bukkit.isPrimaryThread()) throw new IllegalStateException("Damage API must be called from the server thread");
+        return triggers==null ? applyInternal(request) : triggers.damage(request,() -> applyInternal(request));
+    }
+
+    private DamageResult applyInternal(DamageRequest request) {
         Entity rawTarget = Bukkit.getEntity(request.target());
         if (!(rawTarget instanceof LivingEntity target) || target.isDead()) return DamageResult.failed(request.source(), "target_not_available");
         LivingEntity attacker = null;
@@ -199,6 +219,9 @@ public final class DamageService implements DamageApi, Listener {
         BeforeDamageEvent before = new BeforeDamageEvent(request);
         Bukkit.getPluginManager().callEvent(before);
         if (before.isCancelled()) return DamageResult.failed(request.source(), "cancelled");
+        if (attacker!=null && !allowed(attacker,target)) return DamageResult.failed(request.source(),"not_allowed");
+        if (triggers!=null) triggers.beforeHit();
+        if (target.isDead()) return DamageResult.failed(request.source(),"target_not_available");
 
         DamageResult result = calculate(request, attacker, target);
         if (!result.applied()) return result;
@@ -233,11 +256,15 @@ public final class DamageService implements DamageApi, Listener {
         if (attacker == null) return DamageResult.failed(request.source(), "attacker_required");
         CombatantStats source = combatant(attacker);
         CombatantStats defender = combatant(target);
+        if (triggers!=null && triggers.current()!=null) {
+            source=modified(source,triggers.current().sourceModifiers);
+            defender=modified(defender,triggers.current().targetModifiers);
+        }
         double reference = switch (request.referenceStat()) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
         double base = Math.max(0, reference * request.multiplier());
         if (!request.components().isEmpty()) {
-            base = request.multiplier() * request.components().stream().mapToDouble(c ->
-                    componentAmount(c, source.hp, source.atk, source.def, source.elementDamage(c.bonusElement()))).sum();
+            base=0;
+            for (var component : request.components()) base+=request.multiplier()*componentAmount(component,source.hp,source.atk,source.def,source.elementDamage(component.bonusElement()));
         }
         double outgoingIgnored = source.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORE)
                 : buffs == null ? 0 : buffs.modifier(attacker, StatKey.DEF_IGNORE);
@@ -263,6 +290,24 @@ public final class DamageService implements DamageApi, Listener {
     }
 
     static boolean entersCombat(long damage, UUID attacker, UUID target) { return damage > 0 && attacker != null && !attacker.equals(target); }
+
+    private CombatantStats modified(CombatantStats original,com.github.saku0817.combatcoresystems.model.trigger.EventModifier modifier) {
+        Map<StatKey,Double> values=new EnumMap<>(StatKey.class);
+        for (StatKey key : StatKey.values()) {
+            double base=original.details instanceof PlayerStats p ? p.value(key) : 0;
+            values.put(key,modifier.advanced(key,base));
+        }
+        for (Element element : Element.values()) if (element!=Element.PHYSICAL) {
+            StatKey resistance=StatKey.valueOf(element.name()+"_RESISTANCE");
+            values.put(resistance,modifier.advanced(resistance,original.resistance(element)));
+        }
+        double hp=modifier.primary(StatKey.HP_FLAT,StatKey.HP_PERCENT,original.hp);
+        double atk=modifier.primary(StatKey.ATK_FLAT,StatKey.ATK_PERCENT,original.atk);
+        double def=modifier.primary(StatKey.DEF_FLAT,StatKey.DEF_PERCENT,original.def);
+        return new CombatantStats(original.level,hp,atk,def,modifier.advanced(StatKey.CRIT_RATE,original.critRate),
+                modifier.advanced(StatKey.CRIT_DAMAGE,original.critDamage),modifier.advanced(StatKey.DEF_DOWN,original.defDown),
+                new PlayerStats(original.level,hp,atk,def,values));
+    }
 
     static double componentAmount(WeaponOptions.Component component, double hp, double atk, double def, double bonus) {
         double reference = switch (component.reference()) { case HP -> hp; case ATK -> atk; case DEF -> def; };
@@ -371,7 +416,27 @@ public final class DamageService implements DamageApi, Listener {
             atk = CoreMath.attack(atk, 0, buffs.modifier(entity, StatKey.ATK_PERCENT), buffs.modifier(entity, StatKey.ATK_FLAT));
             def = Math.max(0, def * (1 + buffs.modifier(entity, StatKey.DEF_PERCENT)) + buffs.modifier(entity, StatKey.DEF_FLAT));
         }
-        return new CombatantStats(level, hp, atk, def, 0.05, 0.5, buffs == null ? 0 : buffs.modifier(entity, StatKey.DEF_DOWN), definition);
+        if (triggers==null) return new CombatantStats(level,hp,atk,def,0.05,0.5,buffs==null ? 0 : buffs.modifier(entity,StatKey.DEF_DOWN),definition);
+        Map<StatKey,Double> modifiers=new EnumMap<>(StatKey.class);
+        for (StatKey key : StatKey.values()) modifiers.put(key,buffs==null ? 0 : buffs.modifier(entity,key));
+        Map<StatKey,Double> dynamic=triggers.dynamic().modifiers(entity.getUniqueId());
+        dynamic.forEach((key,value) -> modifiers.merge(key,value,Double::sum));
+        atk=atk*(1+dynamic.getOrDefault(StatKey.ATK_PERCENT,0.0))+dynamic.getOrDefault(StatKey.ATK_FLAT,0.0);
+        def=def*(1+dynamic.getOrDefault(StatKey.DEF_PERCENT,0.0))+dynamic.getOrDefault(StatKey.DEF_FLAT,0.0);
+        hp=hp*(1+dynamic.getOrDefault(StatKey.HP_PERCENT,0.0))+dynamic.getOrDefault(StatKey.HP_FLAT,0.0);
+        modifiers.merge(StatKey.CRIT_RATE,.05,Double::sum); modifiers.merge(StatKey.CRIT_DAMAGE,.5,Double::sum);
+        if (definition!=null) definition.resistances().forEach((element,value) -> {
+            if (element!=Element.PHYSICAL) modifiers.merge(StatKey.valueOf(element.name()+"_RESISTANCE"),value,Double::sum);
+        });
+        if (buffs!=null) for (TimedEffect effect : buffs.effects(entity)) {
+            var overrides=definitions.snapshot().config("buffs.yml").getConfigurationSection("buffs."+effect.getId()+".modifiers.override");
+            if (overrides!=null) for (String key : overrides.getKeys(false)) {
+                double value=overrides.getDouble(key);
+                switch(StatKey.valueOf(key)) { case HP_FLAT -> hp=value; case ATK_FLAT -> atk=value; case DEF_FLAT -> def=value; default -> modifiers.put(StatKey.valueOf(key),value); }
+            }
+        }
+        PlayerStats details=new PlayerStats(level,hp,atk,def,modifiers);
+        return new CombatantStats(level,hp,atk,def,details.value(StatKey.CRIT_RATE),details.value(StatKey.CRIT_DAMAGE),details.value(StatKey.DEF_DOWN),details);
     }
 
     private double attribute(LivingEntity entity, Attribute attribute, double fallback) {

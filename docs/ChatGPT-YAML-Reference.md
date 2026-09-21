@@ -1,6 +1,6 @@
-# CombatCoreSystems v1.4.4 — YAML・実装参照資料
+# CombatCoreSystems v1.4.5 — YAML・実装参照資料
 
-この資料は配布ソースから機械的に収録しています。生成時は引き継ぎ書・ChatGPT-YAML-v1.4.4.mdも参照してください。運用中の秘密情報は含めないでください。
+この資料は配布ソースから機械的に収録しています。生成時は引き継ぎ書・ChatGPT-YAML-v1.4.5.mdも参照してください。運用中の秘密情報は含めないでください。
 
 ## bosses.yml
 
@@ -15,6 +15,8 @@ bosses: {}
 
 ```yaml
 data-version: 1
+# v1.4.5: modifiers.override: {CRIT_RATE: 1.0} で最終会心率を100%へ固定。
+# 複数overrideは最後に付与/再付与された有効Buffが優先。割合の加算とは異なります。
 # Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
 # 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
 buffs:
@@ -128,6 +130,9 @@ rarity-colors:
 
 ```yaml
 data-version: 1
+# v1.4.5: divine-hearts.ID.triggers に武器/セットと共通のTriggerを追加可能。
+# 例: on_skill: {event: SKILL, actions: [{type: APPLY_EFFECT, effect: fire_power}]}
+# 参照するfire_power等はbuffs.ymlへ別途定義してください。
 # 各神の心内に enchantment-glint: true / false を指定できます（省略時false）。
 # 以下は divine-hearts: {} を置き換える例です。神の心はレベル・限界突破を持ちません。
 # divine-hearts:
@@ -224,6 +229,9 @@ custom-entries: {}
 
 ```yaml
 data-version: 1
+# v1.4.5: equipment.ID.triggers に共通Triggerを追加可能。
+# 例: heal_power: {event: OVERHEAL, actions: [{type: APPLY_DYNAMIC_MODIFIER,
+#       stat: ATK_FLAT, source: EVENT_OVERHEAL, multiplier: 0.1, duration: 10}]}
 # 各装備内に enchantment-glint: true / false を指定できます（省略時false）。
 # 正式名は equipment.yml。equipments.yml の equipment: / equipments: も互換読込します。
 # 同じIDを両方に定義しないでください。以下は equipment: {} を置き換える例です。
@@ -897,6 +905,10 @@ regions: {}
 
 ```yaml
 data-version: 1
+# v1.4.5: two-piece/four-piece.triggers は武器と共通のconditions/actionsに対応。
+# 例: guard: {event: TAKE_DAMAGE, max-activations: 3, activation-scope: COMBAT,
+#             actions: [{type: APPLY_EFFECT, effect: guard_def, target: SELF}]}
+# guard_defはbuffs.ymlで定義してください。旧effects形式もそのまま使用可能。
 # セット追加例: sets.warrior.two-piece.modifiers.ATK_PERCENT: 0.15
 sets: {}
 # v1.4.4: two-piece/four-piece配下に triggers を追加可能。効果本体はbuffs.ymlに定義。
@@ -963,6 +975,18 @@ mysql:
 
 ```yaml
 data-version: 1
+# v1.4.5: 武器/talent/skill/ultimate の triggers から共通Actionを実行できます。
+# 例（武器IDの下）:
+# triggers:
+#   mark:
+#     event: NORMAL_ATTACK
+#     actions: [{type: ADD_STACK, id: aim, scope: TARGET, amount: 1, max: 5, duration: 10}]
+#   focused:
+#     event: BEFORE_HIT
+#     conditions: {stack: {id: aim, scope: EVENT_TARGET, min: 3}}
+#     actions: [{type: MODIFY_EVENT_STATS, modifiers: {percent: {ATK_PERCENT: 0.5}}}]
+# skill.actions / ultimate.actions は技の成功時に実行。actionsがある新定義は省略時damage-enabled=false。
+# 旧技ダメージも併用する場合だけdamage-enabled: true。詳細はChatGPT-YAML-v1.4.5.md。
 # v1.4.3: talent.hand は MAIN_HAND / OFF_HAND / EITHER_HAND / HOT_BAR / INVENTORY。
 # HOT_BAR=0～8、INVENTORY=0～35とオフハンド。これらは天賦の発動場所で、基礎ATKは手持ちだけ。
 # limit-breaks は0～5。指定キーだけ前段階へ累積上書きし、説明も実効果も同じ段階を使用します。
@@ -1080,7 +1104,7 @@ weapons:
       - '<gray>「一緒に、群星が照らす未来へ向かいましょう！」</gray>'
 ```
 
-## 実装参照: config/DefinitionRegistry.java
+## DefinitionRegistry.java
 
 ```java
 package com.github.saku0817.combatcoresystems.config;
@@ -1248,11 +1272,7 @@ public final class DefinitionRegistry {
             }
         }
 
-        var setRoot = yaml.get("sets.yml").getConfigurationSection("sets");
-        if (setRoot != null) for (String id : setRoot.getKeys(false)) for (String tier : List.of("two-piece", "four-piece")) {
-            try { SetTrigger.parse(setRoot.getConfigurationSection(id + "." + tier + ".triggers"), buffs.keySet()); }
-            catch (IllegalArgumentException ex) { errors.add("set " + id + ": " + ex.getMessage()); }
-        }
+        TriggerCatalog.compile(yaml,buffs.keySet(),errors);
         Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions, weaponStages);
         return new LoadResult(snapshot, warnings, errors, fatal);
     }
@@ -1513,8 +1533,13 @@ public final class DefinitionRegistry {
                 BuffDefinition.Kind kind = BuffDefinition.Kind.valueOf(s.getString("kind", "BUFF").toUpperCase(Locale.ROOT));
                 BuffDefinition.Target target = BuffDefinition.Target.valueOf(s.getString("target", kind == BuffDefinition.Kind.BUFF ? "SELF" : "ENEMY").toUpperCase(Locale.ROOT));
                 BuffDefinition.Reapply reapply = BuffDefinition.Reapply.valueOf(s.getString("reapply", "REFRESH").toUpperCase(Locale.ROOT));
+                var buffOptions=com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s);
+                com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.range(buffOptions,"duration",0,0,Double.MAX_VALUE);
+                com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.integer(buffOptions,"max-stacks",1,1);
                 EnumMap<StatKey, Double> flat = parseStatMap(s.getConfigurationSection("modifiers.flat"), errors, "buff " + id);
                 EnumMap<StatKey, Double> percent = parseStatMap(s.getConfigurationSection("modifiers.percent"), errors, "buff " + id);
+                if (s.contains("modifiers.override")) com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.modifiers(
+                        Map.of("override",com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s.getConfigurationSection("modifiers.override"))));
                 BuffDefinition.TickEffect tick = parseTickEffect(s.getConfigurationSection("tick-effect"), errors, id);
                 result.put(id, new BuffDefinition(id, kind, target, Math.max(0, s.getDouble("duration", 0)),
                         s.getBoolean("permanent"), Math.max(1, s.getInt("max-stacks", 1)), reapply, Map.copyOf(flat), Map.copyOf(percent), tick));
@@ -1609,7 +1634,7 @@ public final class DefinitionRegistry {
 }
 ```
 
-## 実装参照: config/WeaponOptionsParser.java
+## WeaponOptionsParser.java
 
 ```java
 package com.github.saku0817.combatcoresystems.config;
@@ -1655,7 +1680,7 @@ final class WeaponOptionsParser {
             throw new IllegalArgumentException("damage-components must be a nonempty list");
         double cost = nonnegative(s, "cost.current-hp-percent", 0);
         if (cost >= 1) throw new IllegalArgumentException("cost.current-hp-percent must be less than 1");
-        return new WeaponOptions.Ability(description(s), s.getBoolean("damage-enabled", true), cost,
+        return new WeaponOptions.Ability(description(s), s.getBoolean("damage-enabled", !s.contains("actions")), cost,
                 List.copyOf(components), s.getStringList("self-effects"), s.getStringList("target-effects"),
                 visual(s.getConfigurationSection("visual")));
     }
@@ -1694,7 +1719,71 @@ final class WeaponOptionsParser {
 }
 ```
 
-## 実装参照: model/StatKey.java
+## TriggerCatalog.java
+
+```java
+package com.github.saku0817.combatcoresystems.config;
+
+import com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
+import java.util.*;
+
+/** Compilation is performed during candidate validation, not on each event. */
+public final class TriggerCatalog {
+    public record Source(String definition, String placement, List<TriggerDefinition> triggers,
+                         Map<String,Object> options) {}
+    private TriggerCatalog() {}
+    public static Map<String,List<Source>> compile(Map<String,YamlConfiguration> files, Set<String> buffs, List<String> errors) {
+        Map<String,List<Source>> out = new LinkedHashMap<>();
+        var weapons = files.get("weapons.yml").getConfigurationSection("weapons");
+        if (weapons != null) for (String id : weapons.getKeys(false)) {
+            var raw = weapons.getConfigurationSection(id);
+            if (raw == null) continue;
+            var effective = new YamlConfiguration(); DefinitionRegistry.overlay(effective,raw);
+            effective.set("limit-breaks",null);
+            for (int stage = 0; stage <= 5; stage++) {
+                var patch = raw.getConfigurationSection("limit-breaks." + stage);
+                if (patch != null) DefinitionRegistry.overlay(effective,patch);
+                List<Source> sources = new ArrayList<>();
+                for (String placement : List.of("weapon","talent","skill","ultimate")) {
+                    var section = placement.equals("weapon") ? effective : effective.getConfigurationSection(placement);
+                    compileSource(sources,"weapon:" + id,placement,section,buffs,errors);
+                }
+                out.put("weapon:" + id + ":" + stage,List.copyOf(sources));
+            }
+        }
+        for (String root : List.of("sets","equipment","divine-hearts")) {
+            String file = root.equals("divine-hearts") ? "divine_hearts.yml" : root + ".yml";
+            var section = files.get(file).getConfigurationSection(root);
+            if (section == null) continue;
+            for (String id : section.getKeys(false)) {
+                List<Source> sources = new ArrayList<>();
+                if (root.equals("sets")) {
+                    for (String tier : List.of("two-piece","four-piece"))
+                        compileSource(sources,"set:" + id,tier,section.getConfigurationSection(id + "." + tier),buffs,errors);
+                } else compileSource(sources,root + ":" + id,"root",section.getConfigurationSection(id),buffs,errors);
+                out.put(root + ":" + id,List.copyOf(sources));
+            }
+        }
+        return Map.copyOf(out);
+    }
+    private static void compileSource(List<Source> out,String definition,String placement,ConfigurationSection section,Set<String> buffs,List<String> errors) {
+        if (section == null) return;
+        try {
+            var options = TriggerDefinition.map(section);
+            var triggers = TriggerDefinition.parse(section.getConfigurationSection("triggers"),buffs);
+            TriggerDefinition.policy(TriggerDefinition.child(options,"target-stack-policy"));
+            if (options.containsKey("area")) TriggerDefinition.area(TriggerDefinition.child(options,"area"));
+            TriggerDefinition.actions(options,buffs);
+            if (placement.equals("skill") || placement.equals("ultimate")) TriggerDefinition.validateConditions(TriggerDefinition.child(options,"conditions"),buffs);
+            if (!triggers.isEmpty() || options.containsKey("actions")) out.add(new Source(definition,placement,triggers,options));
+        } catch (IllegalArgumentException ex) { errors.add(definition + "." + placement + ": " + ex.getMessage()); }
+    }
+}
+```
+
+## StatKey.java
 
 ```java
 package com.github.saku0817.combatcoresystems.model;
@@ -1713,7 +1802,7 @@ public enum StatKey {
 }
 ```
 
-## 実装参照: model/EquipmentRolls.java
+## EquipmentRolls.java
 
 ```java
 package com.github.saku0817.combatcoresystems.model;
@@ -1759,39 +1848,7 @@ public final class EquipmentRolls {
 }
 ```
 
-## 実装参照: model/SetTrigger.java
-
-```java
-package com.github.saku0817.combatcoresystems.model;
-
-import org.bukkit.configuration.ConfigurationSection;
-import java.util.*;
-
-public record SetTrigger(String id, Event event, double hpBelow, long cooldownMillis, Target target, List<String> effects) {
-    public enum Event { SKILL, ULTIMATE, HIT, TAKE_DAMAGE, HP_BELOW }
-    public enum Target { SELF, OTHER }
-    public static List<SetTrigger> parse(ConfigurationSection section, Set<String> knownBuffs) {
-        if (section == null) return List.of();
-        List<SetTrigger> result = new ArrayList<>();
-        for (String id : section.getKeys(false)) {
-            ConfigurationSection s = section.getConfigurationSection(id);
-            if (s == null) throw new IllegalArgumentException("Set trigger must be a map: " + id);
-            Event event = Event.valueOf(s.getString("event", "").toUpperCase(Locale.ROOT));
-            Target target = Target.valueOf(s.getString("target", "SELF").toUpperCase(Locale.ROOT));
-            double hp = s.getDouble("hp-percent", 0.5), cooldown = s.getDouble("cooldown-seconds", 1);
-            if (!Double.isFinite(hp) || hp < 0 || hp > 1 || !Double.isFinite(cooldown) || cooldown < 0 || cooldown > 86400)
-                throw new IllegalArgumentException("Invalid set trigger HP/cooldown: " + id);
-            if (event == Event.HP_BELOW && target != Target.SELF) throw new IllegalArgumentException("HP_BELOW requires SELF");
-            List<String> effects = s.getStringList("effects");
-            if (effects.isEmpty() || !knownBuffs.containsAll(effects)) throw new IllegalArgumentException("Unknown/empty buffs.yml effects: " + id);
-            result.add(new SetTrigger(id, event, hp, Math.round(cooldown * 1000), target, List.copyOf(effects)));
-        }
-        return List.copyOf(result);
-    }
-}
-```
-
-## 実装参照: model/ItemInstance.java
+## ItemInstance.java
 
 ```java
 package com.github.saku0817.combatcoresystems.model;
@@ -1839,109 +1896,1807 @@ public final class ItemInstance {
 }
 ```
 
-## 実装参照: service/SetEffectService.java
+## Area.java
 
 ```java
-package com.github.saku0817.combatcoresystems.service;
+package com.github.saku0817.combatcoresystems.model.trigger;
 
-import com.github.saku0817.combatcoresystems.api.v1.event.AfterDamageEvent;
-import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
-import com.github.saku0817.combatcoresystems.model.*;
-import org.bukkit.Bukkit;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Player;
-import org.bukkit.event.*;
-import org.bukkit.event.player.PlayerQuitEvent;
-import org.bukkit.plugin.java.JavaPlugin;
-import java.util.*;
-
-public final class SetEffectService implements Listener {
-    private final JavaPlugin plugin;
-    private final DefinitionRegistry definitions;
-    private final PlayerDataService players;
-    private final StatService stats;
-    private final BuffService buffs;
-    private DefinitionRegistry.Snapshot snapshot;
-    private final Map<String, List<SetTrigger>> rules = new HashMap<>();
-    private final Map<UUID, Map<String, Long>> cooldowns = new HashMap<>();
-    private final Map<UUID, Set<String>> hpActive = new HashMap<>();
-    public SetEffectService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats, BuffService buffs) {
-        this.plugin = plugin; this.definitions = definitions; this.players = players; this.stats = stats; this.buffs = buffs;
+/** Geometry in local coordinates: x=right, y=up, z=forward. */
+public record Area(Shape shape, double radius, double width, double height, double length, double angle, Origin origin) {
+    public enum Shape { CIRCLE, SPHERE, BOX, FORWARD_BOX, CONE, CYLINDER }
+    public enum Origin { SELF, EVENT_TARGET, LOCATION }
+    public Area {
+        for (double n : new double[]{radius, width, height, length, angle})
+            if (!Double.isFinite(n) || n < 0) throw new IllegalArgumentException("Invalid area dimension");
+        if (angle > 360) throw new IllegalArgumentException("Area angle exceeds 360");
     }
-    public static Map<String, Integer> counts(DefinitionRegistry.Snapshot snapshot, PlayerData data) {
-        Map<String, Integer> counts = new HashMap<>();
-        for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.RESONANCE)) {
-            ItemInstance item = data.getEquipment().get(slot);
-            EquipmentDefinition definition = item == null ? null : snapshot.equipment().get(item.getDefinitionId());
-            if (definition != null && !definition.setId().isBlank()) counts.merge(definition.setId(), 1, Integer::sum);
-        }
-        return counts;
+    public boolean contains(double x, double y, double z) {
+        return switch (shape) {
+            case SPHERE -> x*x+y*y+z*z <= radius*radius;
+            case CIRCLE, CYLINDER -> x*x+z*z <= radius*radius && Math.abs(y) <= height/2;
+            case BOX -> Math.abs(x) <= width/2 && Math.abs(y) <= height/2 && Math.abs(z) <= length/2;
+            case FORWARD_BOX -> Math.abs(x) <= width/2 && Math.abs(y) <= height/2 && z >= 0 && z <= length;
+            case CONE -> x*x+z*z <= radius*radius && Math.abs(y) <= height/2
+                    && (x*x+z*z == 0 || z / Math.sqrt(x*x+z*z) >= Math.cos(Math.toRadians(angle/2)) - 1e-12);
+        };
     }
-    public void start() { Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-        refresh();
-        if (rules.values().stream().flatMap(Collection::stream).noneMatch(r -> r.event() == SetTrigger.Event.HP_BELOW)) return;
-        for (Player player : Bukkit.getOnlinePlayers()) fire(player, SetTrigger.Event.HP_BELOW, null);
-    }, 5, 5); }
-    private void refresh() {
-        if (snapshot == definitions.snapshot()) return;
-        snapshot = definitions.snapshot(); rules.clear(); hpActive.clear();
-        var root = snapshot.config("sets.yml").getConfigurationSection("sets");
-        if (root != null) for (String id : root.getKeys(false)) for (String tier : List.of("two-piece", "four-piece")) {
-            try { rules.put(id + ":" + tier, SetTrigger.parse(root.getConfigurationSection(id + "." + tier + ".triggers"), snapshot.buffs().keySet())); }
-            catch (IllegalArgumentException ignored) { /* Already reported by DefinitionRegistry; omit invalid initial definitions. */ }
-        }
-    }
-    public void fire(Player player, SetTrigger.Event event, LivingEntity other) {
-        refresh();
-        PlayerData data = players.find(player.getUniqueId()).orElse(null);
-        if (data == null || player.isDead()) return;
-        Set<String> active = hpActive.computeIfAbsent(player.getUniqueId(), ignored -> new HashSet<>());
-        Set<String> seen = new HashSet<>();
-        for (var set : counts(snapshot, data).entrySet()) for (String tier : List.of("two-piece", "four-piece")) {
-            if (set.getValue() < (tier.equals("two-piece") ? 2 : 4)) continue;
-            String prefix = set.getKey() + ":" + tier;
-            for (SetTrigger rule : rules.getOrDefault(prefix, List.of())) {
-                if (rule.event() != event) continue;
-                String key = prefix + ":" + rule.id();
-                if (event == SetTrigger.Event.HP_BELOW) {
-                    if (data.getHealth() / Math.max(1, stats.get(player, data).maxHp()) > rule.hpBelow()) continue;
-                    seen.add(key);
-                    if (!active.add(key)) continue;
-                }
-                LivingEntity target = rule.target() == SetTrigger.Target.SELF ? player : other;
-                if (target == null || target.isDead()) continue;
-                long now = System.currentTimeMillis();
-                Map<String, Long> timers = cooldowns.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>());
-                if (timers.getOrDefault(key, 0L) > now) continue;
-                timers.put(key, now + rule.cooldownMillis());
-                for (String effect : rule.effects()) buffs.apply(target, effect, player.getUniqueId());
-            }
-        }
-        if (event == SetTrigger.Event.HP_BELOW) active.retainAll(seen);
-    }
-    @EventHandler public void onDamage(AfterDamageEvent event) {
-        if (!event.getResult().applied() || event.getResult().finalDamage() <= 0) return;
-        refresh();
-        if (rules.values().stream().flatMap(Collection::stream).noneMatch(rule -> rule.event() == SetTrigger.Event.HIT || rule.event() == SetTrigger.Event.TAKE_DAMAGE)) return;
-        var request = event.getRequest();
-        var attacker = request.attacker() == null ? null : Bukkit.getEntity(request.attacker());
-        var target = Bukkit.getEntity(request.target());
-        // DOT callbacks may run while BuffService iterates effects. Apply new effects on the next tick.
-        Bukkit.getScheduler().runTask(plugin, () -> {
-            if (attacker instanceof Player player && player.isOnline() && target instanceof LivingEntity other && !player.equals(other)) fire(player, SetTrigger.Event.HIT, other);
-            if (target instanceof Player player && player.isOnline()) fire(player, SetTrigger.Event.TAKE_DAMAGE, attacker instanceof LivingEntity other ? other : null);
-        });
-    }
-    @EventHandler public void onQuit(PlayerQuitEvent event) { cooldowns.remove(event.getPlayer().getUniqueId()); hpActive.remove(event.getPlayer().getUniqueId()); }
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onEnvironmentDamage(org.bukkit.event.entity.EntityDamageEvent event) {
-        if (event instanceof org.bukkit.event.entity.EntityDamageByEntityEvent || event.getFinalDamage() <= 0 || !(event.getEntity() instanceof Player player)) return;
-        Bukkit.getScheduler().runTask(plugin, () -> { if (player.isOnline()) fire(player, SetTrigger.Event.TAKE_DAMAGE, null); });
+    public double searchRadius() {
+        return switch(shape) {
+            case SPHERE -> radius;
+            case CIRCLE, CYLINDER, CONE -> Math.sqrt(radius*radius+height*height/4);
+            case BOX -> Math.sqrt(width*width+height*height+length*length)/2;
+            case FORWARD_BOX -> Math.sqrt(width*width/4+height*height/4+length*length);
+        };
     }
 }
 ```
 
-## 実装参照: service/SkillService.java
+## EventContext.java
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+import com.github.saku0817.combatcoresystems.model.Element;
+import org.bukkit.Location;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import java.util.*;
+
+public final class EventContext {
+    public final TriggerChain chain;
+    public final TriggerEvent event;
+    public LivingEntity source, target, attacker, victim, healer, healed;
+    public Player player;
+    public String weapon = "", ability = "", combatId = "";
+    public double damage, finalDamage, healAmount, requestedHeal, effectiveHeal, overheal;
+    public Element attribute = Element.PHYSICAL;
+    public boolean critical, reaction, normalAttack, skill, ultimate;
+    public Location location;
+    public final Map<String, Object> values = new LinkedHashMap<>();
+    public final EventModifier sourceModifiers = new EventModifier();
+    public final EventModifier targetModifiers = new EventModifier();
+    public EventContext(TriggerEvent event, TriggerChain chain, LivingEntity source, LivingEntity target) {
+        this.event = Objects.requireNonNull(event); this.chain = chain == null ? new TriggerChain() : chain;
+        this.source = source; this.target = target; this.attacker = source; this.victim = target;
+        this.player = source instanceof Player p ? p : null;
+        this.location = target != null ? target.getLocation() : source == null ? null : source.getLocation();
+    }
+    public EventContext child(TriggerEvent event, LivingEntity source, LivingEntity target) {
+        EventContext result = new EventContext(event, chain, source, target);
+        result.weapon = weapon; result.ability = ability; result.combatId = combatId;
+        result.damage = damage; result.finalDamage = finalDamage;
+        result.healAmount = healAmount; result.requestedHeal=requestedHeal; result.effectiveHeal = effectiveHeal; result.overheal = overheal;
+        result.attribute = attribute; result.critical = critical; result.reaction = reaction;
+        result.normalAttack = normalAttack; result.skill = skill; result.ultimate = ultimate;
+        result.healer = healer; result.healed = healed; result.values.putAll(values);
+        return result;
+    }
+}
+```
+
+## EventModifier.java
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+import com.github.saku0817.combatcoresystems.model.StatKey;
+import java.util.EnumMap;
+import java.util.Map;
+
+/** Per-calculation modifiers. Never mutates cached PlayerStats. Last override wins. */
+public final class EventModifier {
+    private final Map<StatKey, Double> flat = new EnumMap<>(StatKey.class);
+    private final Map<StatKey, Double> percent = new EnumMap<>(StatKey.class);
+    private final Map<StatKey, Double> override = new EnumMap<>(StatKey.class);
+    public void add(String mode, StatKey key, double value) {
+        if (!Double.isFinite(value)) throw new IllegalArgumentException("Non-finite modifier");
+        switch (mode) {
+            case "flat" -> flat.merge(key, value, Double::sum);
+            case "percent" -> percent.merge(key, value, Double::sum);
+            case "override" -> override.put(key, value);
+            default -> throw new IllegalArgumentException("Unknown modifier mode: " + mode);
+        }
+    }
+    public double advanced(StatKey key, double base) {
+        // CCS advanced stats are additive ratios, including modifiers.percent.CRIT_RATE.
+        return override.getOrDefault(key, base + flat.getOrDefault(key, 0.0) + percent.getOrDefault(key, 0.0));
+    }
+    public double primary(StatKey flatKey, StatKey percentKey, double base) {
+        double ratio=override.getOrDefault(percentKey,flat.getOrDefault(percentKey, 0.0) + percent.getOrDefault(percentKey, 0.0) + percent.getOrDefault(flatKey, 0.0));
+        double value = (base + flat.getOrDefault(flatKey, 0.0)) * (1+ratio);
+        return override.getOrDefault(flatKey, value);
+    }
+}
+```
+
+## TriggerChain.java
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+
+/** Shared by synchronous damage/heal/stack child events. */
+public final class TriggerChain {
+    private final UUID id = UUID.randomUUID();
+    private final Set<String> executed = new HashSet<>();
+    private int depth;
+    public UUID id() { return id; }
+    public int depth() { return depth; }
+    public boolean enter(UUID owner, String source, String trigger) {
+        if (depth >= 16 || !executed.add(owner + ":" + source + ":" + trigger)) return false;
+        depth++;
+        return true;
+    }
+    public void leave() {
+        if (depth <= 0) throw new IllegalStateException("Unbalanced trigger chain");
+        depth--;
+    }
+}
+```
+
+## TriggerDefinition.java
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+import com.github.saku0817.combatcoresystems.model.Element;
+import com.github.saku0817.combatcoresystems.model.StatKey;
+import org.bukkit.configuration.ConfigurationSection;
+import java.util.*;
+
+/** Immutable validated configuration. Bukkit sections never escape the compilation step. */
+public record TriggerDefinition(String id, TriggerEvent event, String target, Map<String,Object> conditions,
+                                List<Map<String,Object>> actions, long cooldown, int maxActivations,
+                                String activationScope, double hpPercent) {
+    public static final Set<String> SELECTORS = Set.of("SELF", "SOURCE", "OTHER", "EVENT_TARGET", "ATTACKER", "VICTIM",
+            "NEAREST_ENEMY", "NEAREST_ALLY", "LOWEST_HP_PARTY_MEMBER", "LOWEST_HP_PARTY_MEMBER_OR_SELF",
+            "ALL_PARTY_MEMBERS", "ALL_PARTY_MEMBERS_AND_SELF", "ENTITIES_IN_AREA", "ALLIES_IN_AREA", "ENEMIES_IN_AREA");
+    public static final Set<String> SCOPES = Set.of("SELF", "TARGET", "EVENT_TARGET", "ATTACKER", "VICTIM", "ALL_TARGETS");
+    private static final Set<String> ACTIONS = Set.of("APPLY_EFFECT", "REMOVE_EFFECT", "ADD_STACK", "SET_STACK", "CLEAR_STACK",
+            "CONSUME_STACK", "DAMAGE", "HEAL", "MODIFY_EVENT_STATS", "CREATE_FIELD", "REMOVE_FIELD", "APPLY_DYNAMIC_MODIFIER");
+    private static final Set<String> CONDITIONS = Set.of("min-hp-percent", "max-hp-percent", "requires-combat", "requires-target",
+            "min-distance", "max-distance", "damage-positive", "heal-positive", "overheal-positive", "normal-attack-only",
+            "skill-only", "ultimate-only", "element", "critical", "buff-present", "buff-absent", "party-required",
+            "target-is-self", "target-is-ally", "target-is-enemy", "inside-field", "outside-field", "stack", "context-value");
+    public static Map<String,Object> map(Object value) {
+        Map<?,?> raw;
+        if (value instanceof ConfigurationSection section) raw = section.getValues(false);
+        else if (value instanceof Map<?,?> m) raw = m;
+        else throw new IllegalArgumentException("Expected map");
+        Map<String,Object> out = new LinkedHashMap<>();
+        raw.forEach((k,v) -> out.put(String.valueOf(k), freeze(v)));
+        return Collections.unmodifiableMap(out);
+    }
+    private static Object freeze(Object value) {
+        if (value instanceof Map<?,?> || value instanceof ConfigurationSection) return map(value);
+        if (value instanceof List<?> list) return list.stream().map(TriggerDefinition::freeze).toList();
+        if (value instanceof Number n && !Double.isFinite(n.doubleValue())) throw new IllegalArgumentException("Non-finite number");
+        return value;
+    }
+    public static String text(Map<String,Object> m, String key, String fallback) {
+        Object value = m.get(key); return value == null ? fallback : String.valueOf(value);
+    }
+    public static double number(Map<String,Object> m, String key, double fallback) {
+        if (!m.containsKey(key)) return fallback;
+        if (!(m.get(key) instanceof Number n) || !Double.isFinite(n.doubleValue())) throw new IllegalArgumentException("Invalid number: " + key);
+        return n.doubleValue();
+    }
+    public static double range(Map<String,Object> m, String key, double fallback, double min, double max) {
+        double n = number(m,key,fallback);
+        if (n < min || n > max) throw new IllegalArgumentException("Out of range: " + key);
+        return n;
+    }
+    public static int integer(Map<String,Object> m, String key, int fallback, int min) {
+        double n = range(m,key,fallback,min,Integer.MAX_VALUE);
+        if (n != Math.rint(n)) throw new IllegalArgumentException("Expected integer: " + key);
+        return (int)n;
+    }
+    public static Map<String,Object> child(Map<String,Object> m, String key) { return m.containsKey(key) ? map(m.get(key)) : Map.of(); }
+    public static String choice(Map<String,Object> m, String key, String fallback, Set<String> choices) {
+        String v = text(m,key,fallback).toUpperCase(Locale.ROOT);
+        if (!choices.contains(v)) throw new IllegalArgumentException("Unknown " + key + ": " + v);
+        return v;
+    }
+    public static List<String> strings(Map<String,Object> m, String key) {
+        if (!m.containsKey(key)) return List.of();
+        if (!(m.get(key) instanceof List<?> list) || list.isEmpty() || list.stream().anyMatch(v -> !(v instanceof String s) || s.isBlank()))
+            throw new IllegalArgumentException("Expected nonempty string list: " + key);
+        return list.stream().map(String::valueOf).toList();
+    }
+    public static List<TriggerDefinition> parse(ConfigurationSection section, Set<String> buffs) {
+        if (section == null) return List.of();
+        List<TriggerDefinition> out = new ArrayList<>();
+        for (String id : section.getKeys(false)) {
+            Map<String,Object> m = map(section.get(id));
+            TriggerEvent event = TriggerEvent.valueOf(text(m,"event", "").toUpperCase(Locale.ROOT));
+            String target = choice(m,"target","SELF",SELECTORS);
+            Map<String,Object> conditions = new LinkedHashMap<>(child(m,"conditions")); validateConditions(conditions,buffs);
+            if (m.containsKey("effects") && target.equals("OTHER")) conditions.put("requires-target",true);
+            List<Map<String,Object>> actions = new ArrayList<>(actions(m,buffs));
+            for (String effect : strings(m,"effects")) {
+                effect(effect,buffs); actions.add(Map.of("type","APPLY_EFFECT","effect",effect,"target",target));
+            }
+            if (actions.isEmpty()) throw new IllegalArgumentException("Trigger has no actions: " + id);
+            out.add(new TriggerDefinition(id,event,target,Map.copyOf(conditions),List.copyOf(actions),
+                    Math.round(range(m,"cooldown-seconds",m.containsKey("actions") ? 0 : 1,0,86400)*1000),
+                    integer(m,"max-activations",0,0),choice(m,"activation-scope","GLOBAL",Set.of("GLOBAL","COMBAT","LIFE")),
+                    range(m,"hp-percent",.5,0,1)));
+        }
+        return List.copyOf(out);
+    }
+    public static void validateConditions(Map<String,Object> m, Set<String> buffs) {
+        for (String key : m.keySet()) {
+            if (!CONDITIONS.contains(key)) throw new IllegalArgumentException("Unknown condition: " + key);
+            switch (key) {
+                case "min-hp-percent", "max-hp-percent" -> range(m,key,0,0,1);
+                case "min-distance", "max-distance" -> range(m,key,0,0,1024);
+                case "element" -> attribute(text(m,key,""));
+                case "buff-present", "buff-absent" -> effect(text(m,key,""),buffs);
+                case "inside-field", "outside-field" -> required(m,key);
+                case "stack", "context-value" -> {
+                    var c = child(m,key); required(c,key.equals("stack") ? "id" : "key");
+                    if (key.equals("stack")) choice(c,"scope","SELF",SCOPES);
+                    if (c.containsKey("min")) number(c,"min",0);
+                    if (c.containsKey("max")) number(c,"max",0);
+                    if (number(c,"min",-Double.MAX_VALUE) > number(c,"max",Double.MAX_VALUE)) throw new IllegalArgumentException("Reversed condition bounds");
+                }
+                default -> { if (!(m.get(key) instanceof Boolean)) throw new IllegalArgumentException("Expected boolean: " + key); }
+            }
+        }
+    }
+    private static void required(Map<String,Object> m,String key) { if (text(m,key,"").isBlank()) throw new IllegalArgumentException("Missing " + key); }
+    private static void effect(String id,Set<String> buffs) { if (!buffs.contains(id)) throw new IllegalArgumentException("Unknown buff: " + id); }
+    private static void attribute(String name) { if (Element.parse(name).isEmpty()) throw new IllegalArgumentException("Unknown attribute: " + name); }
+    public static Area area(Map<String,Object> m) {
+        return new Area(Area.Shape.valueOf(text(m,"shape","SPHERE").toUpperCase(Locale.ROOT)),
+                range(m,m.containsKey("range") ? "range" : "radius",5,0,128),
+                range(m,"width",5,0,128),range(m,"height",5,0,128),range(m,"length",5,0,128),range(m,"angle",90,0,360),
+                Area.Origin.valueOf(text(m,"origin","SELF").toUpperCase(Locale.ROOT)));
+    }
+    public static void modifiers(Map<String,Object> m) {
+        if (m.isEmpty()) throw new IllegalArgumentException("Empty modifiers");
+        for (var entry : m.entrySet()) {
+            if (!Set.of("flat","percent","override").contains(entry.getKey())) throw new IllegalArgumentException("Unknown modifier mode: " + entry.getKey());
+            var values = map(entry.getValue());
+            for (String stat : values.keySet()) { StatKey.valueOf(stat); number(values,stat,0); }
+        }
+    }
+    public static List<Map<String,Object>> actions(Map<String,Object> m, Set<String> buffs) {
+        if (!m.containsKey("actions")) return List.of();
+        if (!(m.get("actions") instanceof List<?> list) || list.isEmpty()) throw new IllegalArgumentException("Empty/invalid actions");
+        List<Map<String,Object>> out = new ArrayList<>();
+        for (Object raw : list) {
+            Map<String,Object> a = map(raw);
+            String type = choice(a,"type","",ACTIONS);
+            choice(a,"target","SELF",SELECTORS); validateConditions(child(a,"conditions"),buffs);
+            if (a.containsKey("area")) area(child(a,"area"));
+            choice(a,"target-filter","ALL",Set.of("ALL","ALLY","ENEMY"));
+            range(a,"duration",0,0,86400); range(a,"multiplier",1,0,1e9);
+            switch (type) {
+                case "APPLY_EFFECT", "REMOVE_EFFECT" -> effect(text(a,"effect",""),buffs);
+                case "ADD_STACK", "SET_STACK", "CLEAR_STACK", "CONSUME_STACK" -> {
+                    required(a,"id"); choice(a,"scope","SELF",SCOPES);
+                    if (text(a,"scope","SELF").equalsIgnoreCase("ALL_TARGETS") && !type.equals("CLEAR_STACK")) throw new IllegalArgumentException("ALL_TARGETS action scope requires CLEAR_STACK");
+                    integer(a,"amount",1,0); integer(a,"max",1,1);
+                    choice(a,"reapply","REFRESH",Set.of("REFRESH","EXTEND","IGNORE"));
+                }
+                case "MODIFY_EVENT_STATS" -> modifiers(child(a,"modifiers"));
+                case "DAMAGE", "HEAL" -> {
+                    choice(a,"reference","ATK", type.equals("DAMAGE") ? Set.of("ATK","HP","DEF") :
+                            Set.of("ATK","HP","DEF","FIXED","EVENT_DAMAGE","EVENT_HEAL","EVENT_EFFECTIVE_HEAL","EVENT_OVERHEAL"));
+                    attribute(text(a,"attribute","PHYSICAL")); range(a,"def-ignore",0,0,1);
+                    if (a.containsKey("components")) {
+                        if (!(a.get("components") instanceof List<?> components) || components.isEmpty()) throw new IllegalArgumentException("Empty components");
+                        for (Object component : components) {
+                            var c = map(component); choice(c,"reference","ATK",Set.of("ATK","HP","DEF"));
+                            range(c,"multiplier",1,0,1e9); attribute(text(c,"bonus-attribute","PHYSICAL"));
+                        }
+                    }
+                }
+                case "CREATE_FIELD" -> {
+                    required(a,"id"); area(child(a,"area"));
+                    choice(a,"effect-mode","WHILE_INSIDE",Set.of("ON_ENTER","REFRESH_WHILE_INSIDE","WHILE_INSIDE"));
+                    for (String key : List.of("ally-effects","enemy-effects")) for (String id : strings(a,key)) effect(id,buffs);
+                }
+                case "REMOVE_FIELD" -> required(a,"id");
+                case "APPLY_DYNAMIC_MODIFIER" -> {
+                    StatKey.valueOf(text(a,"stat",""));
+                    choice(a,"source","",Set.of("EVENT_DAMAGE","EVENT_HEAL","EVENT_EFFECTIVE_HEAL","EVENT_OVERHEAL",
+                            "SOURCE_ATK","SOURCE_MAX_HP","SOURCE_DEF","TARGET_ATK","TARGET_MAX_HP","TARGET_DEF"));
+                    choice(a,"reapply","REFRESH",Set.of("REFRESH","EXTEND","IGNORE"));
+                }
+            }
+            Map<String,Object> normalized=new LinkedHashMap<>(a);
+            for (String key : List.of("type","target","scope","reapply","reference","attribute","target-filter","effect-mode","source"))
+                if (normalized.containsKey(key)) normalized.put(key,text(a,key,"").toUpperCase(Locale.ROOT));
+            out.add(Collections.unmodifiableMap(normalized));
+        }
+        return List.copyOf(out);
+    }
+    public static void policy(Map<String,Object> m) {
+        if (m.isEmpty()) return;
+        required(m,"stack-id"); integer(m,"max-targets",0,0);
+        choice(m,"overflow","REMOVE_OLDEST",Set.of("REMOVE_OLDEST","REMOVE_NEWEST","REMOVE_LOWEST_STACK","REJECT_NEW"));
+    }
+}
+```
+
+## TriggerEvent.java
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+public enum TriggerEvent {
+    SKILL, ULTIMATE, HIT, TAKE_DAMAGE, HP_BELOW, BEFORE_HIT, NORMAL_ATTACK,
+    HEAL, RECEIVE_HEAL, OVERHEAL, HP_ABOVE, BUFF_APPLIED, BUFF_REMOVED,
+    STACK_CHANGED, STACK_REACHED, COMBAT_START, COMBAT_END, ENTER_FIELD, LEAVE_FIELD, TICK
+}
+```
+
+## TriggerService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.api.v1.damage.dto.DamageRequest;
+import com.github.saku0817.combatcoresystems.api.v1.damage.dto.DamageResult;
+import com.github.saku0817.combatcoresystems.api.v1.event.AfterDamageEvent;
+import com.github.saku0817.combatcoresystems.api.v1.event.CombatStateEvent;
+import com.github.saku0817.combatcoresystems.config.*;
+import com.github.saku0817.combatcoresystems.model.*;
+import com.github.saku0817.combatcoresystems.model.trigger.*;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.*;
+import org.bukkit.event.*;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.plugin.java.JavaPlugin;
+import java.util.*;
+import java.util.function.Supplier;
+import static com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.*;
+
+/** Shared synchronous event engine. Sources are compiled once per validated snapshot. */
+public final class TriggerService implements Listener {
+    private final JavaPlugin plugin;
+    private final DefinitionRegistry definitions;
+    private final PlayerDataService players;
+    private final ItemService items;
+    private final StatService stats;
+    private final CombatStateService combat;
+    private final DamageService damage;
+    private final HealService healing;
+    private final BuffService buffs;
+    private final TargetSelectorService selectors;
+    private final StackService stacks=new StackService();
+    private final DynamicEffectService dynamic=new DynamicEffectService();
+    private final FieldService fields;
+    private DefinitionRegistry.Snapshot snapshot;
+    private Map<String,List<TriggerCatalog.Source>> catalog=Map.of();
+    private final Map<String,Long> cooldowns=new HashMap<>();
+    private final Map<String,Integer> activations=new HashMap<>();
+    private final Map<String,Boolean> hpStates=new HashMap<>();
+    private final Map<UUID,String> combats=new HashMap<>();
+    private EventContext current;
+    private double nextDefIgnore;
+    private boolean resetting;
+    private boolean scanInventory,scanHotbar,monitors;
+    public TriggerService(JavaPlugin plugin,DefinitionRegistry definitions,PlayerDataService players,ItemService items,
+                          StatService stats,CombatStateService combat,DamageService damage,HealService healing,BuffService buffs,
+                          PartyService parties,MobService mobs) {
+        this.plugin=plugin; this.definitions=definitions; this.players=players; this.items=items; this.stats=stats;
+        this.combat=combat; this.damage=damage; this.healing=healing; this.buffs=buffs;
+        selectors=new TargetSelectorService(parties,damage,players,stats,mobs);
+        fields=new FieldService(selectors,buffs,this::emit);
+        stacks.onChange(this::stackChanged);
+    }
+    public DynamicEffectService dynamic() { return dynamic; }
+    public EventContext current() { return current; }
+    public void start() { refresh(); Bukkit.getScheduler().runTaskTimer(plugin,this::tick,5,5); }
+    private void refresh() {
+        if (snapshot==definitions.snapshot()) return;
+        snapshot=definitions.snapshot();
+        List<String> errors=new ArrayList<>();
+        Map<String,org.bukkit.configuration.file.YamlConfiguration> files=new HashMap<>();
+        for (String file : List.of("weapons.yml","equipment.yml","sets.yml","divine_hearts.yml")) files.put(file,snapshot.config(file));
+        catalog=TriggerCatalog.compile(files,snapshot.buffs().keySet(),errors);
+        var all=catalog.values().stream().flatMap(Collection::stream).toList();
+        scanInventory=all.stream().anyMatch(s -> s.placement().equals("talent") && text(s.options(),"hand","MAIN_HAND").equalsIgnoreCase("INVENTORY"));
+        scanHotbar=all.stream().anyMatch(s -> s.placement().equals("talent") && text(s.options(),"hand","MAIN_HAND").equalsIgnoreCase("HOT_BAR"));
+        monitors=all.stream().flatMap(s -> s.triggers().stream()).anyMatch(t -> Set.of(TriggerEvent.HP_BELOW,TriggerEvent.HP_ABOVE,TriggerEvent.TICK).contains(t.event()));
+        resetting=true;
+        try { fields.reset(); stacks.reset(); dynamic.reset(); cooldowns.clear(); activations.clear(); hpStates.clear(); }
+        finally { resetting=false; }
+        errors.forEach(plugin.getLogger()::warning);
+    }
+    private List<TriggerCatalog.Source> sources(Player player) {
+        refresh(); PlayerData data=players.find(player.getUniqueId()).orElse(null); if (data==null) return List.of();
+        List<TriggerCatalog.Source> result=new ArrayList<>(); Set<String> seen=new HashSet<>();
+        int selected=player.getInventory().getHeldItemSlot();
+        for (int slot=0;slot<=40;slot++) {
+            if (slot>=36 && slot<=39) continue;
+            if (slot!=selected && slot!=40 && !scanInventory && !(slot<=8 && scanHotbar)) continue;
+            var stack=player.getInventory().getItem(slot);
+            if (!snapshot.weapons().containsKey(items.id(stack).orElse(""))) continue;
+            ItemInstance item=items.instance(stack).orElse(null);
+            WeaponDefinition weapon=item==null ? null : snapshot.weapon(item);
+            if (weapon==null || !weapon.canEquip(data.getLevel())) continue;
+            for (var source : catalog.getOrDefault("weapon:"+weapon.id()+":"+Math.clamp(item.getLimitBreak(),0,5),List.of())) {
+                boolean active=slot==selected || slot==40;
+                if (source.placement().equals("talent")) {
+                    WeaponOptions.Hand hand=WeaponOptions.Hand.valueOf(text(source.options(),"hand","MAIN_HAND").toUpperCase(Locale.ROOT));
+                    active=hand.includes(slot,selected);
+                }
+                if (active && seen.add(source.definition()+":"+source.placement())) result.add(source);
+            }
+        }
+        for (ItemInstance item : data.getEquipment().values()) {
+            String root=snapshot.equipment().containsKey(item.getDefinitionId()) ? "equipment:" : "divine-hearts:";
+            if (seen.add(root+item.getDefinitionId())) result.addAll(catalog.getOrDefault(root+item.getDefinitionId(),List.of()));
+        }
+        for (var set : SetEffectService.counts(snapshot,data).entrySet()) for (var source : catalog.getOrDefault("sets:"+set.getKey(),List.of()))
+            if (set.getValue()>=(source.placement().equals("two-piece") ? 2 : 4)) result.add(source);
+        return result;
+    }
+    public void emit(EventContext context) {
+        if (resetting) return;
+        if (!(context.source instanceof Player player) || !player.isOnline() || players.find(player.getUniqueId()).isEmpty()) return;
+        EventContext prior=current; current=context;
+        try {
+            context.player=player; context.combatId=combats.getOrDefault(player.getUniqueId(),"");
+            for (var source : sources(player)) for (var trigger : source.triggers()) {
+                if (trigger.event()!=context.event) continue;
+                if ((context.event==TriggerEvent.SKILL || context.event==TriggerEvent.ULTIMATE)
+                        && source.definition().startsWith("weapon:") && !context.weapon.isBlank() && !source.definition().equals("weapon:"+context.weapon)) continue;
+                if (source.placement().equals("skill") && context.event==TriggerEvent.ULTIMATE
+                        || source.placement().equals("ultimate") && context.event==TriggerEvent.SKILL) continue;
+                if (Set.of(TriggerEvent.BEFORE_HIT,TriggerEvent.HIT,TriggerEvent.NORMAL_ATTACK,TriggerEvent.HEAL,TriggerEvent.OVERHEAL).contains(context.event)) {
+                    if (source.placement().equals("skill") && !context.skill || source.placement().equals("ultimate") && !context.ultimate) continue;
+                }
+                if (context.values.containsKey("stackSource") && !source.definition().equals(context.values.get("stackSource"))) continue;
+                String key=player.getUniqueId()+":"+source.definition()+":"+source.placement()+":"+trigger.id();
+                if (context.event==TriggerEvent.HP_BELOW || context.event==TriggerEvent.HP_ABOVE) {
+                    double ratio=selectors.health(player)/Math.max(1,selectors.maxHealth(player));
+                    boolean active=context.event==TriggerEvent.HP_BELOW ? ratio<=trigger.hpPercent() : ratio>trigger.hpPercent();
+                    Boolean before=hpStates.put(key,active);
+                    if (!active || Boolean.TRUE.equals(before)) continue;
+                }
+                if (context.event==TriggerEvent.STACK_REACHED) {
+                    var condition=child(trigger.conditions(),"stack");
+                    if (!Objects.equals(text(condition,"id",""),context.values.get("stackId"))) continue;
+                    double threshold=number(condition,"min",1);
+                    if (number(context.values,"oldStacks",0)>=threshold || number(context.values,"newStacks",0)<threshold) continue;
+                }
+                if (!conditions(trigger.conditions(),player,source.definition(),context)) continue;
+                long now=System.currentTimeMillis();
+                if (cooldowns.getOrDefault(key,0L)>now) continue;
+                String counter=key+":"+trigger.activationScope()+(trigger.activationScope().equals("COMBAT") ? ":"+context.combatId : "");
+                if (trigger.activationScope().equals("COMBAT") && !combat.inCombat(player.getUniqueId()) && context.event!=TriggerEvent.COMBAT_END) continue;
+                if (trigger.maxActivations()>0 && activations.getOrDefault(counter,0)>=trigger.maxActivations()) continue;
+                if (!context.chain.enter(player.getUniqueId(),source.definition(),source.placement()+":"+trigger.id())) {
+                    if (context.chain.depth()>=16) plugin.getLogger().warning("Trigger chain depth limit reached: "+context.chain.id());
+                    continue;
+                }
+                cooldowns.put(key,now+trigger.cooldown());
+                if (trigger.maxActivations()>0) activations.merge(counter,1,Integer::sum);
+                try { actions(player,source,trigger.actions(),context,trigger.target(),trigger.id()); }
+                finally { context.chain.leave(); }
+            }
+        } finally { current=prior; }
+    }
+    public boolean conditions(Map<String,Object> c,Player owner,String definition,EventContext context) {
+        double hp=selectors.health(owner)/Math.max(1,selectors.maxHealth(owner)); LivingEntity target=context.target;
+        for (String key : c.keySet()) {
+            boolean actual;
+            switch(key) {
+                case "min-hp-percent" -> { if (hp<number(c,key,0)) return false; continue; }
+                case "max-hp-percent" -> { if (hp>number(c,key,1)) return false; continue; }
+                case "min-distance", "max-distance" -> {
+                    if (target==null || !owner.getWorld().equals(target.getWorld())) return false;
+                    double distance=owner.getLocation().distance(target.getLocation());
+                    if (key.equals("min-distance") ? distance<number(c,key,0) : distance>number(c,key,0)) return false; continue;
+                }
+                case "element" -> { if (context.attribute!=Element.parse(text(c,key,"")).orElse(null)) return false; continue; }
+                case "buff-present" -> { if (!buffs.has(owner,text(c,key,""))) return false; continue; }
+                case "buff-absent" -> { if (buffs.has(owner,text(c,key,""))) return false; continue; }
+                case "inside-field" -> { if (!fields.inside(owner,text(c,key,""))) return false; continue; }
+                case "outside-field" -> { if (fields.inside(owner,text(c,key,""))) return false; continue; }
+                case "stack", "context-value" -> {
+                    var condition=child(c,key); double value;
+                    if (key.equals("context-value")) {
+                        Object raw=context.values.get(text(condition,"key","")); if (!(raw instanceof Number n)) return false; value=n.doubleValue();
+                    } else {
+                        String scope=text(condition,"scope","SELF").toUpperCase(Locale.ROOT), id=text(condition,"id","");
+                        StackService.Key stack=stackKey(owner,definition,id,scope,context);
+                        value=scope.equals("ALL_TARGETS") ? stacks.total(owner.getUniqueId(),definition,id) : stack==null ? 0 : stacks.count(stack);
+                    }
+                    if (value<number(condition,"min",-Double.MAX_VALUE) || value>number(condition,"max",Double.MAX_VALUE)) return false; continue;
+                }
+                case "requires-combat" -> actual=combat.inCombat(owner.getUniqueId());
+                case "requires-target" -> actual=target!=null && !target.isDead();
+                case "damage-positive" -> actual=context.finalDamage>0;
+                case "heal-positive" -> actual=context.healAmount>0;
+                case "overheal-positive" -> actual=context.overheal>0;
+                case "normal-attack-only" -> actual=context.normalAttack;
+                case "skill-only" -> actual=context.skill;
+                case "ultimate-only" -> actual=context.ultimate;
+                case "critical" -> actual=context.critical;
+                case "party-required" -> actual=selectors.hasParty(owner);
+                case "target-is-self" -> actual=owner.equals(target);
+                case "target-is-ally" -> actual=target!=null && selectors.ally(owner,target);
+                case "target-is-enemy" -> actual=target!=null && selectors.enemy(owner,target);
+                default -> throw new IllegalArgumentException("Unknown condition "+key);
+            }
+            if (actual!=Boolean.TRUE.equals(c.get(key))) return false;
+        }
+        return true;
+    }
+    private StackService.Key stackKey(Player owner,String source,String id,String scope,EventContext context) {
+        LivingEntity target=switch(scope) { case "TARGET","EVENT_TARGET" -> context.target; case "ATTACKER" -> context.attacker; case "VICTIM" -> context.victim; default -> owner; };
+        if (target==null) return null;
+        return new StackService.Key(owner.getUniqueId(),source,id,scope.equals("SELF") ? null : target.getUniqueId());
+    }
+    private void actions(Player owner,TriggerCatalog.Source source,List<Map<String,Object>> actions,EventContext context,String fallbackTarget,String triggerId) {
+        int index=0;
+        for (var action : actions) {
+            String actionKey=source.definition()+":"+source.placement()+":"+triggerId+":"+(index++);
+            if (!conditions(child(action,"conditions"),owner,source.definition(),context)) continue;
+            String type=text(action,"type","").toUpperCase(Locale.ROOT); double result=0;
+            String scope=text(action,"scope","SELF").toUpperCase(Locale.ROOT),id=text(action,"id","");
+            if (Set.of("ADD_STACK","SET_STACK","CLEAR_STACK","CONSUME_STACK").contains(type)) {
+                StackService.Key key=stackKey(owner,source.definition(),id,scope,context);
+                if (type.equals("CLEAR_STACK") && scope.equals("ALL_TARGETS")) result=stacks.clearTargets(owner.getUniqueId(),source.definition(),id);
+                else if (key!=null) {
+                    var p=child(source.options(),"target-stack-policy");
+                    var policy=new StackService.Policy(text(p,"stack-id","").equals(id) ? integer(p,"max-targets",0,0) : 0,
+                            StackService.Overflow.valueOf(text(p,"overflow","REMOVE_OLDEST").toUpperCase(Locale.ROOT)));
+                    int amount=integer(action,"amount",1,0), max=integer(action,"max",1,1);
+                    long duration=Math.round(number(action,"duration",0)*1000);
+                    var reapply=StackService.Reapply.valueOf(text(action,"reapply","REFRESH"));
+                    result=switch(type) {
+                        case "ADD_STACK" -> stacks.add(key,amount,max,duration,reapply,policy);
+                        case "SET_STACK" -> stacks.set(key,amount,max,duration,reapply,policy);
+                        case "CLEAR_STACK" -> stacks.clear(key);
+                        default -> stacks.consume(key,amount);
+                    };
+                }
+            } else if (type.equals("CREATE_FIELD")) fields.create(owner,source.definition(),action,context);
+            else if (type.equals("REMOVE_FIELD")) fields.remove(owner.getUniqueId(),source.definition(),id);
+            else if (type.equals("MODIFY_EVENT_STATS")) {
+                if (context.event!=TriggerEvent.BEFORE_HIT) continue;
+                EventModifier modifier=Set.of("EVENT_TARGET","VICTIM","OTHER").contains(text(action,"target","SOURCE")) ? context.targetModifiers : context.sourceModifiers;
+                child(action,"modifiers").forEach((mode,values) -> map(values).forEach((stat,value) -> modifier.add(mode,StatKey.valueOf(stat),((Number)value).doubleValue())));
+            } else for (LivingEntity target : selectors.select(text(action,"target",fallbackTarget).toUpperCase(Locale.ROOT),owner,context,action)) {
+                switch(type) {
+                    case "APPLY_EFFECT" -> { if (buffs.apply(target,text(action,"effect",""),owner.getUniqueId())) result++; }
+                    case "REMOVE_EFFECT" -> { if (buffs.remove(target,text(action,"effect",""))) result++; }
+                    case "DAMAGE" -> {
+                        List<WeaponOptions.Component> components=new ArrayList<>();
+                        if (action.get("components") instanceof List<?> values) for (Object raw : values) {
+                            var c=map(raw); components.add(new WeaponOptions.Component(ReferenceStat.valueOf(text(c,"reference","ATK").toUpperCase(Locale.ROOT)),number(c,"multiplier",1),Element.parse(text(c,"bonus-attribute","PHYSICAL")).orElseThrow()));
+                        }
+                        double prior=nextDefIgnore; nextDefIgnore=number(action,"def-ignore",0);
+                        try { result+=damage.apply(new DamageRequest(owner.getUniqueId(),target.getUniqueId(),ReferenceStat.valueOf(text(action,"reference","ATK")),
+                                number(action,"multiplier",1),Element.parse(text(action,"attribute","PHYSICAL")).orElseThrow(),true,false,0,"trigger:"+actionKey,components)).finalDamage(); }
+                        finally { nextDefIgnore=prior; }
+                    }
+                    case "HEAL" -> result+=healing.healAmount(owner,target,reference(text(action,"reference","HP"),owner,target,context)*number(action,"multiplier",1),false);
+                    case "APPLY_DYNAMIC_MODIFIER" -> {
+                        double value=reference(text(action,"source",""),owner,target,context)*number(action,"multiplier",1);
+                        dynamic.apply(target.getUniqueId(),owner.getUniqueId()+":"+actionKey,StatKey.valueOf(text(action,"stat","")),value,
+                                Math.round(number(action,"duration",0)*1000),text(action,"reapply","REFRESH")); stats.invalidate(target.getUniqueId()); result=value;
+                    }
+                }
+            }
+            if (action.containsKey("store-result")) context.values.put(text(action,"store-result",""),result);
+        }
+    }
+    private double reference(String key,LivingEntity owner,LivingEntity target,EventContext context) {
+        return switch(key) {
+            case "FIXED" -> 1;
+            case "EVENT_DAMAGE" -> context.finalDamage;
+            case "EVENT_HEAL" -> context.healAmount;
+            case "EVENT_EFFECTIVE_HEAL" -> context.effectiveHeal;
+            case "EVENT_OVERHEAL" -> context.overheal;
+            case "TARGET_MAX_HP" -> selectors.maxHealth(target);
+            case "TARGET_ATK" -> healing.value(target,ReferenceStat.ATK);
+            case "TARGET_DEF" -> healing.value(target,ReferenceStat.DEF);
+            case "HP","SOURCE_MAX_HP" -> selectors.maxHealth(owner);
+            case "DEF","SOURCE_DEF" -> healing.value(owner,ReferenceStat.DEF);
+            default -> healing.value(owner,ReferenceStat.ATK);
+        };
+    }
+    public DamageResult damage(DamageRequest request,Supplier<DamageResult> operation) {
+        LivingEntity attacker=request.attacker()!=null && Bukkit.getEntity(request.attacker()) instanceof LivingEntity e ? e : null;
+        LivingEntity target=Bukkit.getEntity(request.target()) instanceof LivingEntity e ? e : null;
+        EventContext event=new EventContext(TriggerEvent.BEFORE_HIT,current==null ? null : current.chain,attacker,target);
+        if (attacker instanceof Player p) event.weapon=items.id(p.getInventory().getItemInMainHand()).orElse("");
+        if (request.source().startsWith("skill:") || request.source().startsWith("ultimate:")) event.ability=request.source().substring(request.source().indexOf(':')+1);
+        event.attribute=request.element(); event.normalAttack=request.source().equals("normal_attack");
+        event.skill=request.source().startsWith("skill:") || request.source().startsWith("trigger:") && current!=null && current.skill;
+        event.ultimate=request.source().startsWith("ultimate:") || request.source().startsWith("trigger:") && current!=null && current.ultimate;
+        event.reaction=request.source().startsWith("reaction:"); event.sourceModifiers.add("flat",StatKey.DEF_IGNORE,nextDefIgnore);
+        double priorIgnore=nextDefIgnore; nextDefIgnore=0;
+        EventContext prior=current; current=event;
+        try { return operation.get(); }
+        finally { current=prior; nextDefIgnore=priorIgnore; }
+    }
+    public void beforeHit() { if (current!=null) emit(current); }
+    @EventHandler public void onDamage(AfterDamageEvent event) {
+        if (!event.getResult().applied() || event.getResult().finalDamage()<=0) return;
+        var request=event.getRequest();
+        LivingEntity attacker=request.attacker()!=null && Bukkit.getEntity(request.attacker()) instanceof LivingEntity e ? e : null;
+        LivingEntity victim=Bukkit.getEntity(request.target()) instanceof LivingEntity e ? e : null;
+        EventContext hit=current==null ? new EventContext(TriggerEvent.HIT,null,attacker,victim) : current.child(TriggerEvent.HIT,attacker,victim);
+        hit.finalDamage=event.getResult().finalDamage(); hit.damage=hit.finalDamage; hit.critical=event.getResult().critical();
+        hit.attribute=request.element(); hit.reaction=request.source().startsWith("reaction:"); hit.normalAttack=request.source().equals("normal_attack");
+        hit.skill|=request.source().startsWith("skill:"); hit.ultimate|=request.source().startsWith("ultimate:");
+        emit(hit);
+        if (hit.normalAttack) emit(hit.child(TriggerEvent.NORMAL_ATTACK,attacker,victim));
+        EventContext received=hit.child(TriggerEvent.TAKE_DAMAGE,victim,attacker); received.attacker=attacker; received.victim=victim; emit(received);
+    }
+    public void cast(Player owner,LivingEntity target,String weapon,int stage,boolean ultimate) {
+        EventContext event=new EventContext(ultimate ? TriggerEvent.ULTIMATE : TriggerEvent.SKILL,current==null ? null : current.chain,owner,target);
+        event.weapon=weapon; event.skill=!ultimate; event.ultimate=ultimate;
+        emit(event);
+        for (var source : sources(owner)) if (source.definition().equals("weapon:"+weapon) && source.placement().equals(ultimate ? "ultimate" : "skill")) {
+            EventContext prior=current; current=event;
+            try {
+                var direct=new ArrayList<Map<String,Object>>();
+                for (var action : TriggerDefinition.actions(source.options(),snapshot.buffs().keySet())) {
+                    var inherited=new LinkedHashMap<>(action);
+                    if (!inherited.containsKey("area") && source.options().containsKey("area")) inherited.put("area",source.options().get("area"));
+                    direct.add(inherited);
+                }
+                actions(owner,source,direct,event,"SELF","direct");
+            }
+            finally { current=prior; }
+        }
+    }
+    public boolean canCast(Player owner,LivingEntity target,String weapon,boolean ultimate,Map<String,Object> raw) {
+        Map<String,Object> additional=new LinkedHashMap<>(map(raw));
+        // v1.4.4 intentionally lets empty casts bypass target/distance requirements.
+        for (String legacy : List.of("min-hp-percent","max-distance","requires-combat","requires-target")) additional.remove(legacy);
+        EventContext event=new EventContext(ultimate ? TriggerEvent.ULTIMATE : TriggerEvent.SKILL,null,owner,target);
+        event.skill=!ultimate; event.ultimate=ultimate;
+        return conditions(additional,owner,"weapon:"+weapon,event);
+    }
+    public void healed(LivingEntity source,LivingEntity target,double requested,double effective,double overheal) {
+        EventContext event=current==null ? new EventContext(TriggerEvent.HEAL,null,source,target) : current.child(TriggerEvent.HEAL,source,target);
+        event.healer=source; event.healed=target; event.healAmount=requested; event.requestedHeal=requested; event.effectiveHeal=effective; event.overheal=overheal;
+        emit(event); emit(event.child(TriggerEvent.RECEIVE_HEAL,target,source));
+        if (overheal>0) emit(event.child(TriggerEvent.OVERHEAL,source,target));
+    }
+    public void buffEvent(LivingEntity target,String id,boolean added) {
+        EventContext event=new EventContext(added ? TriggerEvent.BUFF_APPLIED : TriggerEvent.BUFF_REMOVED,current==null ? null : current.chain,target,target);
+        event.values.put("buffId",id); emit(event);
+    }
+    private void stackChanged(StackService.Change change) {
+        Player owner=Bukkit.getPlayer(change.key().owner());
+        if (owner==null && current!=null && current.source instanceof Player p && p.getUniqueId().equals(change.key().owner())) owner=p;
+        if (owner==null) return;
+        LivingEntity target=change.key().target()!=null && Bukkit.getEntity(change.key().target()) instanceof LivingEntity e ? e : null;
+        if (target==null && current!=null && current.target!=null && current.target.getUniqueId().equals(change.key().target())) target=current.target;
+        EventContext event=new EventContext(TriggerEvent.STACK_CHANGED,current==null ? null : current.chain,owner,target);
+        event.values.put("stackSource",change.key().source()); event.values.put("stackId",change.key().id());
+        event.values.put("oldStacks",change.oldStacks()); event.values.put("newStacks",change.newStacks());
+        event.values.put("stackDelta",change.newStacks()-change.oldStacks()); event.values.put("stackTarget",change.key().target());
+        emit(event); if (change.newStacks()>change.oldStacks()) emit(event.child(TriggerEvent.STACK_REACHED,owner,target));
+    }
+    private void tick() {
+        refresh(); stacks.expire(); fields.tick();
+        if (!monitors) { long now=System.currentTimeMillis(); cooldowns.values().removeIf(end -> end<=now); return; }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            List<TriggerCatalog.Source> active=sources(player);
+            Set<String> hpKeys=new HashSet<>();
+            String prefix=player.getUniqueId()+":";
+            for (var source : active) for (var trigger : source.triggers())
+                if (trigger.event()==TriggerEvent.HP_BELOW || trigger.event()==TriggerEvent.HP_ABOVE)
+                    hpKeys.add(prefix+source.definition()+":"+source.placement()+":"+trigger.id());
+            hpStates.keySet().removeIf(key -> key.startsWith(prefix) && !hpKeys.contains(key));
+            for (TriggerEvent event : List.of(TriggerEvent.HP_BELOW,TriggerEvent.HP_ABOVE,TriggerEvent.TICK))
+                if (active.stream().anyMatch(s -> s.triggers().stream().anyMatch(t -> t.event()==event))) emit(new EventContext(event,null,player,null));
+        }
+        long now=System.currentTimeMillis(); cooldowns.values().removeIf(end -> end<=now);
+    }
+    @EventHandler(priority=EventPriority.MONITOR,ignoreCancelled=true)
+    public void onEnvironmentDamage(org.bukkit.event.entity.EntityDamageEvent event) {
+        if (event instanceof org.bukkit.event.entity.EntityDamageByEntityEvent || event.getFinalDamage()<=0 || !(event.getEntity() instanceof Player player)) return;
+        Bukkit.getScheduler().runTask(plugin,() -> {
+            if (!player.isOnline()) return;
+            EventContext context=new EventContext(TriggerEvent.TAKE_DAMAGE,null,player,null);
+            context.attacker=null; context.victim=player; context.damage=event.getFinalDamage(); context.finalDamage=event.getFinalDamage(); emit(context);
+        });
+    }
+    @EventHandler public void onCombat(CombatStateEvent event) {
+        // Accessors are resolved against the stable CCS API below.
+        if (!(Bukkit.getEntity(event.getEntityId()) instanceof Player player)) return;
+        boolean active=event.isEntering();
+        String ending=combats.getOrDefault(player.getUniqueId(),"");
+        if (active) combats.put(player.getUniqueId(),UUID.randomUUID().toString());
+        emit(new EventContext(active ? TriggerEvent.COMBAT_START : TriggerEvent.COMBAT_END,current==null ? null : current.chain,player,null));
+        if (!active) {
+            combats.remove(player.getUniqueId(),ending);
+            activations.keySet().removeIf(k -> k.startsWith(player.getUniqueId()+":") && k.endsWith(":COMBAT:"+ending));
+        }
+    }
+    private void forget(UUID owner,boolean death) {
+        stacks.forget(owner); fields.forget(owner); dynamic.forget(owner);
+        String prefix=owner+":"; hpStates.keySet().removeIf(k -> k.startsWith(prefix)); cooldowns.keySet().removeIf(k -> k.startsWith(prefix));
+        activations.keySet().removeIf(k -> k.startsWith(prefix) && (!death || k.endsWith(":LIFE") || k.contains(":COMBAT:")));
+    }
+    @EventHandler public void onQuit(PlayerQuitEvent event) { forget(event.getPlayer().getUniqueId(),false); combats.remove(event.getPlayer().getUniqueId()); }
+    @EventHandler public void onDeath(PlayerDeathEvent event) { forget(event.getEntity().getUniqueId(),true); }
+}
+```
+
+## StackService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
+
+/** Transient owner/definition-isolated stacks; server-thread access only. */
+public final class StackService {
+    public enum Reapply { REFRESH, EXTEND, IGNORE }
+    public enum Overflow { REMOVE_OLDEST, REMOVE_NEWEST, REMOVE_LOWEST_STACK, REJECT_NEW }
+    public record Key(UUID owner, String source, String id, UUID target) {}
+    public record State(long createdAt, long updatedAt, int count, long expiresAt) {}
+    public record Change(Key key, int oldStacks, int newStacks) {}
+    public record Policy(int maxTargets, Overflow overflow) {
+        public Policy { if (maxTargets < 0) throw new IllegalArgumentException("negative max-targets"); Objects.requireNonNull(overflow); }
+    }
+    private final Map<Key, State> states = new LinkedHashMap<>();
+    private final LongSupplier clock;
+    private Consumer<Change> listener = ignored -> {};
+    public StackService() { this(System::currentTimeMillis); }
+    public StackService(LongSupplier clock) { this.clock = clock; }
+    public void onChange(Consumer<Change> listener) { this.listener = Objects.requireNonNull(listener); }
+    public State state(Key key) { expire(key); return states.get(key); }
+    public int count(Key key) { State state = state(key); return state == null ? 0 : state.count(); }
+    public long total(UUID owner, String source, String id) {
+        expire();
+        return states.entrySet().stream().filter(e -> e.getKey().target()!=null && matches(e.getKey(), owner, source, id))
+                .mapToLong(e -> e.getValue().count()).sum();
+    }
+    private static boolean matches(Key key, UUID owner, String source, String id) {
+        return key.owner().equals(owner) && key.source().equals(source) && key.id().equals(id);
+    }
+    public int add(Key key, int amount, int max, long durationMillis, Reapply reapply, Policy policy) {
+        if (amount < 0) throw new IllegalArgumentException("negative stack amount");
+        return set(key, (int) Math.min(max, (long) count(key) + amount), max, durationMillis, reapply, policy);
+    }
+    public int set(Key key, int amount, int max, long durationMillis, Reapply reapply, Policy policy) {
+        if (max < 1 || amount < 0 || durationMillis < 0) throw new IllegalArgumentException("invalid stack bounds");
+        expire(key);
+        State old = states.get(key);
+        int before = old == null ? 0 : old.count(), after = Math.min(max, amount);
+        if (after == 0) { remove(key); return 0; }
+        if (old == null && key.target() != null && policy != null && policy.maxTargets() > 0) {
+            List<Map.Entry<Key, State>> targets = states.entrySet().stream()
+                    .filter(e -> e.getKey().target() != null && matches(e.getKey(), key.owner(), key.source(), key.id())).toList();
+            if (targets.size() >= policy.maxTargets()) {
+                if (policy.overflow() == Overflow.REJECT_NEW || policy.overflow() == Overflow.REMOVE_NEWEST) return 0;
+                Comparator<Map.Entry<Key, State>> order = Comparator.comparingLong(e -> e.getValue().createdAt());
+                if (policy.overflow() == Overflow.REMOVE_LOWEST_STACK)
+                    order = Comparator.<Map.Entry<Key, State>>comparingInt(e -> e.getValue().count()).thenComparing(order);
+                for (var entry : targets.stream().sorted(order).limit(targets.size()-policy.maxTargets()+1L).toList()) remove(entry.getKey());
+            }
+        }
+        long now = clock.getAsLong();
+        long expires = durationMillis == 0 ? Long.MAX_VALUE : saturatingAdd(now, durationMillis);
+        if (old != null && reapply == Reapply.IGNORE) expires = old.expiresAt();
+        if (old != null && reapply == Reapply.EXTEND) expires = durationMillis == 0 ? Long.MAX_VALUE : saturatingAdd(old.expiresAt(), durationMillis);
+        states.put(key, new State(old == null ? now : old.createdAt(), now, after, expires));
+        if (before != after) listener.accept(new Change(key, before, after));
+        return after;
+    }
+    private static long saturatingAdd(long a, long b) { return a > Long.MAX_VALUE - b ? Long.MAX_VALUE : a + b; }
+    public int consume(Key key, int amount) {
+        if (amount < 0) throw new IllegalArgumentException("negative consumption");
+        State state = state(key);
+        if (state == null) return 0;
+        int used = Math.min(amount, state.count());
+        if (used == state.count()) remove(key);
+        else if (used > 0) {
+            states.put(key, new State(state.createdAt(), clock.getAsLong(), state.count() - used, state.expiresAt()));
+            listener.accept(new Change(key, state.count(), state.count() - used));
+        }
+        return used;
+    }
+    public int clear(Key key) { expire(key); return remove(key); }
+    public long clearTargets(UUID owner, String source, String id) {
+        expire(); long total = 0;
+        for (Key key : List.copyOf(states.keySet())) if (key.target() != null && matches(key, owner, source, id)) total += remove(key);
+        return total;
+    }
+    private int remove(Key key) {
+        State old = states.remove(key);
+        if (old == null) return 0;
+        listener.accept(new Change(key, old.count(), 0)); return old.count();
+    }
+    private void expire(Key key) { State state = states.get(key); if (state != null && state.expiresAt() <= clock.getAsLong()) remove(key); }
+    public void expire() { for (Key key : List.copyOf(states.keySet())) expire(key); }
+    public void forget(UUID entity) { states.keySet().removeIf(key -> key.owner().equals(entity) || entity.equals(key.target())); }
+    public void reset() { states.clear(); }
+}
+```
+
+## TargetSelectorService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.model.trigger.*;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.util.Vector;
+import java.util.*;
+
+public final class TargetSelectorService {
+    private final PartyService parties;
+    private final DamageService damage;
+    private final PlayerDataService players;
+    private final StatService stats;
+    private final MobService mobs;
+    public TargetSelectorService(PartyService parties,DamageService damage,PlayerDataService players,StatService stats,MobService mobs) {
+        this.parties=parties; this.damage=damage; this.players=players; this.stats=stats; this.mobs=mobs;
+    }
+    public double health(LivingEntity entity) {
+        return entity instanceof Player p ? players.find(p.getUniqueId()).map(d->d.getHealth()).orElse(0.0) : mobs.health(entity);
+    }
+    public double maxHealth(LivingEntity entity) {
+        return entity instanceof Player p ? players.find(p.getUniqueId()).map(d->stats.get(p,d).maxHp()).orElse(1.0) : mobs.maxHealth(entity);
+    }
+    public boolean ally(LivingEntity owner,LivingEntity target) {
+        return owner.equals(target) || owner instanceof Player && target instanceof Player && parties.sameParty(owner.getUniqueId(),target.getUniqueId());
+    }
+    public boolean enemy(LivingEntity owner,LivingEntity target) { return !ally(owner,target) && damage.canAffect(owner,target); }
+    public boolean hasParty(LivingEntity owner) { return parties.findByPlayer(owner.getUniqueId()).isPresent(); }
+    private List<LivingEntity> party(LivingEntity owner,boolean includeSelf) {
+        List<LivingEntity> result=new ArrayList<>();
+        parties.findByPlayer(owner.getUniqueId()).ifPresent(p -> p.getMembers().forEach(member -> {
+            Player player=Bukkit.getPlayer(member.asUuid());
+            if (player != null && !player.isDead() && player.getWorld().equals(owner.getWorld()) && (includeSelf || !player.equals(owner))) result.add(player);
+        }));
+        if (includeSelf && !result.contains(owner)) result.add(owner);
+        return result;
+    }
+    public Location origin(LivingEntity owner,EventContext context,Area area) {
+        return switch(area.origin()) {
+            case SELF -> owner.getLocation();
+            case EVENT_TARGET -> context.target == null ? null : context.target.getLocation();
+            case LOCATION -> context.location == null ? null : context.location.clone();
+        };
+    }
+    public List<LivingEntity> inArea(Location origin,Area area) {
+        if (origin == null || origin.getWorld() == null) return List.of();
+        return origin.getWorld().getNearbyLivingEntities(origin,area.searchRadius(),e -> !e.isDead() && contains(origin,area,e.getLocation())).stream()
+                .sorted(Comparator.comparing(e -> e.getUniqueId().toString())).toList();
+    }
+    public boolean contains(Location origin,Area area,Location point) {
+        if (!origin.getWorld().equals(point.getWorld())) return false;
+        Vector delta=point.toVector().subtract(origin.toVector());
+        Vector forward=origin.getDirection().setY(0);
+        if (forward.lengthSquared()<1e-10) forward=new Vector(0,0,1); else forward.normalize();
+        Vector right=new Vector(forward.getZ(),0,-forward.getX());
+        return area.contains(delta.dot(right),delta.getY(),delta.dot(forward));
+    }
+    public List<LivingEntity> select(String selector,LivingEntity owner,EventContext context,Map<String,Object> options) {
+        List<LivingEntity> out=new ArrayList<>();
+        switch(selector) {
+            case "SELF", "SOURCE" -> out.add(owner);
+            case "EVENT_TARGET", "OTHER" -> { if (context.target!=null) out.add(context.target); }
+            case "ATTACKER" -> { if (context.attacker!=null) out.add(context.attacker); }
+            case "VICTIM" -> { if (context.victim!=null) out.add(context.victim); }
+            case "ALL_PARTY_MEMBERS", "ALL_PARTY_MEMBERS_AND_SELF" -> out.addAll(party(owner,selector.endsWith("AND_SELF")));
+            case "LOWEST_HP_PARTY_MEMBER", "LOWEST_HP_PARTY_MEMBER_OR_SELF" -> {
+                List<LivingEntity> members=party(owner,true);
+                if (!hasParty(owner) && !selector.endsWith("OR_SELF")) members.clear();
+                members.stream().min(Comparator.<LivingEntity>comparingDouble(e -> health(e)/Math.max(1,maxHealth(e)))
+                        .thenComparingDouble(e -> e.getLocation().distanceSquared(owner.getLocation())).thenComparing(e -> e.getUniqueId().toString())).ifPresent(out::add);
+            }
+            case "NEAREST_ENEMY", "NEAREST_ALLY" -> owner.getWorld().getNearbyLivingEntities(owner.getLocation(),64,
+                    e -> !e.equals(owner) && !e.isDead() && (selector.endsWith("ENEMY") ? enemy(owner,e) : ally(owner,e))).stream()
+                    .min(Comparator.<LivingEntity>comparingDouble(e -> e.getLocation().distanceSquared(owner.getLocation())).thenComparing(e -> e.getUniqueId().toString())).ifPresent(out::add);
+            case "ENTITIES_IN_AREA", "ALLIES_IN_AREA", "ENEMIES_IN_AREA" -> {
+                Area area=TriggerDefinition.area(TriggerDefinition.child(options,"area"));
+                out.addAll(inArea(origin(owner,context,area),area));
+                if (selector.equals("ALLIES_IN_AREA")) out.removeIf(e -> !ally(owner,e));
+                if (selector.equals("ENEMIES_IN_AREA")) out.removeIf(e -> !enemy(owner,e));
+            }
+            default -> throw new IllegalArgumentException("Unknown selector: " + selector);
+        }
+        String filter=TriggerDefinition.text(options,"target-filter","ALL");
+        out.removeIf(e -> e.isDead() || !e.getWorld().equals(owner.getWorld()) || filter.equals("ENEMY") && !enemy(owner,e) || filter.equals("ALLY") && !ally(owner,e));
+        if (options.containsKey("area")) {
+            Area area=TriggerDefinition.area(TriggerDefinition.child(options,"area"));
+            Location origin=origin(owner,context,area);
+            out.removeIf(e -> origin==null || !contains(origin,area,e.getLocation()));
+        }
+        return List.copyOf(out);
+    }
+}
+```
+
+## FieldService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.model.trigger.*;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.entity.LivingEntity;
+import java.util.*;
+import java.util.function.Consumer;
+import static com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.*;
+
+public final class FieldService {
+    private record Key(UUID owner,String source,String id) {}
+    private static final class Field {
+        final Key key; final Location origin; final Area area; final long expires; final Map<String,Object> options;
+        final Map<UUID,List<String>> inside=new LinkedHashMap<>();
+        Field(Key key,Location origin,Area area,long expires,Map<String,Object> options) {
+            this.key=key; this.origin=origin.clone(); this.area=area; this.expires=expires; this.options=options;
+        }
+    }
+    private final Map<Key,Field> fields=new LinkedHashMap<>();
+    private final TargetSelectorService selectors;
+    private final BuffService buffs;
+    private final Consumer<EventContext> events;
+    public FieldService(TargetSelectorService selectors,BuffService buffs,Consumer<EventContext> events) { this.selectors=selectors; this.buffs=buffs; this.events=events; }
+    public void create(LivingEntity owner,String source,Map<String,Object> options,EventContext context) {
+        String id=text(options,"id",""); remove(owner.getUniqueId(),source,id);
+        Area area=area(child(options,"area")); Location origin=selectors.origin(owner,context,area);
+        if (origin==null) return;
+        long duration=Math.round(number(options,"duration",0)*1000);
+        Key key=new Key(owner.getUniqueId(),source,id);
+        fields.put(key,new Field(key,origin,area,duration==0 ? Long.MAX_VALUE : System.currentTimeMillis()+duration,options));
+    }
+    public boolean inside(LivingEntity entity,String id) {
+        return fields.values().stream().anyMatch(f -> f.key.id().equals(id) && f.expires>System.currentTimeMillis() && selectors.contains(f.origin,f.area,entity.getLocation()));
+    }
+    private String lease(Field field,String effect) { return "field:"+field.key+":"+effect; }
+    private void leave(Field field,UUID target,List<String> effects,LivingEntity owner) {
+        effects.forEach(id -> buffs.release(target,lease(field,id)));
+        if (Bukkit.getEntity(target) instanceof LivingEntity entity) {
+            EventContext event=new EventContext(TriggerEvent.LEAVE_FIELD,null,entity,owner); event.values.put("fieldId",field.key.id()); events.accept(event);
+        }
+    }
+    public void remove(UUID owner,String source,String id) {
+        Field old=fields.remove(new Key(owner,source,id)); if (old==null) return;
+        LivingEntity entity=Bukkit.getEntity(owner) instanceof LivingEntity e ? e : null;
+        old.inside.forEach((target,effects) -> leave(old,target,effects,entity));
+    }
+    public void tick() {
+        for (Field field : List.copyOf(fields.values())) {
+            LivingEntity owner=Bukkit.getEntity(field.key.owner()) instanceof LivingEntity e ? e : null;
+            if (owner==null || owner.isDead() || field.expires<=System.currentTimeMillis()) { remove(field.key.owner(),field.key.source(),field.key.id()); continue; }
+            Set<UUID> seen=new HashSet<>();
+            String mode=text(field.options,"effect-mode","WHILE_INSIDE");
+            for (LivingEntity target : selectors.inArea(field.origin,field.area)) {
+                String filter=text(field.options,"target-filter","ALL");
+                if (filter.equals("ENEMY") && !selectors.enemy(owner,target) || filter.equals("ALLY") && !selectors.ally(owner,target)) continue;
+                List<String> effects=selectors.ally(owner,target) ? strings(field.options,"ally-effects")
+                        : selectors.enemy(owner,target) ? strings(field.options,"enemy-effects") : List.of();
+                UUID uuid=target.getUniqueId(); seen.add(uuid);
+                List<String> old=field.inside.put(uuid,effects);
+                if (old!=null && !old.equals(effects)) old.forEach(id -> buffs.release(uuid,lease(field,id)));
+                if (old==null) {
+                    EventContext event=new EventContext(TriggerEvent.ENTER_FIELD,null,target,owner); event.values.put("fieldId",field.key.id()); events.accept(event);
+                }
+                if (fields.get(field.key)!=field) break;
+                if (mode.equals("WHILE_INSIDE")) effects.forEach(id -> buffs.acquire(target,lease(field,id),id,owner.getUniqueId()));
+                else if (mode.equals("REFRESH_WHILE_INSIDE")) effects.forEach(id -> buffs.refresh(target,id,owner.getUniqueId()));
+                else if (old==null) effects.forEach(id -> buffs.apply(target,id,owner.getUniqueId()));
+            }
+            for (UUID uuid : List.copyOf(field.inside.keySet())) if (!seen.contains(uuid)) leave(field,uuid,field.inside.remove(uuid),owner);
+        }
+    }
+    public void forget(UUID owner) {
+        for (Key key : List.copyOf(fields.keySet())) if (key.owner().equals(owner)) remove(key.owner(),key.source(),key.id());
+    }
+    public void reset() { for (Key key : List.copyOf(fields.keySet())) remove(key.owner(),key.source(),key.id()); }
+}
+```
+
+## DynamicEffectService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.model.StatKey;
+import java.util.*;
+
+public final class DynamicEffectService {
+    private record Entry(StatKey stat,double value,long expires) {}
+    private final Map<UUID,Map<String,Entry>> effects=new HashMap<>();
+    public void apply(UUID target,String key,StatKey stat,double value,long duration,String reapply) {
+        if (!Double.isFinite(value)) throw new IllegalArgumentException("Non-finite dynamic modifier");
+        var entries=effects.computeIfAbsent(target,ignored -> new LinkedHashMap<>());
+        Entry old=entries.get(key); long now=System.currentTimeMillis();
+        if (old!=null && old.expires()>now && reapply.equals("IGNORE")) return;
+        long expires=duration==0 ? Long.MAX_VALUE : now+duration;
+        if (old!=null && old.expires()>now && reapply.equals("EXTEND")) expires=old.expires()==Long.MAX_VALUE || duration==0 ? Long.MAX_VALUE : old.expires()+duration;
+        entries.put(key,new Entry(stat,value,expires));
+    }
+    public Map<StatKey,Double> modifiers(UUID target) {
+        var entries=effects.get(target); if (entries==null) return Map.of();
+        entries.values().removeIf(e -> e.expires()<=System.currentTimeMillis());
+        if (entries.isEmpty()) { effects.remove(target); return Map.of(); }
+        Map<StatKey,Double> result=new EnumMap<>(StatKey.class);
+        entries.values().forEach(e -> result.merge(e.stat(),e.value(),Double::sum));
+        return result;
+    }
+    public void forget(UUID target) { effects.remove(target); }
+    public void reset() { effects.clear(); }
+}
+```
+
+## HealService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.model.PlayerData;
+import com.github.saku0817.combatcoresystems.model.PlayerStats;
+import com.github.saku0817.combatcoresystems.model.ReferenceStat;
+import com.github.saku0817.combatcoresystems.model.StatKey;
+import com.github.saku0817.combatcoresystems.util.CoreMath;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+
+import java.util.UUID;
+
+public final class HealService {
+    private final PlayerDataService players;
+    private final StatService stats;
+    private final DamageDisplayService displays;
+    private final LevelService levels;
+    private final MobService mobs;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService triggers) { this.triggers=triggers; }
+
+    public HealService(PlayerDataService players, StatService stats, DamageDisplayService displays, LevelService levels, MobService mobs) {
+        this.players = players; this.stats = stats; this.displays = displays; this.levels = levels; this.mobs = mobs;
+    }
+
+    public long heal(LivingEntity source, LivingEntity target, ReferenceStat reference, double multiplier, boolean small) {
+        double hp = value(source, ReferenceStat.HP), atk = value(source, ReferenceStat.ATK), def = value(source, ReferenceStat.DEF);
+        double referenceValue = switch (reference) { case HP -> hp; case ATK -> atk; case DEF -> def; };
+        return healAmount(source,target,referenceValue*multiplier,small);
+    }
+
+    public long healAmount(LivingEntity source,LivingEntity target,double baseAmount,boolean small) {
+        if (target==null || target.isDead() || !Double.isFinite(baseAmount) || baseAmount<=0) return 0;
+        if (source==null) source=target;
+        double healingPower = source instanceof Player p ? stats.get(p, players.require(p)).value(StatKey.HEALING_POWER) : 0;
+        long amount = Math.round(Math.max(0,baseAmount*(1+healingPower)));
+        if (amount<=0) return 0;
+        double current=target instanceof Player p ? players.require(p).getHealth() : mobs.health(target);
+        double maximum=value(target,ReferenceStat.HP);
+        double effective=Math.min(amount,Math.max(0,maximum-current));
+        if (target instanceof Player player) {
+            PlayerData data = players.require(player); levels.setVirtualHealth(player, data, data.getHealth() + amount);
+        } else {
+            mobs.setHealth(target, mobs.health(target) + amount);
+        }
+        displays.heal(source == null ? target.getUniqueId() : source.getUniqueId(), target, amount, small);
+        if (triggers!=null) triggers.healed(source,target,amount,effective,amount-effective);
+        return amount;
+    }
+
+    public double value(LivingEntity source, ReferenceStat stat) {
+        if (source instanceof Player player) {
+            PlayerStats value = stats.get(player, players.require(player));
+            return switch (stat) { case HP -> value.maxHp(); case ATK -> value.atk(); case DEF -> value.def(); };
+        }
+        if (stat == ReferenceStat.HP) return mobs.maxHealth(source);
+        if (stat == ReferenceStat.DEF) return mobs.definition(source).map(definition -> mobs.defense(source,definition,mobs.level(source))).orElse(0.0);
+        Attribute attribute = switch (stat) { case HP -> Attribute.MAX_HEALTH; case ATK -> Attribute.ATTACK_DAMAGE; case DEF -> Attribute.ARMOR; };
+        return source.getAttribute(attribute) == null ? 0 : source.getAttribute(attribute).getValue();
+    }
+}
+```
+
+## BuffService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.api.v1.damage.dto.DamageRequest;
+import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
+import com.github.saku0817.combatcoresystems.model.BuffDefinition;
+import com.github.saku0817.combatcoresystems.model.PlayerData;
+import com.github.saku0817.combatcoresystems.model.TimedEffect;
+import com.github.saku0817.combatcoresystems.model.StatKey;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class BuffService {
+    private final JavaPlugin plugin;
+    private final DefinitionRegistry definitions;
+    private final PlayerDataService players;
+    private final StatService stats;
+    private final DamageService damage;
+    private final HealService healing;
+    private final Map<String, Long> nextTicks = new ConcurrentHashMap<>();
+    private final Map<UUID, List<TimedEffect>> entityEffects = new HashMap<>();
+    private final Map<UUID, Map<String, TimedEffect>> ownedEffects = new HashMap<>();
+    private long lastOrder;
+    private long order() { return lastOrder=Math.max(System.currentTimeMillis()*1000,lastOrder+1); }
+    private java.util.function.BiConsumer<LivingEntity, String> applied = (target,id) -> {};
+    private java.util.function.BiConsumer<LivingEntity, String> removed = (target,id) -> {};
+    public void bindEvents(java.util.function.BiConsumer<LivingEntity,String> applied, java.util.function.BiConsumer<LivingEntity,String> removed) {
+        this.applied=applied; this.removed=removed;
+    }
+    public List<TimedEffect> effects(LivingEntity target) {
+        List<TimedEffect> result=new ArrayList<>();
+        if (target instanceof Player p) players.find(p.getUniqueId()).ifPresent(data -> { result.addAll(data.getBuffs()); result.addAll(data.getDebuffs()); });
+        else result.addAll(entityEffects.getOrDefault(target.getUniqueId(),List.of()));
+        result.addAll(ownedEffects.getOrDefault(target.getUniqueId(),Map.of()).values());
+        result.sort(Comparator.comparingLong(TimedEffect::getAppliedOrder));
+        return List.copyOf(result);
+    }
+    public boolean has(LivingEntity target,String id) { return effects(target).stream().anyMatch(e -> e.getId().equals(id) && (e.isPermanent() || e.getRemainingMillis()>0)); }
+    public void acquire(LivingEntity target,String lease,String id,UUID source) {
+        if (!definitions.snapshot().buffs().containsKey(id) || target.isDead()) return;
+        var values=ownedEffects.computeIfAbsent(target.getUniqueId(),ignored -> new LinkedHashMap<>());
+        TimedEffect effect=new TimedEffect(id,source,1,0,true); effect.setAppliedOrder(order());
+        if (values.putIfAbsent(lease,effect)==null) {
+            stats.invalidate(target.getUniqueId()); applied.accept(target,id);
+        }
+    }
+    public void release(UUID target,String lease) {
+        var values=ownedEffects.get(target); if (values==null) return;
+        TimedEffect old=values.remove(lease);
+        if (values.isEmpty()) ownedEffects.remove(target);
+        if (old!=null) { stats.invalidate(target); if (Bukkit.getEntity(target) instanceof LivingEntity entity) removed.accept(entity,old.getId()); }
+    }
+    public boolean remove(LivingEntity target,String id) {
+        if (target instanceof Player p) return remove(p,id);
+        boolean changed=entityEffects.getOrDefault(target.getUniqueId(),new ArrayList<>()).removeIf(e -> e.getId().equals(id));
+        if (changed) { stats.invalidate(target.getUniqueId()); removed.accept(target,id); }
+        return changed;
+    }
+    public void refresh(LivingEntity target,String id,UUID source) {
+        BuffDefinition definition=definitions.snapshot().buffs().get(id);
+        if (definition==null || target.isDead()) return;
+        List<TimedEffect> effects;
+        if (target instanceof Player player) {
+            PlayerData data=players.require(player);
+            effects=definition.kind()==BuffDefinition.Kind.BUFF ? data.getBuffs() : data.getDebuffs();
+        } else effects=entityEffects.getOrDefault(target.getUniqueId(),List.of());
+        TimedEffect existing=effects.stream().filter(e -> e.getId().equals(id)).findFirst().orElse(null);
+        if (existing==null) { apply(target,id,source); return; }
+        existing.setRemainingMillis((long)(definition.durationSeconds()*1000)); existing.setAppliedOrder(order());
+        stats.invalidate(target.getUniqueId()); applied.accept(target,id);
+    }
+
+    public BuffService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
+                       DamageService damage, HealService healing) {
+        this.plugin = plugin; this.definitions = definitions; this.players = players; this.stats = stats;
+        this.damage = damage; this.healing = healing;
+    }
+
+    public void start() { Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 5L, 5L); }
+
+    public boolean apply(Player target, String id, UUID source) {
+        return apply((LivingEntity) target, id, source);
+    }
+
+    public boolean apply(LivingEntity target, String id, UUID source) {
+        BuffDefinition definition = definitions.snapshot().buffs().get(id);
+        if (definition == null || target.isDead()) return false;
+        List<TimedEffect> effects;
+        if (target instanceof Player player) {
+            PlayerData data = players.require(player);
+            effects = definition.kind() == BuffDefinition.Kind.BUFF ? data.getBuffs() : data.getDebuffs();
+        } else effects = entityEffects.computeIfAbsent(target.getUniqueId(), ignored -> new ArrayList<>());
+        TimedEffect existing = effects.stream().filter(effect -> effect.getId().equals(id)).findFirst().orElse(null);
+        long duration = (long) (definition.durationSeconds() * 1000);
+        if (existing == null) { existing=new TimedEffect(id, source, 1, duration, definition.permanent()); effects.add(existing); }
+        else switch (definition.reapply()) {
+            case REFRESH -> existing.setRemainingMillis(duration);
+            case STACK -> { existing.setStacks(Math.min(definition.maxStacks(), existing.getStacks() + 1)); existing.setRemainingMillis(duration); }
+            case OVERWRITE -> { existing.setStacks(1); existing.setRemainingMillis(duration); }
+            case CUSTOM -> { return false; }
+        }
+        existing.setAppliedOrder(order());
+        stats.invalidate(target.getUniqueId());
+        applied.accept(target,id);
+        return true;
+    }
+
+    public double modifier(LivingEntity target, StatKey key) {
+        List<TimedEffect> effects = effects(target);
+        double result = 0;
+        for (TimedEffect effect : effects) {
+            BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
+            if (definition != null && (effect.isPermanent() || effect.getRemainingMillis() > 0))
+                result += (definition.flatModifiers().getOrDefault(key, 0.0) + definition.percentModifiers().getOrDefault(key, 0.0)) * effect.getStacks();
+        }
+        return result;
+    }
+
+    public boolean remove(Player target, String id) {
+        PlayerData data = players.require(target);
+        boolean removed = data.getBuffs().removeIf(e -> e.getId().equals(id)) | data.getDebuffs().removeIf(e -> e.getId().equals(id));
+        if (removed) { stats.invalidate(target.getUniqueId()); this.removed.accept(target,id); }
+        return removed;
+    }
+
+    public void onDeath(Player player) {
+        PlayerData data = players.require(player);
+        data.getBuffs().removeIf(effect -> !effect.isPermanent());
+        data.getDebuffs().removeIf(effect -> !effect.isPermanent());
+        stats.invalidate(player.getUniqueId());
+    }
+
+    private void tick() {
+        long elapsed = 250;
+        for (var entry : List.copyOf(entityEffects.entrySet())) {
+            Entity raw = Bukkit.getEntity(entry.getKey());
+            if (!(raw instanceof LivingEntity living) || !living.isValid() || living.isDead()) {
+                String prefix = entry.getKey() + ":"; nextTicks.keySet().removeIf(key -> key.startsWith(prefix));
+                entityEffects.remove(entry.getKey()); continue;
+            }
+            updateList(living, entry.getValue(), elapsed);
+            if (entry.getValue().isEmpty()) entityEffects.remove(entry.getKey());
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            PlayerData data = players.find(player.getUniqueId()).orElse(null);
+            if (data == null) continue;
+            boolean changed = updateList(player, data.getBuffs(), elapsed);
+            changed |= updateList(player, data.getDebuffs(), elapsed);
+            if (changed) stats.invalidate(player.getUniqueId());
+        }
+        for (var entry : List.copyOf(ownedEffects.entrySet())) {
+            if (!(Bukkit.getEntity(entry.getKey()) instanceof LivingEntity target) || target.isDead()) continue;
+            for (TimedEffect effect : List.copyOf(entry.getValue().values())) {
+                BuffDefinition definition=definitions.snapshot().buffs().get(effect.getId());
+                if (definition!=null && definition.tickEffect()!=null) runTickEffect(target,effect,definition);
+            }
+        }
+    }
+
+    private boolean updateList(LivingEntity target, List<TimedEffect> effects, long elapsed) {
+        boolean changed = false;
+        for (TimedEffect effect : List.copyOf(effects)) {
+            if (!effects.contains(effect)) continue;
+            BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
+            if (definition == null) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); effects.remove(effect); changed = true; removed.accept(target,effect.getId()); continue; }
+            if (!effect.isPermanent()) {
+                effect.setRemainingMillis(Math.max(0, effect.getRemainingMillis() - elapsed));
+                if (effect.getRemainingMillis() == 0) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); effects.remove(effect); changed = true; removed.accept(target,effect.getId()); continue; }
+            }
+            if (definition.tickEffect() != null) runTickEffect(target, effect, definition);
+        }
+        return changed;
+    }
+
+    private void runTickEffect(LivingEntity target, TimedEffect effect, BuffDefinition definition) {
+        String key = target.getUniqueId() + ":" + effect.getId();
+        long now = System.currentTimeMillis();
+        if (nextTicks.getOrDefault(key, 0L) > now) return;
+        BuffDefinition.TickEffect tick = definition.tickEffect();
+        nextTicks.put(key, now + (long) (tick.intervalSeconds() * 1000));
+        LivingEntity source = target;
+        try {
+            Entity resolved = effect.getSource().isBlank() ? null : Bukkit.getEntity(UUID.fromString(effect.getSource()));
+            if (resolved instanceof LivingEntity living) source = living;
+        } catch (IllegalArgumentException ignored) {}
+        if (tick.healing()) healing.heal(source, target, tick.referenceStat(), tick.multiplier() * effect.getStacks(), true);
+        else damage.apply(new DamageRequest(source.getUniqueId(), target.getUniqueId(), tick.referenceStat(),
+                tick.multiplier() * effect.getStacks(), tick.element(), tick.critical(), tick.fixed(),
+                tick.fixed() ? tick.multiplier() * effect.getStacks() : 0, "effect:" + effect.getId()));
+    }
+}
+```
+
+## DamageService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.api.v1.damage.DamageApi;
+import com.github.saku0817.combatcoresystems.api.v1.damage.dto.DamageRequest;
+import com.github.saku0817.combatcoresystems.api.v1.damage.dto.DamageResult;
+import com.github.saku0817.combatcoresystems.api.v1.event.AfterDamageEvent;
+import com.github.saku0817.combatcoresystems.api.v1.event.BeforeDamageEvent;
+import com.github.saku0817.combatcoresystems.api.v1.event.ElementReactionEvent;
+import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
+import com.github.saku0817.combatcoresystems.model.*;
+import com.github.saku0817.combatcoresystems.util.CoreMath;
+import org.bukkit.Bukkit;
+import org.bukkit.NamespacedKey;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.*;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.ProjectileLaunchEvent;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
+
+import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
+
+public final class DamageService implements DamageApi, Listener {
+    private final JavaPlugin plugin;
+    private final DefinitionRegistry definitions;
+    private final PlayerDataService players;
+    private final StatService stats;
+    private final CombatStateService combat;
+    private final ElementService elements;
+    private final MobService mobs;
+    private final PartyService parties;
+    private final DamageDisplayService displays;
+    private final RegionService regions;
+    private final LevelService levels;
+    private final ItemService items;
+    private final NamespacedKey itemIdKey;
+    private final NamespacedKey projectileWeaponKey;
+    private final NamespacedKey projectileStageKey;
+    private final Map<UUID, AttackCharge> attackCharges = new HashMap<>();
+    private final Map<String, Long> heartReactionCooldowns = new HashMap<>();
+    private long nextHeartCooldownCleanup;
+    private BuffService buffs;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService triggers) { this.triggers=triggers; }
+    public void bindBuffs(BuffService buffs) { this.buffs = buffs; }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBeforeAttack(io.papermc.paper.event.player.PrePlayerAttackEntityEvent event) {
+        Player player = event.getPlayer();
+        attackCharges.put(player.getUniqueId(), new AttackCharge(Bukkit.getCurrentTick(), player.getAttackCooldown()));
+    }
+
+    @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) { attackCharges.remove(event.getPlayer().getUniqueId()); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBow(org.bukkit.event.entity.EntityShootBowEvent event) {
+        event.getProjectile().getPersistentDataContainer().set(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, (double) event.getForce());
+        var data=event.getProjectile().getPersistentDataContainer();
+        data.remove(projectileWeaponKey); data.remove(projectileStageKey);
+        ItemInstance instance=items.instance(event.getBow()).orElse(null);
+        if (instance!=null) {
+            data.set(projectileWeaponKey,PersistentDataType.STRING,instance.getDefinitionId());
+            data.set(projectileStageKey,PersistentDataType.INTEGER,instance.getLimitBreak());
+        }
+    }
+
+    private record AttackCharge(int tick, double value) {}
+
+    public DamageService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
+                         CombatStateService combat, ElementService elements, MobService mobs, PartyService parties,
+                         DamageDisplayService displays, RegionService regions, LevelService levels, ItemService items) {
+        this.items = items;
+        this.plugin = plugin;
+        this.definitions = definitions;
+        this.players = players;
+        this.stats = stats;
+        this.combat = combat;
+        this.elements = elements;
+        this.mobs = mobs;
+        this.parties = parties;
+        this.displays = displays;
+        this.regions = regions;
+        this.levels = levels;
+        this.itemIdKey = new NamespacedKey(plugin, "item_id");
+        this.projectileWeaponKey = new NamespacedKey(plugin, "projectile_weapon");
+        this.projectileStageKey = new NamespacedKey(plugin, "projectile_weapon_stage");
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onLaunch(ProjectileLaunchEvent event) {
+        if (!(event.getEntity().getShooter() instanceof Player player)) return;
+        if (event.getEntity().getPersistentDataContainer().has(new NamespacedKey(plugin,"shot_force"))) return;
+        String weapon = player.getInventory().getItemInMainHand().getPersistentDataContainer().get(itemIdKey, PersistentDataType.STRING);
+        if (weapon != null) event.getEntity().getPersistentDataContainer().set(projectileWeaponKey, PersistentDataType.STRING, weapon);
+        ItemInstance instance = items.instance(player.getInventory().getItemInMainHand()).orElse(null);
+        if (instance != null) event.getEntity().getPersistentDataContainer().set(projectileStageKey, PersistentDataType.INTEGER, instance.getLimitBreak());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onEntityDamage(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof LivingEntity target)) return;
+        LivingEntity attacker = resolveAttacker(event.getDamager());
+        if (attacker == null || attacker.equals(target)) { if (attacker != null) event.setCancelled(true); return; }
+        if (!allowed(attacker, target)) { event.setCancelled(true); return; }
+
+        String weaponId = weaponId(event.getDamager(), attacker);
+        combat.touch(attacker, weaponId);
+        combat.touch(target, "");
+        if (attacker instanceof Player player) stats.invalidate(player.getUniqueId());
+
+        double multiplier = 1.0;
+        if (attacker instanceof Player player && !(event.getDamager() instanceof Projectile)) {
+            AttackCharge charge = attackCharges.get(player.getUniqueId());
+            double cooled = charge != null && charge.tick() == Bukkit.getCurrentTick() ? charge.value() : player.getAttackCooldown();
+            multiplier = attackMultiplier(cooled);
+        } else if (event.getDamager() instanceof Projectile projectile) {
+            multiplier = bowAttackMultiplier(projectile.getPersistentDataContainer().getOrDefault(new NamespacedKey(plugin, "shot_force"), PersistentDataType.DOUBLE, 1.0));
+        }
+        Element element = mobs.definition(attacker).map(MobDefinition::nativeElement).orElse(Element.PHYSICAL);
+        if (attacker instanceof Player player) {
+            WeaponDefinition weapon = attackWeapon(player, event.getDamager());
+            if (weapon != null && weapon.canEquip(players.require(player).getLevel())) element = weapon.options().normalElement();
+            PlayerData data = players.require(player); ItemInstance heart = data.getEquipment().get(EquipmentSlot.DIVINE_HEART);
+            if (heart != null) {
+                var heartConfig = definitions.snapshot().config("divine_hearts.yml");
+                String path = "divine-hearts." + heart.getDefinitionId() + ".rules.";
+                if (weapon == null || weapon.options().normalElement() == Element.PHYSICAL)
+                    element = Element.parse(heartConfig.contains(path + "normal-attack-attribute")
+                            ? heartConfig.getString(path + "normal-attack-attribute") : heartConfig.getString(path + "normal-attack-element")).orElse(element);
+            }
+        }
+        DamageRequest request = new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), ReferenceStat.ATK,
+                multiplier, element, true, false, 0, "normal_attack");
+        event.setCancelled(true);
+        DamageResult result = apply(request);
+        if (!result.applied()) return;
+        WeaponDefinition activeWeapon = attacker instanceof Player owner ? attackWeapon(owner, event.getDamager()) : null;
+        if (attacker instanceof Player player && activeWeapon != null && activeWeapon.canEquip(players.require(player).getLevel()))
+            WeaponVisuals.play(target, activeWeapon.options().visual());
+        event.setCancelled(true);
+        if (result.finalDamage() > 0) applyStandardKnockback(attacker, target);
+    }
+
+    public boolean canAffect(LivingEntity attacker, LivingEntity target) { return !target.isDead() && allowed(attacker, target); }
+
+    private WeaponDefinition attackWeapon(Player player, Entity damager) {
+        if (damager instanceof Projectile projectile) {
+            String id = projectile.getPersistentDataContainer().get(projectileWeaponKey, PersistentDataType.STRING);
+            if (id == null) return null;
+            int stage = projectile.getPersistentDataContainer().getOrDefault(projectileStageKey, PersistentDataType.INTEGER, 0);
+            var variants = definitions.snapshot().weaponStages().get(id);
+            return variants == null ? definitions.snapshot().weapons().get(id) : variants.get(Math.clamp(stage, 0, 5));
+        }
+        return definitions.snapshot().weapon(items.instance(player.getInventory().getItemInMainHand()).orElse(null));
+    }
+
+    private boolean allowed(LivingEntity attacker, LivingEntity target) {
+        if (attacker instanceof Player first && target instanceof Player second) {
+            boolean global = definitions.snapshot().config("config.yml").getBoolean("pvp-enabled", true);
+            String regional = regions.flag(target.getLocation(), "pvp").orElse("");
+            boolean areaAllows = regional.equalsIgnoreCase("allow") || (regional.isBlank() && global);
+            if (!areaAllows) return false;
+            PlayerData firstData = players.find(first.getUniqueId()).orElse(null);
+            PlayerData secondData = players.find(second.getUniqueId()).orElse(null);
+            if (firstData == null || secondData == null || !firstData.isPvpEnabled() || !secondData.isPvpEnabled()) return false;
+            return !parties.sameParty(first.getUniqueId(), second.getUniqueId());
+        }
+        return true;
+    }
+
+    static double attackMultiplier(double cooled) {
+        double clamped = Math.max(0, Math.min(1, cooled));
+        return 0.2 + clamped * clamped * 0.8;
+    }
+
+    static double bowAttackMultiplier(double force) {
+        // Vanilla force=(draw^2+2*draw)/3. Recover draw time, never projectile velocity.
+        double draw = Math.sqrt(1 + 3 * Math.clamp(Double.isFinite(force) ? force : 0, 0, 1)) - 1;
+        return attackMultiplier(draw);
+    }
+
+    private LivingEntity resolveAttacker(Entity damager) {
+        if (damager instanceof LivingEntity living) return living;
+        if (damager instanceof Projectile projectile && projectile.getShooter() instanceof LivingEntity living) return living;
+        return null;
+    }
+
+    private String weaponId(Entity damageEntity, LivingEntity attacker) {
+        if (damageEntity instanceof Projectile projectile) {
+            String tagged = projectile.getPersistentDataContainer().get(projectileWeaponKey, PersistentDataType.STRING);
+            if (tagged != null) return tagged;
+        }
+        if (attacker instanceof Player player) {
+            String id = player.getInventory().getItemInMainHand().getPersistentDataContainer().get(itemIdKey, PersistentDataType.STRING);
+            return id == null ? "" : id;
+        }
+        return "";
+    }
+
+    @Override public DamageResult apply(DamageRequest request) {
+        if (!Bukkit.isPrimaryThread()) throw new IllegalStateException("Damage API must be called from the server thread");
+        return triggers==null ? applyInternal(request) : triggers.damage(request,() -> applyInternal(request));
+    }
+
+    private DamageResult applyInternal(DamageRequest request) {
+        Entity rawTarget = Bukkit.getEntity(request.target());
+        if (!(rawTarget instanceof LivingEntity target) || target.isDead()) return DamageResult.failed(request.source(), "target_not_available");
+        LivingEntity attacker = null;
+        if (request.attacker() != null) {
+            Entity rawAttacker = Bukkit.getEntity(request.attacker());
+            if (!(rawAttacker instanceof LivingEntity living)) return DamageResult.failed(request.source(), "attacker_not_available");
+            attacker = living;
+        }
+        BeforeDamageEvent before = new BeforeDamageEvent(request);
+        Bukkit.getPluginManager().callEvent(before);
+        if (before.isCancelled()) return DamageResult.failed(request.source(), "cancelled");
+        if (attacker!=null && !allowed(attacker,target)) return DamageResult.failed(request.source(),"not_allowed");
+        if (triggers!=null) triggers.beforeHit();
+        if (target.isDead()) return DamageResult.failed(request.source(),"target_not_available");
+
+        DamageResult result = calculate(request, attacker, target);
+        if (!result.applied()) return result;
+        if (attacker != null && !allowed(attacker, target)) return DamageResult.failed(request.source(), "not_allowed");
+        if (entersCombat(result.finalDamage(), attacker == null ? null : attacker.getUniqueId(), target.getUniqueId())) {
+            combat.touch(attacker, weaponId(attacker, attacker));
+            combat.touch(target, "");
+        }
+        if (result.finalDamage() > 0 && attacker instanceof Player player) target.setKiller(player);
+        long overdamage = overdamage(target, result.finalDamage());
+        subtractHealth(target, result.finalDamage());
+        UUID owner = attacker == null ? target.getUniqueId() : attacker.getUniqueId();
+        displays.damage(owner, target, result.finalDamage(), result.critical(), null, false, overdamage, request.element(), null);
+        Bukkit.getPluginManager().callEvent(new AfterDamageEvent(request, result));
+
+        if (!request.fixedDamage() && request.element() != Element.PHYSICAL && !mobs.immune(target, request.element()) && attacker != null && !target.isDead()) {
+            var config = definitions.snapshot().config("config.yml");
+            double duration = config.contains("attribute-attachment-seconds")
+                    ? config.getDouble("attribute-attachment-seconds", 5)
+                    : config.getDouble("element-attachment-seconds", 5);
+            LivingEntity reactionAttacker = attacker;
+            elements.attach(target, request.element(), duration).ifPresent(trigger -> applyReaction(reactionAttacker, target, request.referenceStat(), trigger));
+        }
+        return result;
+    }
+
+    private DamageResult calculate(DamageRequest request, LivingEntity attacker, LivingEntity target) {
+        if (request.fixedDamage()) {
+            return new DamageResult(true, CoreMath.roundedDamage(request.fixedAmount()), false, request.element(),
+                    request.fixedAmount(), 1, 0, request.source(), "");
+        }
+        if (attacker == null) return DamageResult.failed(request.source(), "attacker_required");
+        CombatantStats source = combatant(attacker);
+        CombatantStats defender = combatant(target);
+        if (triggers!=null && triggers.current()!=null) {
+            source=modified(source,triggers.current().sourceModifiers);
+            defender=modified(defender,triggers.current().targetModifiers);
+        }
+        double reference = switch (request.referenceStat()) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
+        double base = Math.max(0, reference * request.multiplier());
+        if (!request.components().isEmpty()) {
+            base=0;
+            for (var component : request.components()) base+=request.multiplier()*componentAmount(component,source.hp,source.atk,source.def,source.elementDamage(component.bonusElement()));
+        }
+        double outgoingIgnored = source.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORE)
+                : buffs == null ? 0 : buffs.modifier(attacker, StatKey.DEF_IGNORE);
+        double ignored = outgoingIgnored + (defender.details instanceof PlayerStats value ? value.value(StatKey.DEF_IGNORED_WHEN_HIT)
+                : buffs == null ? 0 : buffs.modifier(target, StatKey.DEF_IGNORED_WHEN_HIT));
+        double effectiveDef = CoreMath.effectiveDefense(defender.def, defender.defDown) * (1 - Math.clamp(ignored, 0, 1));
+        double defenseCoefficient = CoreMath.defenseCoefficient(source.level, defender.level, effectiveDef);
+        double damage = base * defenseCoefficient;
+        damage *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
+        double resistance = 0;
+        if (request.element() != Element.PHYSICAL) {
+            if (mobs.immune(target, request.element())) damage = 0;
+            else {
+                resistance = CoreMath.finalResistance(defender.resistance(request.element()),
+                        defender.resistanceDown(request.element()) + elements.resistanceDown(target.getUniqueId(), request.element()));
+                damage *= (request.components().isEmpty() ? 1 + source.elementDamage(request.element()) : 1) * (1 - resistance);
+            }
+        }
+        boolean critical = request.canCritical() && ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
+        if (critical) damage *= 1 + source.critDamage;
+        return new DamageResult(true, CoreMath.roundedDamage(damage), critical, request.element(), base,
+                defenseCoefficient, resistance, request.source(), "");
+    }
+
+    static boolean entersCombat(long damage, UUID attacker, UUID target) { return damage > 0 && attacker != null && !attacker.equals(target); }
+
+    private CombatantStats modified(CombatantStats original,com.github.saku0817.combatcoresystems.model.trigger.EventModifier modifier) {
+        Map<StatKey,Double> values=new EnumMap<>(StatKey.class);
+        for (StatKey key : StatKey.values()) {
+            double base=original.details instanceof PlayerStats p ? p.value(key) : 0;
+            values.put(key,modifier.advanced(key,base));
+        }
+        for (Element element : Element.values()) if (element!=Element.PHYSICAL) {
+            StatKey resistance=StatKey.valueOf(element.name()+"_RESISTANCE");
+            values.put(resistance,modifier.advanced(resistance,original.resistance(element)));
+        }
+        double hp=modifier.primary(StatKey.HP_FLAT,StatKey.HP_PERCENT,original.hp);
+        double atk=modifier.primary(StatKey.ATK_FLAT,StatKey.ATK_PERCENT,original.atk);
+        double def=modifier.primary(StatKey.DEF_FLAT,StatKey.DEF_PERCENT,original.def);
+        return new CombatantStats(original.level,hp,atk,def,modifier.advanced(StatKey.CRIT_RATE,original.critRate),
+                modifier.advanced(StatKey.CRIT_DAMAGE,original.critDamage),modifier.advanced(StatKey.DEF_DOWN,original.defDown),
+                new PlayerStats(original.level,hp,atk,def,values));
+    }
+
+    static double componentAmount(WeaponOptions.Component component, double hp, double atk, double def, double bonus) {
+        double reference = switch (component.reference()) { case HP -> hp; case ATK -> atk; case DEF -> def; };
+        return Math.max(0, reference * component.multiplier() * (component.bonusElement() == Element.PHYSICAL ? 1 : Math.max(0, 1 + bonus)));
+    }
+
+    private void applyReaction(LivingEntity attacker, LivingEntity central, ReferenceStat referenceStat, ElementService.ReactionTrigger trigger) {
+        referenceStat = divineReactionReference(attacker, trigger, referenceStat);
+        trigger = divineReaction(attacker, central, trigger);
+        if (trigger == null) return;
+        List<LivingEntity> targets = new ArrayList<>();
+        targets.add(central);
+        if (trigger.definition().radius() > 0) {
+            central.getWorld().getNearbyLivingEntities(central.getLocation(), trigger.definition().radius(),
+                    entity -> !entity.equals(attacker) && !entity.equals(central)).forEach(targets::add);
+        }
+        CombatantStats source = combatant(attacker);
+        double reference = switch (referenceStat) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
+        for (LivingEntity target : targets) {
+            if (target.isDead() || !allowed(attacker, target)) continue;
+            CombatantStats defender = combatant(target);
+            double total = 0;
+            for (Map.Entry<Element, Double> component : trigger.definition().components().entrySet()) {
+                if (mobs.immune(target, component.getKey())) continue;
+                double resistance = CoreMath.finalResistance(defender.resistance(component.getKey()),
+                        defender.resistanceDown(component.getKey()) + elements.resistanceDown(target.getUniqueId(), component.getKey()));
+                int hits = component.getKey() == trigger.definition().multiHitElement() ? trigger.definition().hits() : 1;
+                total += reference * component.getValue() * (1 + source.elementDamage(component.getKey())) * (1 - resistance) * hits;
+            }
+            boolean critical = ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
+            if (critical) total *= 1 + source.critDamage;
+            total *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
+            long rounded = CoreMath.roundedDamage(total);
+            if (!allowed(attacker, target)) continue;
+            if (rounded > 0 && attacker instanceof Player player) target.setKiller(player);
+            long overdamage = overdamage(target, rounded);
+            subtractHealth(target, rounded);
+            displays.damage(attacker.getUniqueId(), target, rounded, critical, trigger.definition().name(), false, overdamage, trigger.incoming(), null);
+            if (entersCombat(rounded, attacker.getUniqueId(), target.getUniqueId())) {
+                combat.touch(attacker, weaponId(attacker, attacker)); combat.touch(target, "");
+            }
+            Bukkit.getPluginManager().callEvent(new AfterDamageEvent(
+                    new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), referenceStat, 1, trigger.incoming(), false, true, rounded, "reaction:" + trigger.definition().id()),
+                    new DamageResult(true, rounded, critical, trigger.incoming(), total, 1, 0, "reaction:" + trigger.definition().id(), "")));
+            if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
+            if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
+                    trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());
+            Bukkit.getPluginManager().callEvent(new ElementReactionEvent(target.getUniqueId(), trigger.definition().id(),
+                    trigger.existing(), trigger.incoming(), rounded));
+        }
+    }
+
+    private ReferenceStat divineReactionReference(LivingEntity attacker, ElementService.ReactionTrigger trigger, ReferenceStat fallback) {
+        if (!(attacker instanceof Player player)) return fallback;
+        ItemInstance heart = players.require(player).getEquipment().get(EquipmentSlot.DIVINE_HEART);
+        if (heart == null) return fallback;
+        var config = definitions.snapshot().config("divine_hearts.yml");
+        String root = "divine-hearts." + heart.getDefinitionId() + ".rules.reaction-override";
+        Element source = Element.parse(config.getString(root + ".source-attribute")).orElse(null);
+        if (source != trigger.incoming()) return fallback;
+        try { return ReferenceStat.valueOf(config.getString(root + ".damage.reference", fallback.name()).toUpperCase(Locale.ROOT)); }
+        catch (IllegalArgumentException ex) { return fallback; }
+    }
+
+    private ElementService.ReactionTrigger divineReaction(LivingEntity attacker, LivingEntity target, ElementService.ReactionTrigger original) {
+        if (!(attacker instanceof Player player)) return original;
+        ItemInstance heart = players.require(player).getEquipment().get(EquipmentSlot.DIVINE_HEART);
+        if (heart == null) return original;
+        var config = definitions.snapshot().config("divine_hearts.yml");
+        String root = "divine-hearts." + heart.getDefinitionId() + ".rules.reaction-override";
+        if (!config.isConfigurationSection(root)) return original;
+        Element source = Element.parse(config.getString(root + ".source-attribute")).orElse(null);
+        if (source == null || original.incoming() != source) return original;
+        String id = config.getString(root + ".id", heart.getDefinitionId() + "_reaction");
+        long now = System.currentTimeMillis();
+        String cooldownKey = target.getUniqueId() + ":" + id;
+        if (now >= nextHeartCooldownCleanup) {
+            heartReactionCooldowns.entrySet().removeIf(entry -> entry.getValue() <= now);
+            nextHeartCooldownCleanup = now + 1000;
+        }
+        if (heartReactionCooldowns.getOrDefault(cooldownKey, 0L) > now) return null;
+        double cooldown = Math.max(0, config.getDouble(root + ".cooldown-seconds", 0));
+        heartReactionCooldowns.put(cooldownKey, now + (long) (cooldown * 1000));
+        Element damageElement = Element.parse(config.getString(root + ".damage.attribute", source.name())).orElse(source);
+        Element downElement = Element.parse(config.getString(root + ".resistance-down.attribute", damageElement.name())).orElse(damageElement);
+        ReactionDefinition replacement = new ReactionDefinition(id, config.getString(root + ".name", id), original.existing(), original.incoming(),
+                Math.max(0, config.getDouble(root + ".radius", 0)), cooldown, 1, null, 0,
+                Map.of(damageElement, Math.max(0, config.getDouble(root + ".damage.multiplier", 1))), downElement,
+                Math.max(0, config.getDouble(root + ".resistance-down.amount", 0)), Math.max(0, config.getDouble(root + ".resistance-down.duration-seconds", 0)));
+        return new ElementService.ReactionTrigger(replacement, original.existing(), original.incoming());
+    }
+
+    private CombatantStats combatant(LivingEntity entity) {
+        if (entity instanceof Player player) {
+            PlayerData data = players.require(player);
+            PlayerStats value = stats.get(player, data);
+            return new CombatantStats(value.level(), value.maxHp(), value.atk(), value.def(), value.value(StatKey.CRIT_RATE),
+                    value.value(StatKey.CRIT_DAMAGE), value.value(StatKey.DEF_DOWN), value);
+        }
+        MobDefinition definition = mobs.definition(entity).orElse(null);
+        int level = definition == null ? 1 : mobs.level(entity);
+        double hp = mobs.maxHealth(entity);
+        double atk = attribute(entity, Attribute.ATTACK_DAMAGE, 2);
+        double def = definition == null ? 0 : mobs.defense(entity, definition, level);
+        if (buffs != null) {
+            atk = CoreMath.attack(atk, 0, buffs.modifier(entity, StatKey.ATK_PERCENT), buffs.modifier(entity, StatKey.ATK_FLAT));
+            def = Math.max(0, def * (1 + buffs.modifier(entity, StatKey.DEF_PERCENT)) + buffs.modifier(entity, StatKey.DEF_FLAT));
+        }
+        if (triggers==null) return new CombatantStats(level,hp,atk,def,0.05,0.5,buffs==null ? 0 : buffs.modifier(entity,StatKey.DEF_DOWN),definition);
+        Map<StatKey,Double> modifiers=new EnumMap<>(StatKey.class);
+        for (StatKey key : StatKey.values()) modifiers.put(key,buffs==null ? 0 : buffs.modifier(entity,key));
+        Map<StatKey,Double> dynamic=triggers.dynamic().modifiers(entity.getUniqueId());
+        dynamic.forEach((key,value) -> modifiers.merge(key,value,Double::sum));
+        atk=atk*(1+dynamic.getOrDefault(StatKey.ATK_PERCENT,0.0))+dynamic.getOrDefault(StatKey.ATK_FLAT,0.0);
+        def=def*(1+dynamic.getOrDefault(StatKey.DEF_PERCENT,0.0))+dynamic.getOrDefault(StatKey.DEF_FLAT,0.0);
+        hp=hp*(1+dynamic.getOrDefault(StatKey.HP_PERCENT,0.0))+dynamic.getOrDefault(StatKey.HP_FLAT,0.0);
+        modifiers.merge(StatKey.CRIT_RATE,.05,Double::sum); modifiers.merge(StatKey.CRIT_DAMAGE,.5,Double::sum);
+        if (definition!=null) definition.resistances().forEach((element,value) -> {
+            if (element!=Element.PHYSICAL) modifiers.merge(StatKey.valueOf(element.name()+"_RESISTANCE"),value,Double::sum);
+        });
+        if (buffs!=null) for (TimedEffect effect : buffs.effects(entity)) {
+            var overrides=definitions.snapshot().config("buffs.yml").getConfigurationSection("buffs."+effect.getId()+".modifiers.override");
+            if (overrides!=null) for (String key : overrides.getKeys(false)) {
+                double value=overrides.getDouble(key);
+                switch(StatKey.valueOf(key)) { case HP_FLAT -> hp=value; case ATK_FLAT -> atk=value; case DEF_FLAT -> def=value; default -> modifiers.put(StatKey.valueOf(key),value); }
+            }
+        }
+        PlayerStats details=new PlayerStats(level,hp,atk,def,modifiers);
+        return new CombatantStats(level,hp,atk,def,details.value(StatKey.CRIT_RATE),details.value(StatKey.CRIT_DAMAGE),details.value(StatKey.DEF_DOWN),details);
+    }
+
+    private double attribute(LivingEntity entity, Attribute attribute, double fallback) {
+        var instance = entity.getAttribute(attribute);
+        return instance == null ? fallback : instance.getValue();
+    }
+
+    private void subtractHealth(LivingEntity target, long damage) {
+        if (damage <= 0 || target.isDead()) return;
+        target.setLastDamage(damage);
+        target.setNoDamageTicks(target.getMaximumNoDamageTicks());
+        if (target instanceof Player player) {
+            PlayerData data = players.require(player);
+            levels.setVirtualHealth(player, data, data.getHealth() - damage);
+        } else mobs.setHealth(target, mobs.health(target) - damage);
+    }
+
+    private long overdamage(LivingEntity target, long damage) {
+        if (!definitions.snapshot().config("config.yml").getBoolean("text-display.show-overdamage", true)) return 0;
+        double current = target instanceof Player player ? players.require(player).getHealth() : mobs.health(target);
+        return CoreMath.overdamage(damage, current);
+    }
+
+    private void applyStandardKnockback(LivingEntity attacker, LivingEntity target) {
+        Vector direction = target.getLocation().toVector().subtract(attacker.getLocation().toVector()).setY(0);
+        if (direction.lengthSquared() == 0) return;
+        target.setVelocity(target.getVelocity().multiply(0.5).add(direction.normalize().multiply(0.4)).setY(0.2));
+    }
+
+    private record CombatantStats(int level, double hp, double atk, double def, double critRate, double critDamage,
+                                  double defDown, Object details) {
+        double elementDamage(Element element) {
+            if (details instanceof PlayerStats player) return player.elementDamage(element);
+            return 0;
+        }
+        double resistance(Element element) {
+            if (details instanceof PlayerStats player) return player.resistance(element);
+            if (details instanceof MobDefinition mob) return mob.resistances().getOrDefault(element, 0.0);
+            return 0;
+        }
+        double resistanceDown(Element element) { return details instanceof PlayerStats player ? player.resistanceDown(element) : 0; }
+    }
+}
+```
+
+## SkillService.java
 
 ```java
 package com.github.saku0817.combatcoresystems.service;
@@ -1968,6 +3723,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class SkillService implements Listener {
     private SetEffectService setEffects;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService value) { triggers=value; }
     public void bindSetEffects(SetEffectService value) { setEffects = value; }
     private final DefinitionRegistry definitions;
     private final PlayerDataService players;
@@ -2149,6 +3906,7 @@ public final class SkillService implements Listener {
         WeaponDefinition.SkillDefinition ability = ultimate ? weapon.ultimate() : weapon.skill();
         if (ability == null) return fail(player, "undefined", "この武器には使用する技が設定されていません。");
         if (!conditionsMet(player, target, ability.conditions())) return fail(player, "conditions", "技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。");
+        if (triggers!=null && !triggers.canCast(player,target,weaponId,ultimate,ability.conditions())) return fail(player,"conditions","技の発動条件を満たしていません。");
         if (java.util.stream.Stream.concat(ability.options().selfEffects().stream(), ability.options().targetEffects().stream())
                 .anyMatch(id -> !definitions.snapshot().buffs().containsKey(id))) return fail(player, "effect", "参照先のバフ・デバフ設定が見つかりません。");
         if (target != null && !ability.target().equalsIgnoreCase("SELF") && !damage.canAffect(player, target))
@@ -2206,6 +3964,7 @@ public final class SkillService implements Listener {
         trace("cast success", player, "weapon=" + weaponId + " kind=" + (ultimate ? "ultimate" : "skill") + " empty=" + emptyCast);
         if (setEffects != null) setEffects.fire(player, ultimate ? com.github.saku0817.combatcoresystems.model.SetTrigger.Event.ULTIMATE
                 : com.github.saku0817.combatcoresystems.model.SetTrigger.Event.SKILL, target != null && damage.canAffect(player, target) ? target : null);
+        if (triggers!=null) triggers.cast(player,target,weaponId,limitBreak,ultimate);
         if (emptyCast) WeaponVisuals.play(player, ability.options().visual());
         Element activeElement = element;
         for (LivingEntity current : targets) {
@@ -2314,5 +4073,317 @@ public final class SkillService implements Listener {
         }
         double remainingSeconds() { return charges > 0 || nextChargeAt == 0 ? 0 : Math.max(0, (nextChargeAt - System.currentTimeMillis()) / 1000.0); }
     }
+}
+```
+
+## StatService.java
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
+import com.github.saku0817.combatcoresystems.model.*;
+import com.github.saku0817.combatcoresystems.util.CoreMath;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
+import org.bukkit.NamespacedKey;
+import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+public final class StatService implements Listener {
+    private final JavaPlugin plugin;
+    private final DefinitionRegistry definitions;
+    private final CombatStateService combat;
+    private final ItemService items;
+    private final NamespacedKey itemIdKey;
+    private final Map<UUID, PlayerStats> cache = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> cacheTicks = new HashMap<>();
+    private DefinitionRegistry.Snapshot cachedDefinitions;
+    private DefinitionRegistry.Snapshot talentDefinitions;
+    private Set<WeaponOptions.Hand> talentHands = Set.of();
+    private final Map<UUID, Set<String>> activeTalents = new HashMap<>();
+    private BuffService buffs;
+    private DynamicEffectService dynamic;
+    public void bindEffects(BuffService buffs,DynamicEffectService dynamic) { this.buffs=buffs; this.dynamic=dynamic; }
+
+    public StatService(JavaPlugin plugin, DefinitionRegistry definitions, CombatStateService combat, ItemService items) {
+        this.plugin = plugin;
+        this.definitions = definitions;
+        this.combat = combat;
+        this.items = items;
+        this.itemIdKey = new NamespacedKey(plugin, "item_id");
+    }
+
+    public PlayerStats get(Player player, PlayerData data) {
+        if (cachedDefinitions != definitions.snapshot()) { cache.clear(); cacheTicks.clear(); cachedDefinitions = definitions.snapshot(); }
+        // Share repeated HUD/damage queries within one tick, never cache external changes indefinitely.
+        PlayerStats value = cache.get(player.getUniqueId());
+        return value != null && Objects.equals(cacheTicks.get(player.getUniqueId()), org.bukkit.Bukkit.getCurrentTick())
+                ? value : recalculate(player, data);
+    }
+
+    public PlayerStats recalculate(Player player, PlayerData data) {
+        PlayerStats stats = calculate(player, data, false);
+        synchronizeAttackAttribute(player, stats.atk());
+        cache.put(player.getUniqueId(), stats);
+        cacheTicks.put(player.getUniqueId(), org.bukkit.Bukkit.getCurrentTick());
+        return stats;
+    }
+
+    public void invalidate(UUID uuid) { cache.remove(uuid); }
+
+    @EventHandler public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        cache.remove(event.getPlayer().getUniqueId());
+        cacheTicks.remove(event.getPlayer().getUniqueId());
+        activeTalents.remove(event.getPlayer().getUniqueId());
+    }
+
+    @EventHandler public void onHeldItem(PlayerItemHeldEvent event) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> invalidate(event.getPlayer().getUniqueId()));
+    }
+
+    @EventHandler public void onSwapHand(PlayerSwapHandItemsEvent event) {
+        plugin.getServer().getScheduler().runTask(plugin, () -> invalidate(event.getPlayer().getUniqueId()));
+    }
+
+    public PlayerStats describe(Player player, PlayerData data) { return calculate(player, data, true); }
+
+    private PlayerStats calculate(Player player, PlayerData data, boolean detailed) {
+        if (talentDefinitions != definitions.snapshot()) {
+            talentDefinitions = definitions.snapshot();
+            talentHands = java.util.stream.Stream.concat(talentDefinitions.weapons().values().stream(),
+                            talentDefinitions.weaponStages().values().stream().flatMap(List::stream))
+                    .map(weapon -> weapon.options().talent()).filter(Objects::nonNull)
+                    .map(WeaponOptions.Talent::hand).collect(java.util.stream.Collectors.toSet());
+        }
+        YamlConfiguration levels = definitions.snapshot().config("levels.yml");
+        int level = data.getLevel();
+        int rebirth = data.getRebirthCount();
+        double baseHp = CoreMath.linear(levels.getDouble("player.hp.start", 20), levels.getDouble("player.hp.end", 3000), level, 100)
+                + levels.getDouble("player.rebirth.hp", 100) * rebirth;
+        double playerBaseAtk = CoreMath.linear(levels.getDouble("player.atk.start", 2), levels.getDouble("player.atk.end", 200), level, 100)
+                + levels.getDouble("player.rebirth.atk", 20) * rebirth;
+        double baseDef = CoreMath.linear(levels.getDouble("player.def.start", 0), levels.getDouble("player.def.end", 100), level, 100)
+                + levels.getDouble("player.rebirth.def", 10) * rebirth;
+
+        EnumMap<StatKey, Double> modifiers = defaults();
+        Map<String, Map<StatKey, Double>> sources = new LinkedHashMap<>();
+        if (detailed) sources.put("基礎値", Map.of(StatKey.HP_FLAT, baseHp, StatKey.ATK_FLAT, playerBaseAtk, StatKey.DEF_FLAT, baseDef,
+                StatKey.CRIT_RATE, modifiers.get(StatKey.CRIT_RATE), StatKey.CRIT_DAMAGE, modifiers.get(StatKey.CRIT_DAMAGE), StatKey.ATTACK_SPEED, modifiers.get(StatKey.ATTACK_SPEED)));
+        double weaponAtk = vanillaWeaponAttack(player, levels);
+        if (detailed && weaponAtk != 0) sources.put("バニラ武器から", Map.of(StatKey.ATK_FLAT, weaponAtk));
+        Set<String> currentTalents = new HashSet<>();
+        Set<String> previousTalents = activeTalents.getOrDefault(player.getUniqueId(), Set.of());
+        Set<String> counted = new HashSet<>();
+        int selected = player.getInventory().getHeldItemSlot();
+        for (int slot = 0; slot <= 40; slot++) {
+            if (slot >= 36 && slot <= 39) continue;
+            if (slot != selected && slot != 40 && !talentHands.contains(WeaponOptions.Hand.INVENTORY)
+                    && !(slot <= 8 && talentHands.contains(WeaponOptions.Hand.HOT_BAR))) continue;
+            ItemStack stack = player.getInventory().getItem(slot);
+            if (!definitions.snapshot().weapons().containsKey(items.id(stack).orElse(""))) continue;
+            ItemInstance instance = items.instance(stack).orElse(null);
+            WeaponDefinition weapon = instance == null ? null : definitions.snapshot().weapon(instance);
+            if (weapon == null) continue;
+            if (!counted.add(instance.getInstanceId())) continue;
+            if (!weapon.canEquip(level)) continue;
+            if (slot == selected || slot == 40) {
+                weaponAtk += weapon.attackFor(level, instance.getLevel());
+                if (detailed) sources.computeIfAbsent("武器：" + weapon.name(), ignored -> new EnumMap<>(StatKey.class)).merge(StatKey.ATK_FLAT, weapon.attackFor(level, instance.getLevel()), Double::sum);
+                if (weapon.bonusElement() != Element.PHYSICAL) add(modifiers, damageKey(weapon.bonusElement()), weapon.elementBonus());
+                if (detailed && weapon.bonusElement() != Element.PHYSICAL) sources.get("武器：" + weapon.name()).merge(damageKey(weapon.bonusElement()), weapon.elementBonus(), Double::sum);
+            }
+            WeaponOptions.Talent talent = weapon.options().talent();
+            if (talent != null && talent.hand().includes(slot, selected)) {
+                EnumMap<StatKey, Double> beforeTalent = detailed ? new EnumMap<>(modifiers) : null;
+                talent.modifiers().forEach((key, value) -> add(modifiers, key, value * talent.multiplier()));
+                recordDelta(sources, "天賦：" + talent.name(), beforeTalent, modifiers);
+                String activation = instance.getInstanceId() + ":" + talent.name();
+                currentTalents.add(activation);
+                if (!previousTalents.contains(activation)) {
+                    String message = definitions.snapshot().config("messages.yml").getString("ability-announcement.talent", "<green>天賦発動：<name></green>");
+                    if (!message.isBlank()) player.sendMessage(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage().deserialize(message.replace("<name>", talent.name())));
+                }
+            }
+        }
+        activeTalents.put(player.getUniqueId(), currentTalents);
+        EnumMap<StatKey, Double> beforeEquipment = detailed ? new EnumMap<>(modifiers) : null;
+        for (Map.Entry<EquipmentSlot, ItemInstance> equipped : data.getEquipment().entrySet()) {
+            ItemInstance item = equipped.getValue();
+            EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
+            if (equipment != null) {
+                add(modifiers, item.mainStat(equipment), item.mainValue(equipment));
+                item.getSubstats().entrySet().stream().limit(item.getUnlockedSubstats()).forEach(entry -> {
+                    String key = entry.getKey(); double value = entry.getValue();
+                    try { add(modifiers, StatKey.valueOf(key), value); } catch (IllegalArgumentException ignored) {}
+                });
+            }
+        }
+        recordDelta(sources, "装備から", beforeEquipment, modifiers);
+        List<TimedEffect> activeEffects=buffs==null ? java.util.stream.Stream.concat(data.getBuffs().stream(), data.getDebuffs().stream()).toList() : buffs.effects(player);
+        for (TimedEffect effect : activeEffects) {
+            EnumMap<StatKey, Double> before = detailed ? new EnumMap<>(modifiers) : null;
+            applyEffect(effect, modifiers);
+            recordDelta(sources, "バフ・デバフ：" + definitions.snapshot().config("buffs.yml").getString("buffs." + effect.getId() + ".name", effect.getId()), before, modifiers);
+        }
+        EnumMap<StatKey, Double> beforeTree = detailed ? new EnumMap<>(modifiers) : null;
+        applySkillTree(data, modifiers); recordDelta(sources, "スキルツリーから", beforeTree, modifiers);
+        for (var set : SetEffectService.counts(definitions.snapshot(), data).entrySet()) {
+            EnumMap<StatKey, Double> before = detailed ? new EnumMap<>(modifiers) : null;
+            var config = definitions.snapshot().config("sets.yml");
+            if (set.getValue() >= 2) applyModifierSection(config.getConfigurationSection("sets." + set.getKey() + ".two-piece.modifiers"), modifiers);
+            if (set.getValue() >= 4) applyModifierSection(config.getConfigurationSection("sets." + set.getKey() + ".four-piece.modifiers"), modifiers);
+            recordDelta(sources, "セット効果：" + config.getString("sets." + set.getKey() + ".name", set.getKey()), before, modifiers);
+        }
+        EnumMap<StatKey, Double> beforeHeart = detailed ? new EnumMap<>(modifiers) : null;
+        applyDivineHeart(data, modifiers); recordDelta(sources, "神心から", beforeHeart, modifiers);
+
+        double vanillaArmor = 0;
+        if (dynamic!=null) {
+            var before=detailed ? new EnumMap<>(modifiers) : null;
+            dynamic.modifiers(player.getUniqueId()).forEach((key,value) -> add(modifiers,key,value));
+            recordDelta(sources,"動的効果から",before,modifiers);
+        }
+        Map<StatKey,Double> finalOverrides=new EnumMap<>(StatKey.class);
+        for (TimedEffect effect : activeEffects) {
+            if (!effect.isPermanent() && effect.getRemainingMillis()<=0) continue;
+            var overrides=definitions.snapshot().config("buffs.yml").getConfigurationSection("buffs."+effect.getId()+".modifiers.override");
+            if (overrides==null) continue;
+            for (String key : overrides.getKeys(false)) {
+                StatKey stat=StatKey.valueOf(key); double value=overrides.getDouble(key);
+                finalOverrides.put(stat,value);
+            }
+        }
+        var beforeOverrides=detailed ? new EnumMap<>(modifiers) : null;
+        finalOverrides.forEach((key,value) -> { if (!Set.of(StatKey.HP_FLAT,StatKey.ATK_FLAT,StatKey.DEF_FLAT).contains(key)) modifiers.put(key,value); });
+        recordDelta(sources,"固定値補正（バフ・デバフ）",beforeOverrides,modifiers);
+        AttributeInstance armor = player.getAttribute(Attribute.ARMOR);
+        if (armor != null) vanillaArmor = armor.getValue();
+        if (detailed && vanillaArmor != 0) sources.put("バニラ防具から", Map.of(StatKey.DEF_FLAT, vanillaArmor));
+        double hp = finalOverrides.getOrDefault(StatKey.HP_FLAT,baseHp * (1 + modifiers.get(StatKey.HP_PERCENT)) + modifiers.get(StatKey.HP_FLAT));
+        double atk = finalOverrides.getOrDefault(StatKey.ATK_FLAT,CoreMath.attack(playerBaseAtk, weaponAtk, modifiers.get(StatKey.ATK_PERCENT), modifiers.get(StatKey.ATK_FLAT)));
+        double def = finalOverrides.getOrDefault(StatKey.DEF_FLAT,(baseDef + vanillaArmor) * (1 + modifiers.get(StatKey.DEF_PERCENT)) + modifiers.get(StatKey.DEF_FLAT));
+        if (detailed) {
+            var original=Map.of(StatKey.HP_FLAT,baseHp*(1+modifiers.get(StatKey.HP_PERCENT))+modifiers.get(StatKey.HP_FLAT),
+                    StatKey.ATK_FLAT,CoreMath.attack(playerBaseAtk,weaponAtk,modifiers.get(StatKey.ATK_PERCENT),modifiers.get(StatKey.ATK_FLAT)),
+                    StatKey.DEF_FLAT,(baseDef+vanillaArmor)*(1+modifiers.get(StatKey.DEF_PERCENT))+modifiers.get(StatKey.DEF_FLAT));
+            for (var key : original.keySet()) if (finalOverrides.containsKey(key))
+                sources.computeIfAbsent("固定値補正（バフ・デバフ）",ignored -> new EnumMap<>(StatKey.class)).put(key,finalOverrides.get(key)-original.get(key));
+        }
+        return new PlayerStats(level, hp, atk, def, modifiers).withSources(sources);
+    }
+
+    private void recordDelta(Map<String, Map<StatKey, Double>> sources, String label, Map<StatKey, Double> before, Map<StatKey, Double> after) {
+        if (before == null) return;
+        for (StatKey key : StatKey.values()) {
+            double delta = after.getOrDefault(key, 0.0) - before.getOrDefault(key, 0.0);
+            if (Math.abs(delta) > 1e-12) sources.computeIfAbsent(label, ignored -> new EnumMap<>(StatKey.class)).merge(key, delta, Double::sum);
+        }
+    }
+
+    private double vanillaWeaponAttack(Player player, YamlConfiguration levels) {
+        if (!levels.getBoolean("player.vanilla-weapons.enabled", true)) return 0;
+        ItemStack held = player.getInventory().getItemInMainHand();
+        if (held.getType().isAir()) return 0;
+        if (held.hasItemMeta()) {
+            String itemId = held.getItemMeta().getPersistentDataContainer().get(itemIdKey, PersistentDataType.STRING);
+            if (itemId != null && definitions.snapshot().weapons().containsKey(itemId)) return 0;
+        }
+        double value = levels.getDouble("player.vanilla-weapons.attack-values." + held.getType().name(), 0);
+        return Math.max(0, value * levels.getDouble("player.vanilla-weapons.conversion-multiplier", 1));
+    }
+
+    /** Native held-item modifiers must not be added a second time to CCS's final ATK. */
+    static void synchronizeAttackAttribute(Player player, double finalAttack) {
+        AttributeInstance attribute = player.getAttribute(Attribute.ATTACK_DAMAGE);
+        if (attribute == null) return;
+        double add = 0, scalar = 0, product = 1;
+        for (org.bukkit.attribute.AttributeModifier modifier : attribute.getModifiers()) {
+            switch (modifier.getOperation()) {
+                case ADD_NUMBER -> add += modifier.getAmount();
+                case ADD_SCALAR -> scalar += modifier.getAmount();
+                case MULTIPLY_SCALAR_1 -> product *= 1 + modifier.getAmount();
+            }
+        }
+        double factor = (1 + scalar) * product;
+        if (factor > 0 && Double.isFinite(factor)) {
+            double base = CoreMath.nativeAttackBase(finalAttack, add, scalar, product);
+            if (Double.compare(attribute.getBaseValue(), base) != 0) attribute.setBaseValue(base);
+        }
+    }
+
+    private EnumMap<StatKey, Double> defaults() {
+        EnumMap<StatKey, Double> values = new EnumMap<>(StatKey.class);
+        for (StatKey key : StatKey.values()) values.put(key, 0.0);
+        values.put(StatKey.CRIT_RATE, 0.05);
+        values.put(StatKey.CRIT_DAMAGE, 0.50);
+        values.put(StatKey.ATTACK_SPEED, 4.0);
+        return values;
+    }
+
+    private void applyEffects(PlayerData data, EnumMap<StatKey, Double> modifiers) {
+        for (TimedEffect effect : data.getBuffs()) applyEffect(effect, modifiers);
+        for (TimedEffect effect : data.getDebuffs()) applyEffect(effect, modifiers);
+    }
+
+    private void applyEffect(TimedEffect effect, EnumMap<StatKey, Double> modifiers) {
+        BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
+        if (definition == null) return;
+        definition.flatModifiers().forEach((key, value) -> add(modifiers, key, value * effect.getStacks()));
+        definition.percentModifiers().forEach((key, value) -> add(modifiers, key, value * effect.getStacks()));
+    }
+
+    private void applySkillTree(PlayerData data, EnumMap<StatKey, Double> modifiers) {
+        var trees = definitions.snapshot().config("skill_trees.yml").getConfigurationSection("trees");
+        if (trees == null) return;
+        for (String tree : trees.getKeys(false)) {
+            for (var node : data.getSkillNodes().entrySet()) {
+                var section = trees.getConfigurationSection(tree + ".nodes." + node.getKey());
+                if (section == null) continue;
+                for (int rank = 1; rank <= node.getValue(); rank++) applyModifierSection(section.getConfigurationSection("ranks." + rank + ".modifiers"), modifiers);
+            }
+        }
+    }
+
+    private void applySetBonuses(PlayerData data, EnumMap<StatKey, Double> modifiers) {
+        Map<String, Integer> counts = new HashMap<>();
+        for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET, EquipmentSlot.RESONANCE)) {
+            ItemInstance item = data.getEquipment().get(slot);
+            EquipmentDefinition definition = item == null ? null : definitions.snapshot().equipment().get(item.getDefinitionId());
+            if (definition != null && !definition.setId().isBlank()) counts.merge(definition.setId(), 1, Integer::sum);
+        }
+        var sets = definitions.snapshot().config("sets.yml");
+        counts.forEach((id, count) -> {
+            if (count >= 2) applyModifierSection(sets.getConfigurationSection("sets." + id + ".two-piece.modifiers"), modifiers);
+            if (count >= 4) applyModifierSection(sets.getConfigurationSection("sets." + id + ".four-piece.modifiers"), modifiers);
+        });
+    }
+
+    private void applyDivineHeart(PlayerData data, EnumMap<StatKey, Double> modifiers) {
+        ItemInstance heart = data.getEquipment().get(EquipmentSlot.DIVINE_HEART);
+        if (heart != null) applyModifierSection(definitions.snapshot().config("divine_hearts.yml")
+                .getConfigurationSection("divine-hearts." + heart.getDefinitionId() + ".modifiers"), modifiers);
+    }
+
+    private void applyModifierSection(org.bukkit.configuration.ConfigurationSection section, EnumMap<StatKey, Double> modifiers) {
+        if (section == null) return;
+        for (String raw : section.getKeys(false)) {
+            try { add(modifiers, StatKey.valueOf(raw.toUpperCase(java.util.Locale.ROOT)), section.getDouble(raw)); }
+            catch (IllegalArgumentException ignored) {}
+        }
+    }
+
+    private void add(EnumMap<StatKey, Double> values, StatKey key, double value) { values.merge(key, value, Double::sum); }
+    private StatKey damageKey(Element element) { return StatKey.valueOf(element.name() + "_DAMAGE"); }
 }
 ```

@@ -1,4 +1,6 @@
 data-version: 1
+# v1.4.5: modifiers.override: {CRIT_RATE: 1.0} で最終会心率を100%へ固定。
+# 複数overrideは最後に付与/再付与された有効Buffが優先。割合の加算とは異なります。
 # Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
 # 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
 buffs:

@@ -22,6 +22,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class SkillService implements Listener {
     private SetEffectService setEffects;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService value) { triggers=value; }
     public void bindSetEffects(SetEffectService value) { setEffects = value; }
     private final DefinitionRegistry definitions;
     private final PlayerDataService players;
@@ -203,6 +205,7 @@ public final class SkillService implements Listener {
         WeaponDefinition.SkillDefinition ability = ultimate ? weapon.ultimate() : weapon.skill();
         if (ability == null) return fail(player, "undefined", "この武器には使用する技が設定されていません。");
         if (!conditionsMet(player, target, ability.conditions())) return fail(player, "conditions", "技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。");
+        if (triggers!=null && !triggers.canCast(player,target,weaponId,ultimate,ability.conditions())) return fail(player,"conditions","技の発動条件を満たしていません。");
         if (java.util.stream.Stream.concat(ability.options().selfEffects().stream(), ability.options().targetEffects().stream())
                 .anyMatch(id -> !definitions.snapshot().buffs().containsKey(id))) return fail(player, "effect", "参照先のバフ・デバフ設定が見つかりません。");
         if (target != null && !ability.target().equalsIgnoreCase("SELF") && !damage.canAffect(player, target))
@@ -260,6 +263,7 @@ public final class SkillService implements Listener {
         trace("cast success", player, "weapon=" + weaponId + " kind=" + (ultimate ? "ultimate" : "skill") + " empty=" + emptyCast);
         if (setEffects != null) setEffects.fire(player, ultimate ? com.github.saku0817.combatcoresystems.model.SetTrigger.Event.ULTIMATE
                 : com.github.saku0817.combatcoresystems.model.SetTrigger.Event.SKILL, target != null && damage.canAffect(player, target) ? target : null);
+        if (triggers!=null) triggers.cast(player,target,weaponId,limitBreak,ultimate);
         if (emptyCast) WeaponVisuals.play(player, ability.options().visual());
         Element activeElement = element;
         for (LivingEntity current : targets) {

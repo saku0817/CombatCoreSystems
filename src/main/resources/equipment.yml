@@ -1,4 +1,7 @@
 data-version: 1
+# v1.4.5: equipment.ID.triggers に共通Triggerを追加可能。
+# 例: heal_power: {event: OVERHEAL, actions: [{type: APPLY_DYNAMIC_MODIFIER,
+#       stat: ATK_FLAT, source: EVENT_OVERHEAL, multiplier: 0.1, duration: 10}]}
 # 各装備内に enchantment-glint: true / false を指定できます（省略時false）。
 # 正式名は equipment.yml。equipments.yml の equipment: / equipments: も互換読込します。
 # 同じIDを両方に定義しないでください。以下は equipment: {} を置き換える例です。

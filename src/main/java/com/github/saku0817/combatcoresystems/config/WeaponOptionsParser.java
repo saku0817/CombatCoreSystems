@@ -41,7 +41,7 @@ final class WeaponOptionsParser {
             throw new IllegalArgumentException("damage-components must be a nonempty list");
         double cost = nonnegative(s, "cost.current-hp-percent", 0);
         if (cost >= 1) throw new IllegalArgumentException("cost.current-hp-percent must be less than 1");
-        return new WeaponOptions.Ability(description(s), s.getBoolean("damage-enabled", true), cost,
+        return new WeaponOptions.Ability(description(s), s.getBoolean("damage-enabled", !s.contains("actions")), cost,
                 List.copyOf(components), s.getStringList("self-effects"), s.getStringList("target-effects"),
                 visual(s.getConfigurationSection("visual")));
     }

@@ -1,4 +1,8 @@
 data-version: 1
+# v1.4.5: two-piece/four-piece.triggers は武器と共通のconditions/actionsに対応。
+# 例: guard: {event: TAKE_DAMAGE, max-activations: 3, activation-scope: COMBAT,
+#             actions: [{type: APPLY_EFFECT, effect: guard_def, target: SELF}]}
+# guard_defはbuffs.ymlで定義してください。旧effects形式もそのまま使用可能。
 # セット追加例: sets.warrior.two-piece.modifiers.ATK_PERCENT: 0.15
 sets: {}
 # v1.4.4: two-piece/four-piece配下に triggers を追加可能。効果本体はbuffs.ymlに定義。

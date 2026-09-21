@@ -31,6 +31,9 @@ public final class StatService implements Listener {
     private DefinitionRegistry.Snapshot talentDefinitions;
     private Set<WeaponOptions.Hand> talentHands = Set.of();
     private final Map<UUID, Set<String>> activeTalents = new HashMap<>();
+    private BuffService buffs;
+    private DynamicEffectService dynamic;
+    public void bindEffects(BuffService buffs,DynamicEffectService dynamic) { this.buffs=buffs; this.dynamic=dynamic; }
 
     public StatService(JavaPlugin plugin, DefinitionRegistry definitions, CombatStateService combat, ItemService items) {
         this.plugin = plugin;
@@ -146,7 +149,8 @@ public final class StatService implements Listener {
             }
         }
         recordDelta(sources, "装備から", beforeEquipment, modifiers);
-        for (TimedEffect effect : java.util.stream.Stream.concat(data.getBuffs().stream(), data.getDebuffs().stream()).toList()) {
+        List<TimedEffect> activeEffects=buffs==null ? java.util.stream.Stream.concat(data.getBuffs().stream(), data.getDebuffs().stream()).toList() : buffs.effects(player);
+        for (TimedEffect effect : activeEffects) {
             EnumMap<StatKey, Double> before = detailed ? new EnumMap<>(modifiers) : null;
             applyEffect(effect, modifiers);
             recordDelta(sources, "バフ・デバフ：" + definitions.snapshot().config("buffs.yml").getString("buffs." + effect.getId() + ".name", effect.getId()), before, modifiers);
@@ -164,12 +168,37 @@ public final class StatService implements Listener {
         applyDivineHeart(data, modifiers); recordDelta(sources, "神心から", beforeHeart, modifiers);
 
         double vanillaArmor = 0;
+        if (dynamic!=null) {
+            var before=detailed ? new EnumMap<>(modifiers) : null;
+            dynamic.modifiers(player.getUniqueId()).forEach((key,value) -> add(modifiers,key,value));
+            recordDelta(sources,"動的効果から",before,modifiers);
+        }
+        Map<StatKey,Double> finalOverrides=new EnumMap<>(StatKey.class);
+        for (TimedEffect effect : activeEffects) {
+            if (!effect.isPermanent() && effect.getRemainingMillis()<=0) continue;
+            var overrides=definitions.snapshot().config("buffs.yml").getConfigurationSection("buffs."+effect.getId()+".modifiers.override");
+            if (overrides==null) continue;
+            for (String key : overrides.getKeys(false)) {
+                StatKey stat=StatKey.valueOf(key); double value=overrides.getDouble(key);
+                finalOverrides.put(stat,value);
+            }
+        }
+        var beforeOverrides=detailed ? new EnumMap<>(modifiers) : null;
+        finalOverrides.forEach((key,value) -> { if (!Set.of(StatKey.HP_FLAT,StatKey.ATK_FLAT,StatKey.DEF_FLAT).contains(key)) modifiers.put(key,value); });
+        recordDelta(sources,"固定値補正（バフ・デバフ）",beforeOverrides,modifiers);
         AttributeInstance armor = player.getAttribute(Attribute.ARMOR);
         if (armor != null) vanillaArmor = armor.getValue();
         if (detailed && vanillaArmor != 0) sources.put("バニラ防具から", Map.of(StatKey.DEF_FLAT, vanillaArmor));
-        double hp = baseHp * (1 + modifiers.get(StatKey.HP_PERCENT)) + modifiers.get(StatKey.HP_FLAT);
-        double atk = CoreMath.attack(playerBaseAtk, weaponAtk, modifiers.get(StatKey.ATK_PERCENT), modifiers.get(StatKey.ATK_FLAT));
-        double def = (baseDef + vanillaArmor) * (1 + modifiers.get(StatKey.DEF_PERCENT)) + modifiers.get(StatKey.DEF_FLAT);
+        double hp = finalOverrides.getOrDefault(StatKey.HP_FLAT,baseHp * (1 + modifiers.get(StatKey.HP_PERCENT)) + modifiers.get(StatKey.HP_FLAT));
+        double atk = finalOverrides.getOrDefault(StatKey.ATK_FLAT,CoreMath.attack(playerBaseAtk, weaponAtk, modifiers.get(StatKey.ATK_PERCENT), modifiers.get(StatKey.ATK_FLAT)));
+        double def = finalOverrides.getOrDefault(StatKey.DEF_FLAT,(baseDef + vanillaArmor) * (1 + modifiers.get(StatKey.DEF_PERCENT)) + modifiers.get(StatKey.DEF_FLAT));
+        if (detailed) {
+            var original=Map.of(StatKey.HP_FLAT,baseHp*(1+modifiers.get(StatKey.HP_PERCENT))+modifiers.get(StatKey.HP_FLAT),
+                    StatKey.ATK_FLAT,CoreMath.attack(playerBaseAtk,weaponAtk,modifiers.get(StatKey.ATK_PERCENT),modifiers.get(StatKey.ATK_FLAT)),
+                    StatKey.DEF_FLAT,(baseDef+vanillaArmor)*(1+modifiers.get(StatKey.DEF_PERCENT))+modifiers.get(StatKey.DEF_FLAT));
+            for (var key : original.keySet()) if (finalOverrides.containsKey(key))
+                sources.computeIfAbsent("固定値補正（バフ・デバフ）",ignored -> new EnumMap<>(StatKey.class)).put(key,finalOverrides.get(key)-original.get(key));
+        }
         return new PlayerStats(level, hp, atk, def, modifiers).withSources(sources);
     }
 

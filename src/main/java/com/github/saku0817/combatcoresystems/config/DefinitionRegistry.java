@@ -163,11 +163,7 @@ public final class DefinitionRegistry {
             }
         }
 
-        var setRoot = yaml.get("sets.yml").getConfigurationSection("sets");
-        if (setRoot != null) for (String id : setRoot.getKeys(false)) for (String tier : List.of("two-piece", "four-piece")) {
-            try { SetTrigger.parse(setRoot.getConfigurationSection(id + "." + tier + ".triggers"), buffs.keySet()); }
-            catch (IllegalArgumentException ex) { errors.add("set " + id + ": " + ex.getMessage()); }
-        }
+        TriggerCatalog.compile(yaml,buffs.keySet(),errors);
         Snapshot snapshot = new Snapshot(Map.copyOf(yaml), reactions, weapons, equipment, buffs, mobs, vanillaMobs, bosses, regions, weaponStages);
         return new LoadResult(snapshot, warnings, errors, fatal);
     }
@@ -428,8 +424,13 @@ public final class DefinitionRegistry {
                 BuffDefinition.Kind kind = BuffDefinition.Kind.valueOf(s.getString("kind", "BUFF").toUpperCase(Locale.ROOT));
                 BuffDefinition.Target target = BuffDefinition.Target.valueOf(s.getString("target", kind == BuffDefinition.Kind.BUFF ? "SELF" : "ENEMY").toUpperCase(Locale.ROOT));
                 BuffDefinition.Reapply reapply = BuffDefinition.Reapply.valueOf(s.getString("reapply", "REFRESH").toUpperCase(Locale.ROOT));
+                var buffOptions=com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s);
+                com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.range(buffOptions,"duration",0,0,Double.MAX_VALUE);
+                com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.integer(buffOptions,"max-stacks",1,1);
                 EnumMap<StatKey, Double> flat = parseStatMap(s.getConfigurationSection("modifiers.flat"), errors, "buff " + id);
                 EnumMap<StatKey, Double> percent = parseStatMap(s.getConfigurationSection("modifiers.percent"), errors, "buff " + id);
+                if (s.contains("modifiers.override")) com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.modifiers(
+                        Map.of("override",com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s.getConfigurationSection("modifiers.override"))));
                 BuffDefinition.TickEffect tick = parseTickEffect(s.getConfigurationSection("tick-effect"), errors, id);
                 result.put(id, new BuffDefinition(id, kind, target, Math.max(0, s.getDouble("duration", 0)),
                         s.getBoolean("permanent"), Math.max(1, s.getInt("max-stacks", 1)), reapply, Map.copyOf(flat), Map.copyOf(percent), tick));

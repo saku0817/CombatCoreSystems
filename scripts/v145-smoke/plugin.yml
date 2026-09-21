@@ -1,0 +1,5 @@
+name: CCSV145Smoke
+version: '1'
+main: ccs.test.V145Smoke
+api-version: '26.2'
+depend: [CombatCoreSystems]

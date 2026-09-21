@@ -1,4 +1,16 @@
 data-version: 1
+# v1.4.5: 武器/talent/skill/ultimate の triggers から共通Actionを実行できます。
+# 例（武器IDの下）:
+# triggers:
+#   mark:
+#     event: NORMAL_ATTACK
+#     actions: [{type: ADD_STACK, id: aim, scope: TARGET, amount: 1, max: 5, duration: 10}]
+#   focused:
+#     event: BEFORE_HIT
+#     conditions: {stack: {id: aim, scope: EVENT_TARGET, min: 3}}
+#     actions: [{type: MODIFY_EVENT_STATS, modifiers: {percent: {ATK_PERCENT: 0.5}}}]
+# skill.actions / ultimate.actions は技の成功時に実行。actionsがある新定義は省略時damage-enabled=false。
+# 旧技ダメージも併用する場合だけdamage-enabled: true。詳細はChatGPT-YAML-v1.4.5.md。
 # v1.4.3: talent.hand は MAIN_HAND / OFF_HAND / EITHER_HAND / HOT_BAR / INVENTORY。
 # HOT_BAR=0～8、INVENTORY=0～35とオフハンド。これらは天賦の発動場所で、基礎ATKは手持ちだけ。
 # limit-breaks は0～5。指定キーだけ前段階へ累積上書きし、説明も実効果も同じ段階を使用します。

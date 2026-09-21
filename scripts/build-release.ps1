@@ -1,6 +1,7 @@
 param(
     [string]$Maven = "C:\Users\user\Downloads\apache-maven-3.9.11-bin\apache-maven-3.9.11\bin\mvn.cmd",
-    [string]$JavaHome = "C:\Program Files\Java\jdk-25.0.4"
+    [string]$JavaHome = "C:\Program Files\Java\jdk-25.0.4",
+    [switch]$Offline
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,7 +20,9 @@ if (-not (Test-Path -LiteralPath $Maven)) {
 Push-Location $projectRoot
 try {
     $localRepository = Join-Path $projectRoot ".m2\repository"
-    & $Maven "-Dmaven.repo.local=$localRepository" clean verify
+    $mavenOptions = @("-Dmaven.repo.local=$localRepository")
+    if ($Offline) { $mavenOptions += '-o' }
+    & $Maven @mavenOptions clean verify
     if ($LASTEXITCODE -ne 0) { throw "Maven build failed with exit code $LASTEXITCODE" }
 
     $jarName = "CombatCoreSystems-$version.jar"
@@ -39,8 +42,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $projectRoot "src/main/resources/web-editor.html") -Destination (Join-Path $backupDir "CombatCoreSystems-YamlGenerator-$version-$stamp.html")
     $handoffName = "CombatCoreSystems-ChatGPT-YAML-$version.zip"
     $handoffFiles = @((Join-Path $projectRoot 'docs/ChatGPT-YAML-Handoff.md'), (Join-Path $projectRoot 'docs/ChatGPT-YAML-Reference.md'))
-    $delta = Join-Path $projectRoot "docs/ChatGPT-YAML-v$version.md"
-    if (Test-Path -LiteralPath $delta) { $handoffFiles += $delta }
+    $handoffFiles += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'docs') -Filter 'ChatGPT-YAML-v*.md' | Sort-Object Name | Select-Object -ExpandProperty FullName
     $handoffFiles += Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src/main/resources') -Filter '*.yml' | Where-Object Name -ne 'plugin.yml' | Select-Object -ExpandProperty FullName
     Compress-Archive -LiteralPath $handoffFiles -DestinationPath (Join-Path $releaseDir $handoffName) -Force
     Copy-Item -LiteralPath (Join-Path $releaseDir $handoffName) -Destination (Join-Path $backupDir "CombatCoreSystems-ChatGPT-YAML-$version-$stamp.zip")

@@ -1,4 +1,7 @@
 data-version: 1
+# v1.4.5: divine-hearts.ID.triggers に武器/セットと共通のTriggerを追加可能。
+# 例: on_skill: {event: SKILL, actions: [{type: APPLY_EFFECT, effect: fire_power}]}
+# 参照するfire_power等はbuffs.ymlへ別途定義してください。
 # 各神の心内に enchantment-glint: true / false を指定できます（省略時false）。
 # 以下は divine-hearts: {} を置き換える例です。神の心はレベル・限界突破を持ちません。
 # divine-hearts:

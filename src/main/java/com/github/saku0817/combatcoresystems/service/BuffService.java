@@ -24,6 +24,56 @@ public final class BuffService {
     private final HealService healing;
     private final Map<String, Long> nextTicks = new ConcurrentHashMap<>();
     private final Map<UUID, List<TimedEffect>> entityEffects = new HashMap<>();
+    private final Map<UUID, Map<String, TimedEffect>> ownedEffects = new HashMap<>();
+    private long lastOrder;
+    private long order() { return lastOrder=Math.max(System.currentTimeMillis()*1000,lastOrder+1); }
+    private java.util.function.BiConsumer<LivingEntity, String> applied = (target,id) -> {};
+    private java.util.function.BiConsumer<LivingEntity, String> removed = (target,id) -> {};
+    public void bindEvents(java.util.function.BiConsumer<LivingEntity,String> applied, java.util.function.BiConsumer<LivingEntity,String> removed) {
+        this.applied=applied; this.removed=removed;
+    }
+    public List<TimedEffect> effects(LivingEntity target) {
+        List<TimedEffect> result=new ArrayList<>();
+        if (target instanceof Player p) players.find(p.getUniqueId()).ifPresent(data -> { result.addAll(data.getBuffs()); result.addAll(data.getDebuffs()); });
+        else result.addAll(entityEffects.getOrDefault(target.getUniqueId(),List.of()));
+        result.addAll(ownedEffects.getOrDefault(target.getUniqueId(),Map.of()).values());
+        result.sort(Comparator.comparingLong(TimedEffect::getAppliedOrder));
+        return List.copyOf(result);
+    }
+    public boolean has(LivingEntity target,String id) { return effects(target).stream().anyMatch(e -> e.getId().equals(id) && (e.isPermanent() || e.getRemainingMillis()>0)); }
+    public void acquire(LivingEntity target,String lease,String id,UUID source) {
+        if (!definitions.snapshot().buffs().containsKey(id) || target.isDead()) return;
+        var values=ownedEffects.computeIfAbsent(target.getUniqueId(),ignored -> new LinkedHashMap<>());
+        TimedEffect effect=new TimedEffect(id,source,1,0,true); effect.setAppliedOrder(order());
+        if (values.putIfAbsent(lease,effect)==null) {
+            stats.invalidate(target.getUniqueId()); applied.accept(target,id);
+        }
+    }
+    public void release(UUID target,String lease) {
+        var values=ownedEffects.get(target); if (values==null) return;
+        TimedEffect old=values.remove(lease);
+        if (values.isEmpty()) ownedEffects.remove(target);
+        if (old!=null) { stats.invalidate(target); if (Bukkit.getEntity(target) instanceof LivingEntity entity) removed.accept(entity,old.getId()); }
+    }
+    public boolean remove(LivingEntity target,String id) {
+        if (target instanceof Player p) return remove(p,id);
+        boolean changed=entityEffects.getOrDefault(target.getUniqueId(),new ArrayList<>()).removeIf(e -> e.getId().equals(id));
+        if (changed) { stats.invalidate(target.getUniqueId()); removed.accept(target,id); }
+        return changed;
+    }
+    public void refresh(LivingEntity target,String id,UUID source) {
+        BuffDefinition definition=definitions.snapshot().buffs().get(id);
+        if (definition==null || target.isDead()) return;
+        List<TimedEffect> effects;
+        if (target instanceof Player player) {
+            PlayerData data=players.require(player);
+            effects=definition.kind()==BuffDefinition.Kind.BUFF ? data.getBuffs() : data.getDebuffs();
+        } else effects=entityEffects.getOrDefault(target.getUniqueId(),List.of());
+        TimedEffect existing=effects.stream().filter(e -> e.getId().equals(id)).findFirst().orElse(null);
+        if (existing==null) { apply(target,id,source); return; }
+        existing.setRemainingMillis((long)(definition.durationSeconds()*1000)); existing.setAppliedOrder(order());
+        stats.invalidate(target.getUniqueId()); applied.accept(target,id);
+    }
 
     public BuffService(JavaPlugin plugin, DefinitionRegistry definitions, PlayerDataService players, StatService stats,
                        DamageService damage, HealService healing) {
@@ -47,24 +97,21 @@ public final class BuffService {
         } else effects = entityEffects.computeIfAbsent(target.getUniqueId(), ignored -> new ArrayList<>());
         TimedEffect existing = effects.stream().filter(effect -> effect.getId().equals(id)).findFirst().orElse(null);
         long duration = (long) (definition.durationSeconds() * 1000);
-        if (existing == null) effects.add(new TimedEffect(id, source, 1, duration, definition.permanent()));
+        if (existing == null) { existing=new TimedEffect(id, source, 1, duration, definition.permanent()); effects.add(existing); }
         else switch (definition.reapply()) {
             case REFRESH -> existing.setRemainingMillis(duration);
             case STACK -> { existing.setStacks(Math.min(definition.maxStacks(), existing.getStacks() + 1)); existing.setRemainingMillis(duration); }
             case OVERWRITE -> { existing.setStacks(1); existing.setRemainingMillis(duration); }
             case CUSTOM -> { return false; }
         }
+        existing.setAppliedOrder(order());
         stats.invalidate(target.getUniqueId());
+        applied.accept(target,id);
         return true;
     }
 
     public double modifier(LivingEntity target, StatKey key) {
-        List<TimedEffect> effects;
-        if (target instanceof Player player) {
-            PlayerData data = players.find(player.getUniqueId()).orElse(null);
-            if (data == null) return 0;
-            effects = java.util.stream.Stream.concat(data.getBuffs().stream(), data.getDebuffs().stream()).toList();
-        } else effects = entityEffects.getOrDefault(target.getUniqueId(), List.of());
+        List<TimedEffect> effects = effects(target);
         double result = 0;
         for (TimedEffect effect : effects) {
             BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
@@ -77,7 +124,7 @@ public final class BuffService {
     public boolean remove(Player target, String id) {
         PlayerData data = players.require(target);
         boolean removed = data.getBuffs().removeIf(e -> e.getId().equals(id)) | data.getDebuffs().removeIf(e -> e.getId().equals(id));
-        if (removed) stats.invalidate(target.getUniqueId());
+        if (removed) { stats.invalidate(target.getUniqueId()); this.removed.accept(target,id); }
         return removed;
     }
 
@@ -90,16 +137,14 @@ public final class BuffService {
 
     private void tick() {
         long elapsed = 250;
-        var entities = entityEffects.entrySet().iterator();
-        while (entities.hasNext()) {
-            var entry = entities.next();
+        for (var entry : List.copyOf(entityEffects.entrySet())) {
             Entity raw = Bukkit.getEntity(entry.getKey());
             if (!(raw instanceof LivingEntity living) || !living.isValid() || living.isDead()) {
                 String prefix = entry.getKey() + ":"; nextTicks.keySet().removeIf(key -> key.startsWith(prefix));
-                entities.remove(); continue;
+                entityEffects.remove(entry.getKey()); continue;
             }
             updateList(living, entry.getValue(), elapsed);
-            if (entry.getValue().isEmpty()) entities.remove();
+            if (entry.getValue().isEmpty()) entityEffects.remove(entry.getKey());
         }
         for (Player player : Bukkit.getOnlinePlayers()) {
             PlayerData data = players.find(player.getUniqueId()).orElse(null);
@@ -108,18 +153,24 @@ public final class BuffService {
             changed |= updateList(player, data.getDebuffs(), elapsed);
             if (changed) stats.invalidate(player.getUniqueId());
         }
+        for (var entry : List.copyOf(ownedEffects.entrySet())) {
+            if (!(Bukkit.getEntity(entry.getKey()) instanceof LivingEntity target) || target.isDead()) continue;
+            for (TimedEffect effect : List.copyOf(entry.getValue().values())) {
+                BuffDefinition definition=definitions.snapshot().buffs().get(effect.getId());
+                if (definition!=null && definition.tickEffect()!=null) runTickEffect(target,effect,definition);
+            }
+        }
     }
 
     private boolean updateList(LivingEntity target, List<TimedEffect> effects, long elapsed) {
         boolean changed = false;
-        Iterator<TimedEffect> iterator = effects.iterator();
-        while (iterator.hasNext()) {
-            TimedEffect effect = iterator.next();
+        for (TimedEffect effect : List.copyOf(effects)) {
+            if (!effects.contains(effect)) continue;
             BuffDefinition definition = definitions.snapshot().buffs().get(effect.getId());
-            if (definition == null) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); iterator.remove(); changed = true; continue; }
+            if (definition == null) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); effects.remove(effect); changed = true; removed.accept(target,effect.getId()); continue; }
             if (!effect.isPermanent()) {
                 effect.setRemainingMillis(Math.max(0, effect.getRemainingMillis() - elapsed));
-                if (effect.getRemainingMillis() == 0) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); iterator.remove(); changed = true; continue; }
+                if (effect.getRemainingMillis() == 0) { nextTicks.remove(target.getUniqueId() + ":" + effect.getId()); effects.remove(effect); changed = true; removed.accept(target,effect.getId()); continue; }
             }
             if (definition.tickEffect() != null) runTickEffect(target, effect, definition);
         }

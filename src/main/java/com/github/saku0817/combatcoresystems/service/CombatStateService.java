@@ -70,12 +70,12 @@ public final class CombatStateService {
 
     private void expire() {
         long now = System.currentTimeMillis();
-        states.entrySet().removeIf(entry -> {
-            if (forced.contains(entry.getKey())) return false;
-            if (entry.getValue().endsAt > now) return false;
-            Bukkit.getPluginManager().callEvent(new CombatStateEvent(entry.getKey(), false));
-            return true;
-        });
+        // Remove the expired state before callbacks: COMBAT_END actions may start a new combat.
+        for (var entry : java.util.List.copyOf(states.entrySet())) {
+            if (forced.contains(entry.getKey()) || entry.getValue().endsAt > now) continue;
+            if (states.remove(entry.getKey(),entry.getValue()))
+                Bukkit.getPluginManager().callEvent(new CombatStateEvent(entry.getKey(), false));
+        }
     }
 
     private State oldState(UUID uuid) {
