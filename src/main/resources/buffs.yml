@@ -3,6 +3,17 @@ data-version: 1
 # 複数overrideは最後に付与/再付与された有効Buffが優先。割合の加算とは異なります。
 # Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
 # 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
+# v1.4.6: 戦闘中の一回の計算だけへ適用する補正はcombat-modifiersに記述します。
+# 例（buffs.power内）:
+#   combat-modifiers:
+#     damage-dealt: {percent: 0.20}
+#     skill:
+#       damage-dealt: {percent: 0.50}
+#       healing-dealt: {percent: 0.50}
+#     normal-attack:
+#       element: {override: THUNDER}
+#       crit-rate: {override: 1.0}
+# 効果を通常ステータスへ恒久加算したいときは従来のmodifiers.flat/percentを使います。
 buffs:
   departure_crit:
     name: 出航

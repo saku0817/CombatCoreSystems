@@ -22,6 +22,12 @@ public final class StackService {
     public void onChange(Consumer<Change> listener) { this.listener = Objects.requireNonNull(listener); }
     public State state(Key key) { expire(key); return states.get(key); }
     public int count(Key key) { State state = state(key); return state == null ? 0 : state.count(); }
+    /** HUD reads never fire expiration callbacks or mutate an active trigger chain. */
+    public Map<Key,Integer> selfStacks(UUID owner) {
+        Map<Key,Integer> result=new LinkedHashMap<>(); long now=clock.getAsLong();
+        states.forEach((key,state)->{if(key.owner().equals(owner)&&key.target()==null&&state.expiresAt()>now)result.put(key,state.count());});
+        return Collections.unmodifiableMap(result);
+    }
     public long total(UUID owner, String source, String id) {
         expire();
         return states.entrySet().stream().filter(e -> e.getKey().target()!=null && matches(e.getKey(), owner, source, id))

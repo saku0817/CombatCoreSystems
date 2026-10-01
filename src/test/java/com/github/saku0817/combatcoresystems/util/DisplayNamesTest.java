@@ -8,6 +8,6 @@ class DisplayNamesTest {
     @Test void everyStatHasAPlayerFacingJapaneseName() {
         for (StatKey key : StatKey.values()) assertNotEquals(key.name(), DisplayNames.japanese(key.name()), key.name());
         assertEquals("炎属性ダメージ", DisplayNames.japanese("FIRE-DAMAGE"));
-        assertEquals("神の心", DisplayNames.japanese("DIVINE_HEART"));
+        assertEquals("追憶", DisplayNames.japanese("DIVINE_HEART"));
     }
 }

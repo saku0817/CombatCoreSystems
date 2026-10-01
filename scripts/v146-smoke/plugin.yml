@@ -1,0 +1,5 @@
+name: CCS146Smoke
+version: 1.0
+main: ccs.test.V146Smoke
+api-version: '26.2'
+depend: [CombatCoreSystems]

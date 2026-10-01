@@ -5,6 +5,15 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ConfigMigrationTest {
+    @Test void renamesOnlyUncustomizedLegacyLabels() {
+        var yaml=new YamlConfiguration();
+        yaml.set("divine-heart-tooltip.slot","<white>装備部位：<u>神心</u></white>");
+        yaml.set("display-names.HEALING_POWER","独自の回復表示");
+        assertTrue(DefinitionRegistry.migrateDisplayNames("messages.yml",yaml));
+        assertEquals("<white>装備部位：<u>追憶</u></white>",yaml.getString("divine-heart-tooltip.slot"));
+        assertEquals("独自の回復表示",yaml.getString("display-names.HEALING_POWER"));
+        assertFalse(DefinitionRegistry.migrateDisplayNames("messages.yml",yaml));
+    }
     @Test void preservesUserValuesAndExplicitlyRemovedDefinitions() throws Exception {
         YamlConfiguration current = new YamlConfiguration(), defaults = new YamlConfiguration();
         current.loadFromString("controls: {drop-skill: false}\nweapons: {}\ncustom: 42\nlegacy: false\n");

@@ -45,6 +45,7 @@ public final class DefinitionRegistry {
             // Never use it before a migration that writes to the user's file.
             current.load(target);
             boolean changed = mergeMissing(current, defaults);
+            changed |= migrateDisplayNames(name,current);
             if (changed) {
                 File backup = new File(plugin.getDataFolder(), "backups/config-migrations/" + System.currentTimeMillis() + "-" + name);
                 backup.getParentFile().mkdirs();
@@ -75,6 +76,19 @@ public final class DefinitionRegistry {
                 changed |= mergeMissing(target.getConfigurationSection(key), defaults.getConfigurationSection(key));
             }
             // A pre-existing scalar/list is intentional; don't replace it with a section.
+        }
+        return changed;
+    }
+
+    static boolean migrateDisplayNames(String file,ConfigurationSection yaml) {
+        Map<String,String[]> replacements = file.equals("messages.yml") ? Map.of(
+                "divine-heart-tooltip.slot",new String[]{"<white>装備部位：<u>神心</u></white>","<white>装備部位：<u>追憶</u></white>"},
+                "display-names.DIVINE_HEART",new String[]{"神の心","追憶"},
+                "display-names.HEALING_POWER",new String[]{"回復力","治癒力"}) : file.equals("encyclopedia.yml") ? Map.of(
+                "categories.divine_hearts.name",new String[]{"<light_purple>神心</light_purple>","<light_purple>追憶</light_purple>"}) : Map.of();
+        boolean changed=false;
+        for(var entry:replacements.entrySet()) if(entry.getValue()[0].equals(yaml.getString(entry.getKey()))) {
+            yaml.set(entry.getKey(),entry.getValue()[1]);changed=true;
         }
         return changed;
     }
@@ -324,20 +338,24 @@ public final class DefinitionRegistry {
             StatKey main;
             try {
                 slot = EquipmentSlot.valueOf(s.getString("slot", "").toUpperCase(Locale.ROOT));
+                if (EquipmentGrowthTable.mainCandidates(slot).isEmpty()) throw new IllegalArgumentException("Not an equipment slot");
                 var mainPool = EquipmentRolls.candidates(s.getConfigurationSection("main-stat-candidates"), true);
                 if (s.contains("main-stat-candidates") && mainPool.isEmpty()) throw new IllegalArgumentException("Empty main-stat-candidates");
                 main = s.contains("main-stat.type") || mainPool.isEmpty() ? StatKey.valueOf(s.getString("main-stat.type", "").toUpperCase(Locale.ROOT)) : mainPool.getFirst().key();
-                for (var candidate : mainPool) if (!mainAllowed(slot, candidate.key())) throw new IllegalArgumentException("Main stat not allowed for slot");
+                for (var candidate : mainPool) if (!mainAllowed(slot, candidate.key())) warnings.add("equipment " + id + " ignores legacy main candidate " + candidate.key() + " not allowed in v1.4.6");
                 var subPool = EquipmentRolls.candidates(s.getConfigurationSection("substat-candidates"), false);
+                for (var candidate : subPool) if (!EquipmentGrowthTable.subCandidates().contains(candidate.key()))
+                    warnings.add("equipment " + id + " ignores legacy substat candidate " + candidate.key() + " not allowed in v1.4.6");
                 if (s.contains("substat-candidates") && subPool.isEmpty()) throw new IllegalArgumentException("Empty substat-candidates");
             } catch (IllegalArgumentException ex) { errors.add("equipment " + id + " has invalid slot or main stat"); continue; }
-            if (!mainAllowed(slot, main)) { errors.add("equipment " + id + " main stat is not allowed for its slot"); continue; }
+            if (!mainAllowed(slot, main)) warnings.add("equipment " + id + " legacy main stat will be redrawn from allowed v1.4.6 candidates");
             int rarity = s.getInt("rarity");
             int expectedMax = rarity == 3 ? 9 : rarity == 4 ? 12 : rarity == 5 ? 15 : -1;
             if (expectedMax < 0) { errors.add("equipment " + id + " rarity must be 3..5"); continue; }
-            int maxLevel = s.getInt("max-level", expectedMax);
-            if (maxLevel < 1 || maxLevel > 100) { errors.add("equipment " + id + " max-level must be 1..100"); continue; }
-            if (maxLevel != expectedMax) warnings.add("equipment " + id + " max-level differs from rarity standard");
+            int configuredMax = s.getInt("max-level", expectedMax);
+            if (configuredMax < 1 || configuredMax > 100) { errors.add("equipment " + id + " max-level must be 1..100"); continue; }
+            if (configuredMax != expectedMax) warnings.add("equipment " + id + " uses v1.4.6 rarity maximum " + expectedMax + " instead of " + configuredMax);
+            int maxLevel = expectedMax;
             List<StatKey> candidates = new ArrayList<>();
             ConfigurationSection initialStats = s.getConfigurationSection("initial-substats");
             if (initialStats != null) {
@@ -363,15 +381,7 @@ public final class DefinitionRegistry {
     }
 
     public static boolean mainAllowed(EquipmentSlot slot, StatKey key) {
-        return switch (slot) {
-            case HEAD -> Set.of(StatKey.HP_FLAT, StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT).contains(key);
-            case CHEST -> Set.of(StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE).contains(key);
-            case LEGS -> Set.of(StatKey.ATK_FLAT, StatKey.ATK_PERCENT).contains(key);
-            case FEET -> Set.of(StatKey.ATK_FLAT, StatKey.ATK_PERCENT, StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE,
-                    StatKey.HP_FLAT, StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT).contains(key);
-            case RESONANCE -> key.name().endsWith("_DAMAGE") || key.name().endsWith("_RESISTANCE");
-            default -> false;
-        };
+        return EquipmentGrowthTable.mainCandidates(slot).contains(key);
     }
 
     private Map<String, MobDefinition> parseMobs(YamlConfiguration yaml, String rootName, boolean boss, boolean vanilla, List<String> errors) {
@@ -432,6 +442,8 @@ public final class DefinitionRegistry {
                 if (s.contains("modifiers.override")) com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.modifiers(
                         Map.of("override",com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s.getConfigurationSection("modifiers.override"))));
                 BuffDefinition.TickEffect tick = parseTickEffect(s.getConfigurationSection("tick-effect"), errors, id);
+                com.github.saku0817.combatcoresystems.service.CombatModifierService.compile(
+                        com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s));
                 result.put(id, new BuffDefinition(id, kind, target, Math.max(0, s.getDouble("duration", 0)),
                         s.getBoolean("permanent"), Math.max(1, s.getInt("max-stacks", 1)), reapply, Map.copyOf(flat), Map.copyOf(percent), tick));
             } catch (IllegalArgumentException ex) { errors.add("buff " + id + " contains an invalid enum value"); }
@@ -452,6 +464,10 @@ public final class DefinitionRegistry {
     private BuffDefinition.TickEffect parseTickEffect(ConfigurationSection section, List<String> errors, String id) {
         if (section == null) return null;
         try {
+            var options=new LinkedHashMap<>(com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(section));
+            if(options.get("critical") instanceof Boolean)options.remove("critical");
+            com.github.saku0817.combatcoresystems.model.trigger.CombatModifiers.action(options);
+            if(options.containsKey("tags"))com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.strings(options,"tags");
             return new BuffDefinition.TickEffect(section.getBoolean("healing"), section.getBoolean("fixed"),
                     ReferenceStat.valueOf(section.getString("reference", "ATK").toUpperCase(Locale.ROOT)),
                     section.getDouble("multiplier", 1), Element.parse(value(section, "attribute", "element")).orElse(Element.PHYSICAL),

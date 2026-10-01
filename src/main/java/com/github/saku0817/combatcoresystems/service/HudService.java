@@ -24,6 +24,8 @@ public final class HudService {
     private final ElementService elements;
     private final SkillService skills;
     private final MobService mobs;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService triggers) { this.triggers=triggers; }
     private final MiniMessage mini = MiniMessage.miniMessage();
     private final Map<UUID, Board> boards = new HashMap<>();
     private final Map<UUID, net.kyori.adventure.bossbar.BossBar> targetBars = new HashMap<>();
@@ -142,6 +144,14 @@ public final class HudService {
             String attributes = attached.entrySet().stream().map(entry -> entry.getKey().japaneseName() + " " + format(entry.getValue() / 1000.0) + "秒").collect(java.util.stream.Collectors.joining(" "));
             String template = definitions.snapshot().config("gui.yml").getString("hud.attribute-actionbar", "<attributes>");
             text.append(template.replace("<attributes>", attributes));
+        }
+        var gui=definitions.snapshot().config("gui.yml");
+        if(triggers!=null && gui.getBoolean("hud.self-stacks-enabled",true)) {
+            for(var entry:triggers.selfStacks(player.getUniqueId()).entrySet()) {
+                String name=gui.getString("hud.self-stack-names."+entry.getKey().id(),mini.escapeTags(entry.getKey().id()));
+                text.append(" <gray>|</gray> ").append(gui.getString("hud.self-stack","<aqua><name>: <count></aqua>")
+                        .replace("<name>",name).replace("<count>",Integer.toString(entry.getValue())));
+            }
         }
         player.sendActionBar(mini.deserialize(text.toString()));
     }

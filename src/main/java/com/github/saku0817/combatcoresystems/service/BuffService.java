@@ -22,6 +22,8 @@ public final class BuffService {
     private final StatService stats;
     private final DamageService damage;
     private final HealService healing;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService triggers) {this.triggers=triggers;}
     private final Map<String, Long> nextTicks = new ConcurrentHashMap<>();
     private final Map<UUID, List<TimedEffect>> entityEffects = new HashMap<>();
     private final Map<UUID, Map<String, TimedEffect>> ownedEffects = new HashMap<>();
@@ -52,6 +54,7 @@ public final class BuffService {
     public void release(UUID target,String lease) {
         var values=ownedEffects.get(target); if (values==null) return;
         TimedEffect old=values.remove(lease);
+        nextTicks.remove(target+":lease:"+lease);
         if (values.isEmpty()) ownedEffects.remove(target);
         if (old!=null) { stats.invalidate(target); if (Bukkit.getEntity(target) instanceof LivingEntity entity) removed.accept(entity,old.getId()); }
     }
@@ -155,9 +158,10 @@ public final class BuffService {
         }
         for (var entry : List.copyOf(ownedEffects.entrySet())) {
             if (!(Bukkit.getEntity(entry.getKey()) instanceof LivingEntity target) || target.isDead()) continue;
-            for (TimedEffect effect : List.copyOf(entry.getValue().values())) {
+            for (var leased : List.copyOf(entry.getValue().entrySet())) {
+                TimedEffect effect=leased.getValue();
                 BuffDefinition definition=definitions.snapshot().buffs().get(effect.getId());
-                if (definition!=null && definition.tickEffect()!=null) runTickEffect(target,effect,definition);
+                if (definition!=null && definition.tickEffect()!=null) runTickEffect(target,effect,definition,leased.getKey());
             }
         }
     }
@@ -178,7 +182,10 @@ public final class BuffService {
     }
 
     private void runTickEffect(LivingEntity target, TimedEffect effect, BuffDefinition definition) {
-        String key = target.getUniqueId() + ":" + effect.getId();
+        runTickEffect(target,effect,definition,null);
+    }
+    private void runTickEffect(LivingEntity target, TimedEffect effect, BuffDefinition definition,String lease) {
+        String key = target.getUniqueId() + ":" + (lease==null?effect.getId():"lease:"+lease);
         long now = System.currentTimeMillis();
         if (nextTicks.getOrDefault(key, 0L) > now) return;
         BuffDefinition.TickEffect tick = definition.tickEffect();
@@ -188,9 +195,20 @@ public final class BuffService {
             Entity resolved = effect.getSource().isBlank() ? null : Bukkit.getEntity(UUID.fromString(effect.getSource()));
             if (resolved instanceof LivingEntity living) source = living;
         } catch (IllegalArgumentException ignored) {}
-        if (tick.healing()) healing.heal(source, target, tick.referenceStat(), tick.multiplier() * effect.getStacks(), true);
-        else damage.apply(new DamageRequest(source.getUniqueId(), target.getUniqueId(), tick.referenceStat(),
+        LivingEntity effectSource=source;
+        java.util.function.Supplier<Long> operation=()->tick.healing()
+                ? healing.heal(effectSource, target, tick.referenceStat(), tick.multiplier() * effect.getStacks(), true)
+                : damage.apply(new DamageRequest(effectSource.getUniqueId(), target.getUniqueId(), tick.referenceStat(),
                 tick.multiplier() * effect.getStacks(), tick.element(), tick.critical(), tick.fixed(),
-                tick.fixed() ? tick.multiplier() * effect.getStacks() : 0, "effect:" + effect.getId()));
+                tick.fixed() ? tick.multiplier() * effect.getStacks() : 0, "effect:" + effect.getId())).finalDamage();
+        if(triggers==null)operation.get();
+        else {
+            var section=definitions.snapshot().config("buffs.yml").getConfigurationSection("buffs."+effect.getId()+".tick-effect");
+            Map<String,Object> options=new LinkedHashMap<>(com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(section));
+            if(options.get("critical") instanceof Boolean)options.remove("critical");
+            options.put("source-kind",lease==null?"DOT":"FIELD");
+            options.put("source-id",lease==null?"buff:"+effect.getId():lease.split("\\|",2)[0]);
+            triggers.withActionContext(options,operation);
+        }
     }
 }

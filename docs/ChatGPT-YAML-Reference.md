@@ -1,6 +1,6 @@
-# CombatCoreSystems v1.4.5 — YAML・実装参照資料
+# CombatCoreSystems v1.4.6 — YAML・実装参照資料
 
-この資料は配布ソースから機械的に収録しています。生成時は引き継ぎ書・ChatGPT-YAML-v1.4.5.mdも参照してください。運用中の秘密情報は含めないでください。
+この資料は配布ソースの既定YAMLと、設定を解釈する主なJava実装を機械的に収録しています。生成時は引き継ぎ書・ChatGPT-YAML-v1.4.6.mdも参照してください。運用中の秘密情報は含めないでください。
 
 ## bosses.yml
 
@@ -19,6 +19,17 @@ data-version: 1
 # 複数overrideは最後に付与/再付与された有効Buffが優先。割合の加算とは異なります。
 # Buff追加例: buffs.power: {kind: BUFF, target: SELF, duration: 10, modifiers: {percent: {ATK_PERCENT: 0.2}}}
 # 武器の self-effects / target-effects からIDで参照します。効果の数値はここで管理。
+# v1.4.6: 戦闘中の一回の計算だけへ適用する補正はcombat-modifiersに記述します。
+# 例（buffs.power内）:
+#   combat-modifiers:
+#     damage-dealt: {percent: 0.20}
+#     skill:
+#       damage-dealt: {percent: 0.50}
+#       healing-dealt: {percent: 0.50}
+#     normal-attack:
+#       element: {override: THUNDER}
+#       crit-rate: {override: 1.0}
+# 効果を通常ステータスへ恒久加算したいときは従来のmodifiers.flat/percentを使います。
 buffs:
   departure_crit:
     name: 出航
@@ -63,9 +74,8 @@ controls:
   debug-inputs: false
   # HUDの常時表示で発動失敗理由が消えないよう、自分のチャットにも表示。
   failure-chat: true
-  # Geyserが選択中ホットバースロットの破棄をInventoryClickへ変換した場合のBE専用補完。
-  # BEで選択中スロットをインベントリ画面から破棄した場合もスキル扱い。他スロットの破棄は通常通り。
-  bedrock-selected-slot-drop-skill: true
+  # 廃止キー（v1.4.6以降は無視）。BEのインベントリ内破棄をスキルへ変換しません。
+  bedrock-selected-slot-drop-skill: false
   # 手持ちCCS武器をドロップしようとすると、落とさずにスキルを発動。インベントリからの破棄は除外。
   drop-skill: true
   # しゃがみ＋攻撃で必殺技。通常攻撃はキャンセル。コマンドは引き続き併用可能。
@@ -133,11 +143,11 @@ data-version: 1
 # v1.4.5: divine-hearts.ID.triggers に武器/セットと共通のTriggerを追加可能。
 # 例: on_skill: {event: SKILL, actions: [{type: APPLY_EFFECT, effect: fire_power}]}
 # 参照するfire_power等はbuffs.ymlへ別途定義してください。
-# 各神の心内に enchantment-glint: true / false を指定できます（省略時false）。
-# 以下は divine-hearts: {} を置き換える例です。神の心はレベル・限界突破を持ちません。
+# 各追憶内に enchantment-glint: true / false を指定できます（省略時false）。
+# 以下は divine-hearts: {} を置き換える例です。追憶はレベル・限界突破を持ちません。
 # divine-hearts:
 #   divine-heart-flame:
-#     name: "<red>炎の神心</red>"
+#     name: "<red>炎の追憶</red>"
 #     material: NETHER_STAR
 #     rarity: 4
 #     lore:
@@ -155,13 +165,13 @@ data-version: 1
 #         multiplier: 1.25
 #         radius-add: 2.0
 # modifiers だけでも装備可能。rules は任意です。
-# 装備GUIの「神の心」枠→所持品の神心を選択。実物は所持品に残り、1個体を登録します。
+# 装備GUIの「追憶」枠→所持品の追憶を選択。実物は所持品に残り、1個体を登録します。
 # 実物を手放すと装備登録が解除されます。戦闘中は着脱できません。
 divine-hearts: {}
 # 完全な天賦・属性反応置換例:
 # divine-hearts:
 #   sun_god_heart:
-#     name: '<red><bold>火神の神心</bold></red>'
+#     name: '<red><bold>火神の追憶</bold></red>'
 #     material: NETHER_STAR
 #     rarity: 5
 #     enchantment-glint: true
@@ -207,7 +217,7 @@ categories:
     icon: DIAMOND_CHESTPLATE
     discovery: PUBLIC
   divine_hearts:
-    name: "<light_purple>神心</light_purple>"
+    name: "<light_purple>追憶</light_purple>"
     icon: NETHER_STAR
     discovery: PUBLIC
   materials:
@@ -229,6 +239,10 @@ custom-entries: {}
 
 ```yaml
 data-version: 1
+# v1.4.6: メイン・サブの数値は共通固定表。旧level-1/max-level/value指定は使用しません。
+# ★3=最大Lv9/サブ2種類、★4=Lv12/3種類、★5=Lv15/4種類。
+# Lv1は開放0。Lv3/6/9/12で1種類ずつ開放（レア度の枠上限まで）。
+# Lv3/6/9/12/15では独立してサブ1種類を強化。未開放も対象、重複強化可能。
 # v1.4.5: equipment.ID.triggers に共通Triggerを追加可能。
 # 例: heal_power: {event: OVERHEAL, actions: [{type: APPLY_DYNAMIC_MODIFIER,
 #       stat: ATK_FLAT, source: EVENT_OVERHEAL, multiplier: 0.1, duration: 10}]}
@@ -242,10 +256,8 @@ data-version: 1
 #     slot: HEAD
 #     rarity: 3
 #     max-level: 9
-#     main-stat:
-#       type: DEF_FLAT
-#       level-1: 5
-#       max-level: 20
+#     main-stat-candidates:
+#       DEF_FLAT: {weight: 1}
 #     substats:
 #       - HP_PERCENT
 #       - CRIT_RATE
@@ -257,45 +269,42 @@ data-version: 1
 #     slot: RESONANCE
 #     rarity: 4
 #     max-level: 12
-#     main-stat:
-#       type: FIRE_DAMAGE
-#       level-1: 0.05
-#       max-level: 0.20
+#     main-stat-candidates:
+#       FIRE_DAMAGE: {weight: 1}
 #     substats: [ATK_PERCENT, CRIT_RATE]
 # 割合は 0.20 = 20%。表示は日本語、設定キーは英語のままです。
-# HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
+# HEAD: HP/HP%/DEF/DEF%、CHEST: ATK/ATK%、LEGS: 会心率/会心ダメージ。
+# FEET: HP%/ATK%/DEF%/治癒力、RESONANCE: 属性ダメージ/属性耐性。
 # 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
 equipment: {}
-# v1.4.4 抽選例（equipment.ID 配下。割合は0.05=5%。獲得時に選び個体へ保存）:
+# v1.4.6 抽選例（LEGSのequipment.ID配下。獲得時に選び個体へ保存）:
 #     main-stat-candidates:
-#       CRIT_RATE: {level-1: 0.05, max-level: 0.30, weight: 1}
-#       CRIT_DAMAGE: {level-1: 0.10, max-level: 0.60, weight: 1}
+#       CRIT_RATE: {weight: 1}
+#       CRIT_DAMAGE: {weight: 1}
 #     substat-candidates:
-#       ATK_PERCENT: {value: 0.05, weight: 1}
-#       HP_FLAT: {value: 25, weight: 2}
-#       CRIT_RATE: {value: 0.05, weight: 1}
-#       CRIT_DAMAGE: {value: 0.10, weight: 1}
-#       DEF_PERCENT: {value: 0.05, weight: 1}
-#     initial-unlocked-substats: 0
+#       ATK_PERCENT: {weight: 1}
+#       HP_FLAT: {weight: 2}
+#       CRIT_RATE: {weight: 1}
+#       CRIT_DAMAGE: {weight: 1}
+#       DEF_PERCENT: {weight: 1}
 # main-stat-candidates はメイン1個、substat-candidates は最大 rarity-1 個（上限4）を重複なしで抽選。
-# メインとサブの重複は許可。weight は正の相対抽選重み。部位別メイン制限は従来どおり。
+# メインとサブの重複は許可。weightは正の相対抽選重み。部位制限は上記の新表です。
 # サブ抽選指定時は initial-substats より優先。省略時は従来の固定例／substatsを互換読込。
-# 既存個体は再抽選しません。新形式の main-stat は個体にレベル1と最大レベルの値を保存。
-# 強化時のサブステ増加量は従来どおり固定値25／割合0.05です。
-# 完全なツールチップ・固定サブステータス例:
+# 旧個体は初回読込時に新表へ移行し、有効な種類は維持、無効・重複を再抽選。
+# 強化履歴は新レベルに応じて一度だけ再計算。新方式へ移行後は再抽選しません。
+# サブ候補はHP/HP%/DEF/DEF%/ATK/ATK%/会心率/会心ダメージの8種類のみ。
+# 属性ダメージ・属性耐性・治癒力はサブに指定できません。
+# 初期レベル付き装備の例（数値・開放・強化数は新表から自動計算）:
 # equipment:
 #   fictional_traveler_chest:
 #     name: '<blue><bold>虚構の旅人のチェストプレート</bold></blue>'
 #     material: DIAMOND_CHESTPLATE
 #     slot: CHEST
 #     rarity: 5
-#     max-level: 25
+#     max-level: 15
 #     initial-level: 9 # 作成時のレベル。省略時1。既存アイテムには適用しません。
-#     main-stat: {type: CRIT_DAMAGE, level-1: 0.60, max-level: 0.60}
+#     main-stat-candidates: {ATK_FLAT: {weight: 1}, ATK_PERCENT: {weight: 1}}
 #     substats: [ATK_PERCENT, HP_FLAT, CRIT_RATE, CRIT_DAMAGE]
-#     initial-substats: {ATK_PERCENT: 0.10, HP_FLAT: 50, CRIT_RATE: 0.05, CRIT_DAMAGE: 0.05}
-#     initial-upgrades: {ATK_PERCENT: 1, HP_FLAT: 1, CRIT_RATE: 0, CRIT_DAMAGE: 0}
-#     initial-unlocked-substats: 3
 #     set: fictional_traveler
 #     lore:
 #       - '<gray>「真実だけを辿れば、いつか世界の果てへ着けると思っていた。」</gray>'
@@ -367,6 +376,7 @@ enhancement:
   duplicate-confirm: "<green>右の武器を1本消費して、左の武器を限界突破</green>"
   no-duplicate: "<red>消費可能な同名武器がありません</red>"
   failure-reasons:
+    refund_unavailable: '超過経験値を返却できません。同用途の100EXP素材の設定と素材所持数上限を確認してください。'
     target_not_weapon: "対象の武器が見つかりません。選び直してください。"
     limit_break_maximum: "限界突破段階が最大です。"
     invalid_material: "対象武器自身は素材にできません。"
@@ -436,6 +446,10 @@ party:
   confirm: "<green>実行する</green>"
   invited: "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>"
 hud:
+  self-stacks-enabled: true
+  self-stack: '<aqua><name>: <count></aqua>'
+  # 自己スタックのIDと表示名。例: electric_corrosion: '電蝕' / fire_seed: '火種'
+  self-stack-names: {}
   # 複数スタックの技は戦闘外でも残数を表示します。
   ability-actionbar: '<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>'
   ability-ready: 発動可能
@@ -464,6 +478,16 @@ navigation:
   search: '<aqua>検索</aqua>'
   search-hint: '<gray>チャットへ名前を入力</gray>'
 admin:
+  categories:
+    weapons: '<white>武器</white>'
+    equipment: '<white>装備（セット別）</white>'
+    memories: '<white>追憶</white>'
+    materials: '<white>強化素材</white>'
+    no-set: '<white>セットなし</white>'
+  sub-editor-title: '<gold>サブステの編集</gold>'
+  sub-select-hint: '<white>種類と強化回数を一覧から変更します。</white>'
+  sub-upgrade-choice: '<yellow>強化 +<count>：<value></yellow>'
+  sub-replace: '<green>ステータス種類を選択</green>'
   title: '<dark_red>CCS 管理メニュー</dark_red>'
   target: '<yellow>対象：<target></yellow>'
   target-hint: '<white>名前またはセレクターを入力（初期値 @s）</white>'
@@ -608,6 +632,7 @@ materials:
 
 ```yaml
 data-version: 1
+enhancement-overflow-refund: '<green>超過経験値を素材所持数へ返却しました：<materials>（変換メニューで実物化できます）</green>'
 # 空文字にすると発動通知を省略できます（天賦は所持条件を満たした時だけ通知）。
 ability-announcement:
   skill: "<aqua>スキル発動：<name></aqua>"
@@ -635,7 +660,7 @@ equipment-tooltip:
     FEET: ブーツ
     RESONANCE: 残響
 divine-heart-tooltip:
-  slot: '<white>装備部位：<u>神心</u></white>'
+  slot: '<white>装備部位：<u>追憶</u></white>'
   talent-title: '<yellow>➽ <talent_color><u><b>「<name>」</b></u></talent_color></yellow>'
 # v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
 weapon-tooltip:
@@ -674,7 +699,7 @@ skill-failure:
   conditions: "<red>技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。</red>"
   target: "<red>対象が見つかりません。対象に照準を合わせてください。</red>"
 item-lore:
-  # 神心ルール・セット効果。利用可能: <label>, <key>, <value>
+  # 追憶ルール・セット効果。利用可能: <label>, <key>, <value>
   effect: "<gray><label>: <key> = <value></gray>"
 # MiniMessage形式で全表示文を編集できます。例: <red>赤文字</red>
 prefix: "<dark_gray>[<gold>CCS</gold>]</dark_gray> "
@@ -1106,6 +1131,8 @@ weapons:
 
 ## DefinitionRegistry.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/config/DefinitionRegistry.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.config;
 
@@ -1154,6 +1181,7 @@ public final class DefinitionRegistry {
             // Never use it before a migration that writes to the user's file.
             current.load(target);
             boolean changed = mergeMissing(current, defaults);
+            changed |= migrateDisplayNames(name,current);
             if (changed) {
                 File backup = new File(plugin.getDataFolder(), "backups/config-migrations/" + System.currentTimeMillis() + "-" + name);
                 backup.getParentFile().mkdirs();
@@ -1184,6 +1212,19 @@ public final class DefinitionRegistry {
                 changed |= mergeMissing(target.getConfigurationSection(key), defaults.getConfigurationSection(key));
             }
             // A pre-existing scalar/list is intentional; don't replace it with a section.
+        }
+        return changed;
+    }
+
+    static boolean migrateDisplayNames(String file,ConfigurationSection yaml) {
+        Map<String,String[]> replacements = file.equals("messages.yml") ? Map.of(
+                "divine-heart-tooltip.slot",new String[]{"<white>装備部位：<u>神心</u></white>","<white>装備部位：<u>追憶</u></white>"},
+                "display-names.DIVINE_HEART",new String[]{"神の心","追憶"},
+                "display-names.HEALING_POWER",new String[]{"回復力","治癒力"}) : file.equals("encyclopedia.yml") ? Map.of(
+                "categories.divine_hearts.name",new String[]{"<light_purple>神心</light_purple>","<light_purple>追憶</light_purple>"}) : Map.of();
+        boolean changed=false;
+        for(var entry:replacements.entrySet()) if(entry.getValue()[0].equals(yaml.getString(entry.getKey()))) {
+            yaml.set(entry.getKey(),entry.getValue()[1]);changed=true;
         }
         return changed;
     }
@@ -1433,20 +1474,24 @@ public final class DefinitionRegistry {
             StatKey main;
             try {
                 slot = EquipmentSlot.valueOf(s.getString("slot", "").toUpperCase(Locale.ROOT));
+                if (EquipmentGrowthTable.mainCandidates(slot).isEmpty()) throw new IllegalArgumentException("Not an equipment slot");
                 var mainPool = EquipmentRolls.candidates(s.getConfigurationSection("main-stat-candidates"), true);
                 if (s.contains("main-stat-candidates") && mainPool.isEmpty()) throw new IllegalArgumentException("Empty main-stat-candidates");
                 main = s.contains("main-stat.type") || mainPool.isEmpty() ? StatKey.valueOf(s.getString("main-stat.type", "").toUpperCase(Locale.ROOT)) : mainPool.getFirst().key();
-                for (var candidate : mainPool) if (!mainAllowed(slot, candidate.key())) throw new IllegalArgumentException("Main stat not allowed for slot");
+                for (var candidate : mainPool) if (!mainAllowed(slot, candidate.key())) warnings.add("equipment " + id + " ignores legacy main candidate " + candidate.key() + " not allowed in v1.4.6");
                 var subPool = EquipmentRolls.candidates(s.getConfigurationSection("substat-candidates"), false);
+                for (var candidate : subPool) if (!EquipmentGrowthTable.subCandidates().contains(candidate.key()))
+                    warnings.add("equipment " + id + " ignores legacy substat candidate " + candidate.key() + " not allowed in v1.4.6");
                 if (s.contains("substat-candidates") && subPool.isEmpty()) throw new IllegalArgumentException("Empty substat-candidates");
             } catch (IllegalArgumentException ex) { errors.add("equipment " + id + " has invalid slot or main stat"); continue; }
-            if (!mainAllowed(slot, main)) { errors.add("equipment " + id + " main stat is not allowed for its slot"); continue; }
+            if (!mainAllowed(slot, main)) warnings.add("equipment " + id + " legacy main stat will be redrawn from allowed v1.4.6 candidates");
             int rarity = s.getInt("rarity");
             int expectedMax = rarity == 3 ? 9 : rarity == 4 ? 12 : rarity == 5 ? 15 : -1;
             if (expectedMax < 0) { errors.add("equipment " + id + " rarity must be 3..5"); continue; }
-            int maxLevel = s.getInt("max-level", expectedMax);
-            if (maxLevel < 1 || maxLevel > 100) { errors.add("equipment " + id + " max-level must be 1..100"); continue; }
-            if (maxLevel != expectedMax) warnings.add("equipment " + id + " max-level differs from rarity standard");
+            int configuredMax = s.getInt("max-level", expectedMax);
+            if (configuredMax < 1 || configuredMax > 100) { errors.add("equipment " + id + " max-level must be 1..100"); continue; }
+            if (configuredMax != expectedMax) warnings.add("equipment " + id + " uses v1.4.6 rarity maximum " + expectedMax + " instead of " + configuredMax);
+            int maxLevel = expectedMax;
             List<StatKey> candidates = new ArrayList<>();
             ConfigurationSection initialStats = s.getConfigurationSection("initial-substats");
             if (initialStats != null) {
@@ -1472,15 +1517,7 @@ public final class DefinitionRegistry {
     }
 
     public static boolean mainAllowed(EquipmentSlot slot, StatKey key) {
-        return switch (slot) {
-            case HEAD -> Set.of(StatKey.HP_FLAT, StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT).contains(key);
-            case CHEST -> Set.of(StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE).contains(key);
-            case LEGS -> Set.of(StatKey.ATK_FLAT, StatKey.ATK_PERCENT).contains(key);
-            case FEET -> Set.of(StatKey.ATK_FLAT, StatKey.ATK_PERCENT, StatKey.CRIT_RATE, StatKey.CRIT_DAMAGE,
-                    StatKey.HP_FLAT, StatKey.HP_PERCENT, StatKey.DEF_FLAT, StatKey.DEF_PERCENT).contains(key);
-            case RESONANCE -> key.name().endsWith("_DAMAGE") || key.name().endsWith("_RESISTANCE");
-            default -> false;
-        };
+        return EquipmentGrowthTable.mainCandidates(slot).contains(key);
     }
 
     private Map<String, MobDefinition> parseMobs(YamlConfiguration yaml, String rootName, boolean boss, boolean vanilla, List<String> errors) {
@@ -1541,6 +1578,8 @@ public final class DefinitionRegistry {
                 if (s.contains("modifiers.override")) com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.modifiers(
                         Map.of("override",com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s.getConfigurationSection("modifiers.override"))));
                 BuffDefinition.TickEffect tick = parseTickEffect(s.getConfigurationSection("tick-effect"), errors, id);
+                com.github.saku0817.combatcoresystems.service.CombatModifierService.compile(
+                        com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(s));
                 result.put(id, new BuffDefinition(id, kind, target, Math.max(0, s.getDouble("duration", 0)),
                         s.getBoolean("permanent"), Math.max(1, s.getInt("max-stacks", 1)), reapply, Map.copyOf(flat), Map.copyOf(percent), tick));
             } catch (IllegalArgumentException ex) { errors.add("buff " + id + " contains an invalid enum value"); }
@@ -1561,6 +1600,10 @@ public final class DefinitionRegistry {
     private BuffDefinition.TickEffect parseTickEffect(ConfigurationSection section, List<String> errors, String id) {
         if (section == null) return null;
         try {
+            var options=new LinkedHashMap<>(com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(section));
+            if(options.get("critical") instanceof Boolean)options.remove("critical");
+            com.github.saku0817.combatcoresystems.model.trigger.CombatModifiers.action(options);
+            if(options.containsKey("tags"))com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.strings(options,"tags");
             return new BuffDefinition.TickEffect(section.getBoolean("healing"), section.getBoolean("fixed"),
                     ReferenceStat.valueOf(section.getString("reference", "ATK").toUpperCase(Locale.ROOT)),
                     section.getDouble("multiplier", 1), Element.parse(value(section, "attribute", "element")).orElse(Element.PHYSICAL),
@@ -1635,6 +1678,8 @@ public final class DefinitionRegistry {
 ```
 
 ## WeaponOptionsParser.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/config/WeaponOptionsParser.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.config;
@@ -1721,6 +1766,8 @@ final class WeaponOptionsParser {
 
 ## TriggerCatalog.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/config/TriggerCatalog.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.config;
 
@@ -1785,6 +1832,8 @@ public final class TriggerCatalog {
 
 ## StatKey.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/StatKey.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.model;
 
@@ -1803,6 +1852,8 @@ public enum StatKey {
 ```
 
 ## EquipmentRolls.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/EquipmentRolls.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.model;
@@ -1848,7 +1899,162 @@ public final class EquipmentRolls {
 }
 ```
 
+## EquipmentGrowthTable.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/EquipmentGrowthTable.java`
+
+```java
+package com.github.saku0817.combatcoresystems.model;
+
+import java.util.*;
+
+/** Exact v1.4.6 values; percentage columns are converted to ratios once, here. */
+public final class EquipmentGrowthTable {
+    private EquipmentGrowthTable() {}
+    private static final Map<StatKey, double[]> MAIN = new EnumMap<>(StatKey.class);
+    private static final Map<StatKey, double[]> SUB = new EnumMap<>(StatKey.class);
+    static {
+        main(StatKey.HP_FLAT, false, 152,191,231,270,310,349,389,429,468,508,547,587,626,666,705);
+        main(StatKey.DEF_FLAT, false, 76,95,115,135,155,174,194,214,234,254,273,293,313,333,352);
+        MAIN.put(StatKey.ATK_FLAT, MAIN.get(StatKey.DEF_FLAT));
+        main(StatKey.HP_PERCENT, true, 9.3,11.7,14.1,16.5,19,21.4,23.8,26.2,28.6,31.1,33.5,35.9,38.3,40.7,43.2);
+        MAIN.put(StatKey.ATK_PERCENT, MAIN.get(StatKey.HP_PERCENT));
+        main(StatKey.DEF_PERCENT, true, 11.6,14.6,17.7,20.7,23.7,26.7,29.8,32.8,35.8,38.8,41.9,44.9,47.9,50.9,54);
+        main(StatKey.CRIT_DAMAGE, true, 13.9,17.6,21.2,24.8,28.5,32.1,35.7,39.3,43,46.6,50.2,53.9,57.5,61.1,64.8);
+        main(StatKey.CRIT_RATE, true, 6.9,8.8,10.6,12.4,14.2,16,17.8,19.6,21.5,23.3,25.1,26.9,28.7,30.5,32.4);
+        main(StatKey.HEALING_POWER, true, 7.4,9.4,11.3,13.2,15.2,17.1,19,21,22.9,24.8,26.8,28.7,30.6,32.6,34.5);
+        for (String element : List.of("FIRE","WATER","WIND","THUNDER","MOON"))
+            for (String suffix : List.of("_DAMAGE","_RESISTANCE"))
+                main(StatKey.valueOf(element+suffix), true, 8.3,10.5,12.7,14.9,17.1,19.2,21.4,23.6,25.8,27.9,30.1,32.3,34.5,36.7,38.8);
+        sub(StatKey.HP_FLAT, false, 38,76,114,152,190,228);
+        sub(StatKey.DEF_FLAT, false, 19,38,57,76,95,114);
+        SUB.put(StatKey.ATK_FLAT, SUB.get(StatKey.DEF_FLAT));
+        sub(StatKey.HP_PERCENT, true, 3.8,7.6,11.4,15.2,19,22.8);
+        SUB.put(StatKey.ATK_PERCENT, SUB.get(StatKey.HP_PERCENT));
+        sub(StatKey.DEF_PERCENT, true, 4.8,9.6,14.4,19.2,24,28.8);
+        sub(StatKey.CRIT_DAMAGE, true, 5.8,11.6,17.4,23.2,29,34.8);
+        sub(StatKey.CRIT_RATE, true, 2.9,5.8,8.7,11.6,14.5,17.4);
+    }
+    private static void main(StatKey key, boolean percent, double... values) { MAIN.put(key, ratios(percent, values)); }
+    private static void sub(StatKey key, boolean percent, double... values) { SUB.put(key, ratios(percent, values)); }
+    private static double[] ratios(boolean percent, double[] values) {
+        if (percent) for (int i=0;i<values.length;i++) values[i]/=100;
+        return values;
+    }
+    public static Set<StatKey> mainCandidates(EquipmentSlot slot) {
+        return switch (slot) {
+            case HEAD -> Set.of(StatKey.HP_FLAT,StatKey.HP_PERCENT,StatKey.DEF_FLAT,StatKey.DEF_PERCENT);
+            case CHEST -> Set.of(StatKey.ATK_FLAT,StatKey.ATK_PERCENT);
+            case LEGS -> Set.of(StatKey.CRIT_RATE,StatKey.CRIT_DAMAGE);
+            case FEET -> Set.of(StatKey.HP_PERCENT,StatKey.DEF_PERCENT,StatKey.ATK_PERCENT,StatKey.HEALING_POWER);
+            case RESONANCE -> Set.of(StatKey.FIRE_DAMAGE,StatKey.WATER_DAMAGE,StatKey.WIND_DAMAGE,StatKey.THUNDER_DAMAGE,StatKey.MOON_DAMAGE,
+                    StatKey.FIRE_RESISTANCE,StatKey.WATER_RESISTANCE,StatKey.WIND_RESISTANCE,StatKey.THUNDER_RESISTANCE,StatKey.MOON_RESISTANCE);
+            default -> Set.of();
+        };
+    }
+    public static Set<StatKey> subCandidates() { return Collections.unmodifiableSet(SUB.keySet()); }
+    public static int maximumLevel(int rarity) { return switch(rarity) { case 3 -> 9; case 4 -> 12; case 5 -> 15; default -> throw new IllegalArgumentException("Equipment rarity must be 3, 4 or 5"); }; }
+    public static int maximumSubstats(int rarity) { maximumLevel(rarity); return rarity-1; }
+    public static double mainValue(EquipmentSlot slot, StatKey key, int level) {
+        if (!mainCandidates(slot).contains(key) || level<1 || level>15) throw new IllegalArgumentException("Invalid main stat or level");
+        return MAIN.get(key)[level-1];
+    }
+    public static double subValue(StatKey key, int upgrades) {
+        if (!SUB.containsKey(key) || upgrades<0 || upgrades>5) throw new IllegalArgumentException("Invalid substat or upgrade count");
+        return SUB.get(key)[upgrades];
+    }
+}
+```
+
+## EquipmentGrowth.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/EquipmentGrowth.java`
+
+```java
+package com.github.saku0817.combatcoresystems.model;
+
+import java.util.*;
+import java.util.random.RandomGenerator;
+
+/** Persisted draws separate unlock milestones from upgrade milestones. No world/server state required. */
+public final class EquipmentGrowth {
+    private EquipmentGrowth() {}
+    public static final int VERSION = 146;
+
+    public static boolean migrate(ItemInstance item, EquipmentDefinition definition,
+                                  List<EquipmentRolls.Candidate> mainPool, List<EquipmentRolls.Candidate> subPool) {
+        if (item.getEquipmentGrowthVersion() >= VERSION) return false;
+        // The same legacy instance in inventory and stored player data must migrate identically.
+        initialize(item, definition, mainPool, subPool, new Random(Objects.hash(item.getInstanceId(), VERSION)), true);
+        return true;
+    }
+
+    public static void initialize(ItemInstance item, EquipmentDefinition definition,
+                                  List<EquipmentRolls.Candidate> mainPool, List<EquipmentRolls.Candidate> subPool,
+                                  RandomGenerator random, boolean preserveKinds) {
+        Set<StatKey> allowedMain = EquipmentGrowthTable.mainCandidates(definition.slot());
+        List<EquipmentRolls.Candidate> mains = candidates(mainPool, allowedMain);
+        StatKey main = preserveKinds ? item.mainStat(definition) : null;
+        if (main == null || !allowedMain.contains(main)) main = EquipmentRolls.draw(mains,1,random).getFirst().key();
+        item.setMainStat(main, EquipmentGrowthTable.mainValue(definition.slot(),main,1),
+                EquipmentGrowthTable.mainValue(definition.slot(),main,EquipmentGrowthTable.maximumLevel(definition.rarity())));
+        List<EquipmentRolls.Candidate> subs = candidates(subPool, EquipmentGrowthTable.subCandidates());
+        LinkedHashSet<StatKey> chosen = new LinkedHashSet<>();
+        int maximum = EquipmentGrowthTable.maximumSubstats(definition.rarity());
+        if (preserveKinds) for (String raw : item.getSubstats().keySet()) {
+            try {
+                StatKey key = StatKey.valueOf(raw.toUpperCase(Locale.ROOT));
+                if (chosen.size()<maximum && EquipmentGrowthTable.subCandidates().contains(key)) chosen.add(key);
+            } catch (IllegalArgumentException ignored) { }
+        }
+        List<EquipmentRolls.Candidate> remaining = subs.stream().filter(c->!chosen.contains(c.key())).toList();
+        EquipmentRolls.draw(remaining,maximum-chosen.size(),random).forEach(c->chosen.add(c.key()));
+        item.getSubstats().clear(); item.getSubstatUpgrades().clear(); item.getEquipmentUpgradeRolls().clear();
+        chosen.forEach(key->item.getSubstats().put(key.name(),EquipmentGrowthTable.subValue(key,0)));
+        List<String> keys = new ArrayList<>(item.getSubstats().keySet());
+        for (int i=0;i<EquipmentGrowthTable.maximumLevel(definition.rarity())/3;i++)
+            item.getEquipmentUpgradeRolls().add(keys.get(random.nextInt(keys.size())));
+        item.setEquipmentGrowthVersion(VERSION);
+        setLevel(item,definition,item.getLevel());
+    }
+
+    private static List<EquipmentRolls.Candidate> candidates(List<EquipmentRolls.Candidate> configured, Set<StatKey> allowed) {
+        List<EquipmentRolls.Candidate> filtered = configured.stream().filter(c->allowed.contains(c.key())).toList();
+        return filtered.isEmpty() ? allowed.stream().sorted().map(k->new EquipmentRolls.Candidate(k,0,0,1)).toList() : filtered;
+    }
+
+    /** Used for explicit admin level setting: replay the saved roll history, never reroll. */
+    public static void setLevel(ItemInstance item, EquipmentDefinition definition, int level) {
+        item.setLevel(Math.clamp(level,1,EquipmentGrowthTable.maximumLevel(definition.rarity())));
+        item.setUnlockedSubstats(Math.min(item.getSubstats().size(),item.getLevel()/3));
+        item.getSubstatUpgrades().clear();
+        item.getSubstats().keySet().forEach(key->item.getSubstatUpgrades().put(key,0));
+        for (String key : item.getEquipmentUpgradeRolls().subList(0,Math.min(item.getEquipmentUpgradeRolls().size(),item.getLevel()/3)))
+            if (item.getSubstats().containsKey(key)) item.getSubstatUpgrades().merge(key,1,Integer::sum);
+        recalculate(item);
+        if (item.getLevel()==EquipmentGrowthTable.maximumLevel(definition.rarity())) item.setExp(0);
+    }
+
+    /** A normal level gain retains administrator-edited counts and adds only this milestone's roll. */
+    public static void advance(ItemInstance item, EquipmentDefinition definition) {
+        if (item.getLevel()>=EquipmentGrowthTable.maximumLevel(definition.rarity())) return;
+        item.setLevel(item.getLevel()+1);
+        item.setUnlockedSubstats(Math.min(item.getSubstats().size(),item.getLevel()/3));
+        if (item.getLevel()%3==0) {
+            String key=item.getEquipmentUpgradeRolls().get(item.getLevel()/3-1);
+            if(item.getSubstats().containsKey(key)) item.getSubstatUpgrades().compute(key,(k,v)->Math.min(5,(v==null?0:v)+1));
+        }
+        recalculate(item);
+    }
+    public static void recalculate(ItemInstance item) {
+        item.getSubstats().replaceAll((key,unused)->EquipmentGrowthTable.subValue(StatKey.valueOf(key),item.getSubstatUpgrades().getOrDefault(key,0)));
+    }
+}
+```
+
 ## ItemInstance.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/ItemInstance.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.model;
@@ -1869,9 +2075,13 @@ public final class ItemInstance {
     private StatKey mainStat;
     private double mainAtLevel1;
     private double mainAtMaxLevel;
+    private int equipmentGrowthVersion;
+    private java.util.List<String> equipmentUpgradeRolls = new java.util.ArrayList<>();
 
     public StatKey mainStat(EquipmentDefinition definition) { return mainStat == null ? definition.mainStat() : mainStat; }
     public double mainValue(EquipmentDefinition definition) {
+        if (equipmentGrowthVersion >= 146)
+            return EquipmentGrowthTable.mainValue(definition.slot(), mainStat(definition), level);
         return com.github.saku0817.combatcoresystems.util.CoreMath.linear(mainStat == null ? definition.mainAtLevel1() : mainAtLevel1,
                 mainStat == null ? definition.mainAtMaxLevel() : mainAtMaxLevel, level, definition.maxLevel());
     }
@@ -1888,6 +2098,9 @@ public final class ItemInstance {
     public Map<String, Double> getSubstats() { return substats; }
     public Map<String, Integer> getSubstatUpgrades() { return substatUpgrades; }
     public int getUnlockedSubstats() { return unlockedSubstats; }
+    public int getEquipmentGrowthVersion() { return equipmentGrowthVersion; }
+    public void setEquipmentGrowthVersion(int version) { equipmentGrowthVersion = version; }
+    public java.util.List<String> getEquipmentUpgradeRolls() { return equipmentUpgradeRolls; }
     public void setDefinitionId(String definitionId) { this.definitionId = definitionId; }
     public void setLevel(int level) { this.level = Math.max(1, Math.min(100, level)); }
     public void setExp(long exp) { this.exp = Math.max(0L, exp); }
@@ -1897,6 +2110,8 @@ public final class ItemInstance {
 ```
 
 ## Area.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/Area.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.model.trigger;
@@ -1933,6 +2148,8 @@ public record Area(Shape shape, double radius, double width, double height, doub
 
 ## EventContext.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/EventContext.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.model.trigger;
 
@@ -1950,6 +2167,14 @@ public final class EventContext {
     public String weapon = "", ability = "", combatId = "";
     public double damage, finalDamage, healAmount, requestedHeal, effectiveHeal, overheal;
     public Element attribute = Element.PHYSICAL;
+    public Element originalElement = Element.PHYSICAL;
+    public SourceKind sourceKind = SourceKind.ENVIRONMENT;
+    public String sourceId = "", attackType = "", abilityType = "", damageKind = "", movementType = "";
+    public double baseDamage, baseHeal, finalHeal;
+    public boolean criticalAllowed, criticalForced;
+    public final Set<String> tags = new LinkedHashSet<>();
+    public final CombatModifiers sourceCombat = new CombatModifiers(), targetCombat = new CombatModifiers();
+    public Map<String,Object> actionOptions = Map.of();
     public boolean critical, reaction, normalAttack, skill, ultimate;
     public Location location;
     public final Map<String, Object> values = new LinkedHashMap<>();
@@ -1967,6 +2192,10 @@ public final class EventContext {
         result.damage = damage; result.finalDamage = finalDamage;
         result.healAmount = healAmount; result.requestedHeal=requestedHeal; result.effectiveHeal = effectiveHeal; result.overheal = overheal;
         result.attribute = attribute; result.critical = critical; result.reaction = reaction;
+        result.originalElement=originalElement;result.sourceKind=sourceKind;result.sourceId=sourceId;
+        result.attackType=attackType;result.abilityType=abilityType;result.damageKind=damageKind;result.movementType=movementType;
+        result.baseDamage=baseDamage;result.baseHeal=baseHeal;result.finalHeal=finalHeal;
+        result.criticalAllowed=criticalAllowed;result.criticalForced=criticalForced;result.tags.addAll(tags);
         result.normalAttack = normalAttack; result.skill = skill; result.ultimate = ultimate;
         result.healer = healer; result.healed = healed; result.values.putAll(values);
         return result;
@@ -1975,6 +2204,8 @@ public final class EventContext {
 ```
 
 ## EventModifier.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/EventModifier.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.model.trigger;
@@ -2009,7 +2240,208 @@ public final class EventModifier {
 }
 ```
 
+## CombatModifiers.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/CombatModifiers.java`
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+import com.github.saku0817.combatcoresystems.model.Element;
+import java.util.*;
+import static com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.*;
+
+/** Combat-only modifiers never enter a player's persistent StatKey values. */
+public final class CombatModifiers {
+    public enum CriticalMode { DEFAULT, DISABLED, ENABLED, FORCED }
+    private static final Set<String> DOMAINS=Set.of("damage-dealt","damage-taken","healing-dealt","healing-received","crit-rate","crit-damage","element","critical-mode");
+    private static final Set<String> CATEGORIES;
+    static {
+        Set<String> names=new HashSet<>();for(SourceKind kind:SourceKind.values())names.add(kind.name().toLowerCase(Locale.ROOT).replace('_','-'));
+        for(Element element:Element.values())names.add(element.name().toLowerCase(Locale.ROOT));CATEGORIES=Set.copyOf(names);
+    }
+    public record Rule(String category,String domain,String mode,Object value,Map<String,Object> scope,int priority) {}
+    private static final class Scalar {double flat,percent;Double override;}
+    private final Map<String,Scalar> values=new LinkedHashMap<>();
+    private record Applied(Rule rule,int stacks) {}
+    private final List<Applied> applied=new ArrayList<>();
+    private Element evaluatedElement;
+    private Element element;
+    private CriticalMode criticalMode=CriticalMode.DEFAULT;
+    public Element element(Element fallback) {return element==null?fallback:element;}
+    public CriticalMode criticalMode() {return criticalMode;}
+
+    public static List<Rule> parse(Map<String,Object> map) {
+        List<Rule> result=new ArrayList<>();parse(map,"",Map.of(),0,result);return List.copyOf(result);
+    }
+    private static void parse(Map<String,Object> config,String category,Map<String,Object> inheritedScope,int inheritedPriority,List<Rule> result) {
+        Map<String,Object> scope=config.containsKey("scope")?child(config,"scope"):inheritedScope;validateScope(scope);
+        int priority=config.containsKey("priority")?signedInteger(config,"priority"):inheritedPriority;
+        // Within one definition, category-specific overrides follow global overrides,
+        // independent of YAML map order. Priority and later definitions still win.
+        var entries=new ArrayList<>(config.entrySet());
+        if(category.isEmpty())entries.sort(Comparator.comparingInt(entry->CATEGORIES.contains(entry.getKey().toLowerCase(Locale.ROOT).replace('_','-'))?1:0));
+        for(var entry:entries) {
+            String domain=entry.getKey().toLowerCase(Locale.ROOT).replace('_','-');
+            if(domain.equals("scope")||domain.equals("priority"))continue;
+            if(category.isEmpty()&&CATEGORIES.contains(domain)) {parse(map(entry.getValue()),domain,scope,priority,result);continue;}
+            if(!DOMAINS.contains(domain))throw new IllegalArgumentException("Unknown combat modifier: "+entry.getKey());
+            if(Element.parse(category).isPresent()&&!domain.equals("damage-taken"))
+                throw new IllegalArgumentException("Element categories support damage-taken only; use scope.element for other domains");
+            if(domain.equals("critical-mode")) {
+                result.add(new Rule(category,domain,"override",CriticalMode.valueOf(String.valueOf(entry.getValue()).toUpperCase(Locale.ROOT)),scope,priority));continue;
+            }
+            Map<String,Object> modes=map(entry.getValue());
+            if(modes.isEmpty())throw new IllegalArgumentException("Empty combat modifier: "+domain);
+            for(var mode:modes.entrySet()) {
+                if(!Set.of("flat","percent","override").contains(mode.getKey()))throw new IllegalArgumentException("Unknown combat modifier mode: "+mode.getKey());
+                Object value;
+                if(domain.equals("element")) {
+                    if(!mode.getKey().equals("override"))throw new IllegalArgumentException("Element supports override only");
+                    value=Element.parse(String.valueOf(mode.getValue())).orElseThrow(()->new IllegalArgumentException("Unknown element"));
+                } else {
+                    if(mode.getKey().equals("flat")&&!domain.startsWith("crit-"))throw new IllegalArgumentException(domain+" does not support flat");
+                    value=number(modes,mode.getKey(),0);
+                }
+                result.add(new Rule(category,domain,mode.getKey(),value,scope,priority));
+            }
+        }
+    }
+    private static int signedInteger(Map<String,Object> m,String key) {
+        double n=range(m,key,0,Integer.MIN_VALUE,Integer.MAX_VALUE);if(n!=Math.rint(n))throw new IllegalArgumentException("Expected integer "+key);return(int)n;
+    }
+    private static void validateScope(Map<String,Object> scope) {
+        for(String key:scope.keySet())switch(key) {
+            case "source-kind" -> names(scope.get(key)).forEach(value->SourceKind.valueOf(value.toUpperCase(Locale.ROOT)));
+            case "source-id" -> {if(!(scope.get(key) instanceof String s)||s.isBlank())throw new IllegalArgumentException("Invalid source-id");}
+            case "element" -> {if(Element.parse(text(scope,key,"")).isEmpty())throw new IllegalArgumentException("Unknown scope element");}
+            case "tags" -> names(scope.get(key));
+            default -> throw new IllegalArgumentException("Unknown modifier scope: "+key);
+        }
+    }
+    public static List<String> names(Object value) {
+        if(value instanceof String s&&!s.isBlank())return List.of(s);
+        if(value instanceof List<?> list&&!list.isEmpty()&&list.stream().allMatch(v->v instanceof String s&&!s.isBlank()))return list.stream().map(String::valueOf).toList();
+        throw new IllegalArgumentException("Expected string or nonempty string list");
+    }
+    public static List<Rule> action(Map<String,Object> action) {
+        List<Rule> result=new ArrayList<>(parse(child(action,"modifiers")));
+        Map<String,Object> critical=child(action,"critical");
+        for(String key:critical.keySet())if(!Set.of("mode","rate","damage").contains(key))throw new IllegalArgumentException("Unknown critical key: "+key);
+        Map<String,Object> translated=new LinkedHashMap<>();
+        if(critical.containsKey("mode"))translated.put("critical-mode",critical.get("mode"));
+        if(critical.containsKey("rate"))translated.put("crit-rate",critical.get("rate"));
+        if(critical.containsKey("damage"))translated.put("crit-damage",critical.get("damage"));
+        if(action.containsKey("element"))translated.put("element",action.get("element"));
+        result.addAll(parse(translated));return List.copyOf(result);
+    }
+    public static List<Rule> event(Map<String,Object> action) {
+        List<Rule> rules=new ArrayList<>(action(action));Map<String,Object> translated=new LinkedHashMap<>();
+        for(String section:List.of("damage","healing"))for(var entry:child(action,section).entrySet()) {
+            String suffix=entry.getKey();
+            if(!Set.of("dealt",section.equals("damage")?"taken":"received").contains(suffix))throw new IllegalArgumentException("Unknown "+section+" modifier: "+suffix);
+            translated.put(section+"-"+suffix,entry.getValue());
+        }
+        rules.addAll(parse(translated));return List.copyOf(rules);
+    }
+    public void apply(List<Rule> rules,EventContext context,int stacks) {
+        if(evaluatedElement!=context.attribute)rebuild(context);
+        rules.stream().sorted(Comparator.comparingInt(Rule::priority)).forEach(rule->{
+            var entry=new Applied(rule,stacks);applied.add(entry);applyOne(entry,context);
+        });
+    }
+    private void rebuild(EventContext context) {
+        values.clear();element=null;criticalMode=CriticalMode.DEFAULT;evaluatedElement=context.attribute;
+        applied.forEach(entry->applyOne(entry,context));
+    }
+    private void applyOne(Applied entry,EventContext context) {
+            Rule rule=entry.rule();int stacks=entry.stacks();
+            String kind=context.sourceKind.name().toLowerCase(Locale.ROOT).replace('_','-');
+            if(!rule.category().isEmpty()&&!rule.category().equals(kind)&&!rule.category().equals(context.attribute.name().toLowerCase(Locale.ROOT)))return;
+            Map<String,Object> scope=rule.scope();
+            if(scope.containsKey("source-kind")&&names(scope.get("source-kind")).stream().noneMatch(v->v.equalsIgnoreCase(context.sourceKind.name())))return;
+            if(scope.containsKey("source-id")&&!scope.get("source-id").equals(context.sourceId))return;
+            if(scope.containsKey("element")&&Element.parse(text(scope,"element","")).orElse(null)!=context.attribute)return;
+            if(scope.containsKey("tags")&&!context.tags.containsAll(names(scope.get("tags"))))return;
+            if(rule.domain().equals("element")){element=(Element)rule.value();return;}
+            if(rule.domain().equals("critical-mode")){criticalMode=(CriticalMode)rule.value();return;}
+            Scalar scalar=values.computeIfAbsent(rule.category()+":"+rule.domain(),k->new Scalar());
+            double n=((Number)rule.value()).doubleValue();
+            switch(rule.mode()) {case "flat"->scalar.flat+=n*stacks;case "percent"->scalar.percent+=n*stacks;case "override"->scalar.override=n;default->throw new IllegalArgumentException("mode");}
+    }
+    private double value(String category,String domain,double base) {
+        Scalar scalar=values.get(category+":"+domain);return scalar==null?base:scalar.override!=null?scalar.override:base+scalar.flat+scalar.percent;
+    }
+    public double factor(String domain,EventContext context) {
+        if(evaluatedElement!=context.attribute)rebuild(context);
+        String category=context.sourceKind.name().toLowerCase(Locale.ROOT).replace('_','-');
+        double result=Math.max(0,1+value("",domain,0))*Math.max(0,1+value(category,domain,0));
+        if(domain.equals("damage-taken"))result*=Math.max(0,1+value(context.attribute.name().toLowerCase(Locale.ROOT),domain,0));
+        return result;
+    }
+    public double critical(String domain,double base,EventContext context) {
+        if(evaluatedElement!=context.attribute)rebuild(context);
+        return value(context.sourceKind.name().toLowerCase(Locale.ROOT).replace('_','-'),domain,value("",domain,base));
+    }
+}
+```
+
+## MovementPath.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/MovementPath.java`
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
+
+/** Segment against the target's expanded box: continuous hit detection, not endpoint-only checks. */
+public final class MovementPath {
+    private MovementPath() {}
+    public static boolean intersects(Vector from,Vector to,BoundingBox target,double width,double height) {
+        double[] a={from.getX(),from.getY(),from.getZ()},b={to.getX(),to.getY(),to.getZ()};
+        double[] low={target.getMinX()-width/2,target.getMinY()-height,target.getMinZ()-width/2};
+        double[] high={target.getMaxX()+width/2,target.getMaxY(),target.getMaxZ()+width/2};
+        double first=0,last=1;
+        for(int axis=0;axis<3;axis++) {
+            double delta=b[axis]-a[axis];
+            if(Math.abs(delta)<1e-10) {if(a[axis]<low[axis]||a[axis]>high[axis])return false;continue;}
+            double entry=(low[axis]-a[axis])/delta,exit=(high[axis]-a[axis])/delta;
+            if(entry>exit){double temp=entry;entry=exit;exit=temp;}
+            first=Math.max(first,entry);last=Math.min(last,exit);if(first>last)return false;
+        }
+        return true;
+    }
+}
+```
+
+## SourceKind.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/SourceKind.java`
+
+```java
+package com.github.saku0817.combatcoresystems.model.trigger;
+
+public enum SourceKind {
+    NORMAL_ATTACK, SKILL, ULTIMATE, TALENT, TRIGGER, BUFF, DEBUFF, DOT, FIELD, REACTION, MOB_ATTACK, ENVIRONMENT;
+    public static SourceKind from(String source) {
+        if(source==null)return ENVIRONMENT;
+        if(source.equals("normal_attack"))return NORMAL_ATTACK;
+        String prefix=source.contains(":")?source.substring(0,source.indexOf(':')):source;
+        return switch(prefix.toLowerCase(java.util.Locale.ROOT)) {
+            case "skill" -> SKILL; case "ultimate" -> ULTIMATE; case "talent" -> TALENT;
+            case "buff","dot","effect" -> DOT; case "debuff" -> DEBUFF; case "field" -> FIELD;
+            case "reaction" -> REACTION; case "trigger" -> TRIGGER; case "mob","mob_attack" -> MOB_ATTACK;
+            default -> ENVIRONMENT;
+        };
+    }
+}
+```
+
 ## TriggerChain.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/TriggerChain.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.model.trigger;
@@ -2039,6 +2471,8 @@ public final class TriggerChain {
 
 ## TriggerDefinition.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/TriggerDefinition.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.model.trigger;
 
@@ -2056,11 +2490,12 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
             "ALL_PARTY_MEMBERS", "ALL_PARTY_MEMBERS_AND_SELF", "ENTITIES_IN_AREA", "ALLIES_IN_AREA", "ENEMIES_IN_AREA");
     public static final Set<String> SCOPES = Set.of("SELF", "TARGET", "EVENT_TARGET", "ATTACKER", "VICTIM", "ALL_TARGETS");
     private static final Set<String> ACTIONS = Set.of("APPLY_EFFECT", "REMOVE_EFFECT", "ADD_STACK", "SET_STACK", "CLEAR_STACK",
-            "CONSUME_STACK", "DAMAGE", "HEAL", "MODIFY_EVENT_STATS", "CREATE_FIELD", "REMOVE_FIELD", "APPLY_DYNAMIC_MODIFIER");
+            "CONSUME_STACK", "DAMAGE", "HEAL", "MODIFY_EVENT_STATS", "MODIFY_EVENT", "CREATE_FIELD", "REMOVE_FIELD", "APPLY_DYNAMIC_MODIFIER",
+            "MOVE", "DASH", "LEAP", "KNOCKBACK", "PULL", "TELEPORT");
     private static final Set<String> CONDITIONS = Set.of("min-hp-percent", "max-hp-percent", "requires-combat", "requires-target",
             "min-distance", "max-distance", "damage-positive", "heal-positive", "overheal-positive", "normal-attack-only",
             "skill-only", "ultimate-only", "element", "critical", "buff-present", "buff-absent", "party-required",
-            "target-is-self", "target-is-ally", "target-is-enemy", "inside-field", "outside-field", "stack", "context-value");
+            "target-is-self", "target-is-ally", "target-is-enemy", "inside-field", "outside-field", "stack", "context-value", "source-kind", "source-id", "tags");
     public static Map<String,Object> map(Object value) {
         Map<?,?> raw;
         if (value instanceof ConfigurationSection section) raw = section.getValues(false);
@@ -2111,7 +2546,7 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
         List<TriggerDefinition> out = new ArrayList<>();
         for (String id : section.getKeys(false)) {
             Map<String,Object> m = map(section.get(id));
-            TriggerEvent event = TriggerEvent.valueOf(text(m,"event", "").toUpperCase(Locale.ROOT));
+            TriggerEvent event = TriggerEvent.parse(text(m,"event", ""));
             String target = choice(m,"target","SELF",SELECTORS);
             Map<String,Object> conditions = new LinkedHashMap<>(child(m,"conditions")); validateConditions(conditions,buffs);
             if (m.containsKey("effects") && target.equals("OTHER")) conditions.put("requires-target",true);
@@ -2131,6 +2566,15 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
         for (String key : m.keySet()) {
             if (!CONDITIONS.contains(key)) throw new IllegalArgumentException("Unknown condition: " + key);
             switch (key) {
+                case "source-kind" -> CombatModifiers.names(m.get(key)).forEach(v->SourceKind.valueOf(v.toUpperCase(Locale.ROOT)));
+                case "source-id" -> required(m,key);
+                case "tags" -> {
+                    var groups=child(m,key);if(groups.isEmpty())throw new IllegalArgumentException("Empty tags condition");
+                    for(String group:groups.keySet()) {
+                        if(!Set.of("all","any","none").contains(group))throw new IllegalArgumentException("Unknown tags condition "+group);
+                        strings(groups,group);
+                    }
+                }
                 case "min-hp-percent", "max-hp-percent" -> range(m,key,0,0,1);
                 case "min-distance", "max-distance" -> range(m,key,0,0,1024);
                 case "element" -> attribute(text(m,key,""));
@@ -2165,6 +2609,10 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
         }
     }
     public static List<Map<String,Object>> actions(Map<String,Object> m, Set<String> buffs) {
+        return actions(m,buffs,0);
+    }
+    private static List<Map<String,Object>> actions(Map<String,Object> m,Set<String> buffs,int depth) {
+        if(depth>16)throw new IllegalArgumentException("Nested action depth exceeds 16");
         if (!m.containsKey("actions")) return List.of();
         if (!(m.get("actions") instanceof List<?> list) || list.isEmpty()) throw new IllegalArgumentException("Empty/invalid actions");
         List<Map<String,Object>> out = new ArrayList<>();
@@ -2175,7 +2623,16 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
             if (a.containsKey("area")) area(child(a,"area"));
             choice(a,"target-filter","ALL",Set.of("ALL","ALLY","ENEMY"));
             range(a,"duration",0,0,86400); range(a,"multiplier",1,0,1e9);
+            if(a.containsKey("source-kind"))SourceKind.valueOf(text(a,"source-kind","").toUpperCase(Locale.ROOT));
+            if(a.containsKey("source-id"))required(a,"source-id");
+            if(a.containsKey("tags"))strings(a,"tags");
             switch (type) {
+                case "MOVE", "DASH", "LEAP", "KNOCKBACK", "PULL", "TELEPORT" -> {
+                    com.github.saku0817.combatcoresystems.service.MovementService.validate(a);
+                    for(String key:List.of("path-actions","end-actions"))if(a.containsKey(key))actions(Map.of("actions",a.get(key)),buffs,depth+1);
+                    if(a.containsKey("on-hit"))actions(child(a,"on-hit"),buffs,depth+1);
+                }
+                case "MODIFY_EVENT" -> {if(CombatModifiers.event(a).isEmpty())throw new IllegalArgumentException("Empty event modifier");}
                 case "APPLY_EFFECT", "REMOVE_EFFECT" -> effect(text(a,"effect",""),buffs);
                 case "ADD_STACK", "SET_STACK", "CLEAR_STACK", "CONSUME_STACK" -> {
                     required(a,"id"); choice(a,"scope","SELF",SCOPES);
@@ -2185,6 +2642,7 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
                 }
                 case "MODIFY_EVENT_STATS" -> modifiers(child(a,"modifiers"));
                 case "DAMAGE", "HEAL" -> {
+                    CombatModifiers.action(a);
                     choice(a,"reference","ATK", type.equals("DAMAGE") ? Set.of("ATK","HP","DEF") :
                             Set.of("ATK","HP","DEF","FIXED","EVENT_DAMAGE","EVENT_HEAL","EVENT_EFFECTIVE_HEAL","EVENT_OVERHEAL"));
                     attribute(text(a,"attribute","PHYSICAL")); range(a,"def-ignore",0,0,1);
@@ -2226,17 +2684,30 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
 
 ## TriggerEvent.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/model/trigger/TriggerEvent.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.model.trigger;
 
 public enum TriggerEvent {
     SKILL, ULTIMATE, HIT, TAKE_DAMAGE, HP_BELOW, BEFORE_HIT, NORMAL_ATTACK,
     HEAL, RECEIVE_HEAL, OVERHEAL, HP_ABOVE, BUFF_APPLIED, BUFF_REMOVED,
-    STACK_CHANGED, STACK_REACHED, COMBAT_START, COMBAT_END, ENTER_FIELD, LEAVE_FIELD, TICK
+    STACK_CHANGED, STACK_REACHED, COMBAT_START, COMBAT_END, ENTER_FIELD, LEAVE_FIELD, TICK, BEFORE_HEAL,
+    MOVE_START, MOVE_TICK, MOVE_HIT, MOVE_END;
+    public static TriggerEvent parse(String name) {
+        return switch(name.toUpperCase(java.util.Locale.ROOT)) {
+            case "BEFORE_DAMAGE" -> BEFORE_HIT;
+            case "AFTER_DAMAGE" -> HIT;
+            case "AFTER_HEAL" -> HEAL;
+            default -> valueOf(name.toUpperCase(java.util.Locale.ROOT));
+        };
+    }
 }
 ```
 
 ## TriggerService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/TriggerService.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.service;
@@ -2271,8 +2742,11 @@ public final class TriggerService implements Listener {
     private final BuffService buffs;
     private final TargetSelectorService selectors;
     private final StackService stacks=new StackService();
+    public Map<StackService.Key,Integer> selfStacks(UUID owner) { return stacks.selfStacks(owner); }
     private final DynamicEffectService dynamic=new DynamicEffectService();
     private final FieldService fields;
+    private final CombatModifierService combatModifiers;
+    private final MovementService movement;
     private DefinitionRegistry.Snapshot snapshot;
     private Map<String,List<TriggerCatalog.Source>> catalog=Map.of();
     private final Map<String,Long> cooldowns=new HashMap<>();
@@ -2281,6 +2755,11 @@ public final class TriggerService implements Listener {
     private final Map<UUID,String> combats=new HashMap<>();
     private EventContext current;
     private double nextDefIgnore;
+    private Map<String,Object> nextAction=Map.of();
+    public <T> T withActionContext(Map<String,Object> options,Supplier<T> operation) {
+        var prior=nextAction;nextAction=options;
+        try{return operation.get();}finally{nextAction=prior;}
+    }
     private boolean resetting;
     private boolean scanInventory,scanHotbar,monitors;
     public TriggerService(JavaPlugin plugin,DefinitionRegistry definitions,PlayerDataService players,ItemService items,
@@ -2288,13 +2767,15 @@ public final class TriggerService implements Listener {
                           PartyService parties,MobService mobs) {
         this.plugin=plugin; this.definitions=definitions; this.players=players; this.items=items; this.stats=stats;
         this.combat=combat; this.damage=damage; this.healing=healing; this.buffs=buffs;
+        combatModifiers=new CombatModifierService(definitions,buffs);
         selectors=new TargetSelectorService(parties,damage,players,stats,mobs);
+        movement=new MovementService(plugin,selectors,this::emit);
         fields=new FieldService(selectors,buffs,this::emit);
         stacks.onChange(this::stackChanged);
     }
     public DynamicEffectService dynamic() { return dynamic; }
     public EventContext current() { return current; }
-    public void start() { refresh(); Bukkit.getScheduler().runTaskTimer(plugin,this::tick,5,5); }
+    public void start() { refresh(); movement.start();Bukkit.getScheduler().runTaskTimer(plugin,this::tick,5,5); }
     private void refresh() {
         if (snapshot==definitions.snapshot()) return;
         snapshot=definitions.snapshot();
@@ -2307,7 +2788,7 @@ public final class TriggerService implements Listener {
         scanHotbar=all.stream().anyMatch(s -> s.placement().equals("talent") && text(s.options(),"hand","MAIN_HAND").equalsIgnoreCase("HOT_BAR"));
         monitors=all.stream().flatMap(s -> s.triggers().stream()).anyMatch(t -> Set.of(TriggerEvent.HP_BELOW,TriggerEvent.HP_ABOVE,TriggerEvent.TICK).contains(t.event()));
         resetting=true;
-        try { fields.reset(); stacks.reset(); dynamic.reset(); cooldowns.clear(); activations.clear(); hpStates.clear(); }
+        try { movement.reset();fields.reset(); stacks.reset(); dynamic.reset(); cooldowns.clear(); activations.clear(); hpStates.clear(); }
         finally { resetting=false; }
         errors.forEach(plugin.getLogger()::warning);
     }
@@ -2352,7 +2833,7 @@ public final class TriggerService implements Listener {
                         && source.definition().startsWith("weapon:") && !context.weapon.isBlank() && !source.definition().equals("weapon:"+context.weapon)) continue;
                 if (source.placement().equals("skill") && context.event==TriggerEvent.ULTIMATE
                         || source.placement().equals("ultimate") && context.event==TriggerEvent.SKILL) continue;
-                if (Set.of(TriggerEvent.BEFORE_HIT,TriggerEvent.HIT,TriggerEvent.NORMAL_ATTACK,TriggerEvent.HEAL,TriggerEvent.OVERHEAL).contains(context.event)) {
+                if (Set.of(TriggerEvent.BEFORE_HIT,TriggerEvent.BEFORE_HEAL,TriggerEvent.HIT,TriggerEvent.NORMAL_ATTACK,TriggerEvent.HEAL,TriggerEvent.OVERHEAL).contains(context.event)) {
                     if (source.placement().equals("skill") && !context.skill || source.placement().equals("ultimate") && !context.ultimate) continue;
                 }
                 if (context.values.containsKey("stackSource") && !source.definition().equals(context.values.get("stackSource"))) continue;
@@ -2391,6 +2872,15 @@ public final class TriggerService implements Listener {
         for (String key : c.keySet()) {
             boolean actual;
             switch(key) {
+                case "source-kind" -> {if(CombatModifiers.names(c.get(key)).stream().noneMatch(v->v.equalsIgnoreCase(context.sourceKind.name())))return false;continue;}
+                case "source-id" -> {if(!text(c,key,"").equals(context.sourceId))return false;continue;}
+                case "tags" -> {
+                    var tags=child(c,key);
+                    if(tags.containsKey("all")&&!context.tags.containsAll(strings(tags,"all")))return false;
+                    if(tags.containsKey("any")&&strings(tags,"any").stream().noneMatch(context.tags::contains))return false;
+                    if(tags.containsKey("none")&&strings(tags,"none").stream().anyMatch(context.tags::contains))return false;
+                    continue;
+                }
                 case "min-hp-percent" -> { if (hp<number(c,key,0)) return false; continue; }
                 case "max-hp-percent" -> { if (hp>number(c,key,1)) return false; continue; }
                 case "min-distance", "max-distance" -> {
@@ -2464,12 +2954,33 @@ public final class TriggerService implements Listener {
                 }
             } else if (type.equals("CREATE_FIELD")) fields.create(owner,source.definition(),action,context);
             else if (type.equals("REMOVE_FIELD")) fields.remove(owner.getUniqueId(),source.definition(),id);
+            else if(type.equals("MODIFY_EVENT")) {
+                if(context.event!=TriggerEvent.BEFORE_HIT&&context.event!=TriggerEvent.BEFORE_HEAL)continue;
+                var modifier=Set.of("EVENT_TARGET","VICTIM","OTHER").contains(text(action,"target","SOURCE"))?context.targetCombat:context.sourceCombat;
+                modifier.apply(CombatModifiers.event(action),context,1);
+                context.attribute=context.sourceCombat.element(context.attribute);
+            }
             else if (type.equals("MODIFY_EVENT_STATS")) {
                 if (context.event!=TriggerEvent.BEFORE_HIT) continue;
                 EventModifier modifier=Set.of("EVENT_TARGET","VICTIM","OTHER").contains(text(action,"target","SOURCE")) ? context.targetModifiers : context.sourceModifiers;
                 child(action,"modifiers").forEach((mode,values) -> map(values).forEach((stat,value) -> modifier.add(mode,StatKey.valueOf(stat),((Number)value).doubleValue())));
             } else for (LivingEntity target : selectors.select(text(action,"target",fallbackTarget).toUpperCase(Locale.ROOT),owner,context,action)) {
                 switch(type) {
+                    case "MOVE","DASH","LEAP","KNOCKBACK","PULL","TELEPORT" -> {
+                        if(!context.chain.enter(owner.getUniqueId(),source.definition(),"movement:"+actionKey+":"+target.getUniqueId()))continue;
+                        try {
+                            List<Map<String,Object>> path=action.containsKey("path-actions")?TriggerDefinition.actions(Map.of("actions",action.get("path-actions")),snapshot.buffs().keySet()):
+                                    TriggerDefinition.actions(child(action,"on-hit"),snapshot.buffs().keySet());
+                            List<Map<String,Object>> end=action.containsKey("end-actions")?TriggerDefinition.actions(Map.of("actions",action.get("end-actions")),snapshot.buffs().keySet()):List.of();
+                            if(movement.execute(owner,target,action,context,hit->{
+                                EventContext child=context.child(TriggerEvent.MOVE_HIT,owner,hit);child.location=hit.getLocation();child.movementType=type;child.tags.addAll(strings(action,"tags"));
+                                runMovementActions(owner,source,path,child,"EVENT_TARGET",actionKey+":path");
+                            },()->{
+                                EventContext child=context.child(TriggerEvent.MOVE_END,owner,context.target);child.location=target.getLocation();child.movementType=type;child.tags.addAll(strings(action,"tags"));
+                                runMovementActions(owner,source,end,child,"SELF",actionKey+":end");
+                            }))result++;
+                        }finally{context.chain.leave();}
+                    }
                     case "APPLY_EFFECT" -> { if (buffs.apply(target,text(action,"effect",""),owner.getUniqueId())) result++; }
                     case "REMOVE_EFFECT" -> { if (buffs.remove(target,text(action,"effect",""))) result++; }
                     case "DAMAGE" -> {
@@ -2478,11 +2989,16 @@ public final class TriggerService implements Listener {
                             var c=map(raw); components.add(new WeaponOptions.Component(ReferenceStat.valueOf(text(c,"reference","ATK").toUpperCase(Locale.ROOT)),number(c,"multiplier",1),Element.parse(text(c,"bonus-attribute","PHYSICAL")).orElseThrow()));
                         }
                         double prior=nextDefIgnore; nextDefIgnore=number(action,"def-ignore",0);
+                        var oldAction=nextAction;nextAction=actionMetadata(action,source,actionKey);
                         try { result+=damage.apply(new DamageRequest(owner.getUniqueId(),target.getUniqueId(),ReferenceStat.valueOf(text(action,"reference","ATK")),
                                 number(action,"multiplier",1),Element.parse(text(action,"attribute","PHYSICAL")).orElseThrow(),true,false,0,"trigger:"+actionKey,components)).finalDamage(); }
-                        finally { nextDefIgnore=prior; }
+                        finally { nextDefIgnore=prior;nextAction=oldAction; }
                     }
-                    case "HEAL" -> result+=healing.healAmount(owner,target,reference(text(action,"reference","HP"),owner,target,context)*number(action,"multiplier",1),false);
+                    case "HEAL" -> {
+                        var oldAction=nextAction;nextAction=actionMetadata(action,source,actionKey);
+                        try {result+=healing.healAmount(owner,target,reference(text(action,"reference","HP"),owner,target,context)*number(action,"multiplier",1),false);}
+                        finally {nextAction=oldAction;}
+                    }
                     case "APPLY_DYNAMIC_MODIFIER" -> {
                         double value=reference(text(action,"source",""),owner,target,context)*number(action,"multiplier",1);
                         dynamic.apply(target.getUniqueId(),owner.getUniqueId()+":"+actionKey,StatKey.valueOf(text(action,"stat","")),value,
@@ -2492,6 +3008,41 @@ public final class TriggerService implements Listener {
             }
             if (action.containsKey("store-result")) context.values.put(text(action,"store-result",""),result);
         }
+    }
+    private void runMovementActions(Player owner,TriggerCatalog.Source source,List<Map<String,Object>> actions,EventContext context,String target,String key) {
+        if(!owner.isOnline()||owner.isDead()||resetting)return;
+        EventContext prior=current;current=context;
+        try{actions(owner,source,actions,context,target,key);}finally{current=prior;}
+    }
+    private Map<String,Object> actionMetadata(Map<String,Object> action,TriggerCatalog.Source source,String actionKey) {
+        Map<String,Object> metadata=new LinkedHashMap<>(action);
+        metadata.putIfAbsent("source-kind",switch(source.placement()){case "skill"->"SKILL";case "ultimate"->"ULTIMATE";case "talent"->"TALENT";default->"TRIGGER";});
+        String defaultId=Set.of("skill","ultimate","talent").contains(source.placement())
+                ?source.placement()+":"+text(source.options(),"id",source.definition()):"trigger:"+actionKey;
+        metadata.putIfAbsent("source-id",defaultId);return Map.copyOf(metadata);
+    }
+    private void prepareContext(EventContext event,Map<String,Object> options) {
+        event.actionOptions=options;
+        if(options.containsKey("source-kind"))event.sourceKind=SourceKind.valueOf(text(options,"source-kind","").toUpperCase(Locale.ROOT));
+        event.sourceId=text(options,"source-id",event.sourceId);event.tags.addAll(strings(options,"tags"));
+        event.skill=event.sourceKind==SourceKind.SKILL;event.ultimate=event.sourceKind==SourceKind.ULTIMATE;
+        event.normalAttack=event.sourceKind==SourceKind.NORMAL_ATTACK;event.reaction=event.sourceKind==SourceKind.REACTION;
+        event.attackType=event.sourceKind.name();event.abilityType=event.skill?"SKILL":event.ultimate?"ULTIMATE":"";
+        combatModifiers.prepare(event);
+        if(options.containsKey("attribute"))event.attribute=Element.parse(text(options,"attribute","")).orElseThrow();
+    }
+    private void applyActionModifiers(EventContext event) {
+        event.sourceCombat.apply(CombatModifiers.action(event.actionOptions),event,1);
+        event.attribute=event.sourceCombat.element(event.attribute);
+        if(event.actionOptions.containsKey("attribute"))event.attribute=Element.parse(text(event.actionOptions,"attribute","")).orElseThrow();
+    }
+    public long heal(LivingEntity source,LivingEntity target,double base,Supplier<Long> operation) {
+        EventContext event=current==null?new EventContext(TriggerEvent.BEFORE_HEAL,null,source,target):current.child(TriggerEvent.BEFORE_HEAL,source,target);
+        event.healer=source;event.healed=target;event.baseHeal=base;
+        var options=nextAction;nextAction=Map.of();
+        EventContext prior=current;current=event;
+        try {prepareContext(event,options);emit(event);applyActionModifiers(event);return operation.get();}
+        finally {current=prior;nextAction=options;}
     }
     private double reference(String key,LivingEntity owner,LivingEntity target,EventContext context) {
         return switch(key) {
@@ -2515,15 +3066,23 @@ public final class TriggerService implements Listener {
         if (attacker instanceof Player p) event.weapon=items.id(p.getInventory().getItemInMainHand()).orElse("");
         if (request.source().startsWith("skill:") || request.source().startsWith("ultimate:")) event.ability=request.source().substring(request.source().indexOf(':')+1);
         event.attribute=request.element(); event.normalAttack=request.source().equals("normal_attack");
+        event.originalElement=request.element();event.sourceId=request.source();event.sourceKind=SourceKind.from(request.source());
+        if(event.sourceKind==SourceKind.NORMAL_ATTACK && !(attacker instanceof Player))event.sourceKind=SourceKind.MOB_ATTACK;
+        if(event.sourceKind==SourceKind.TRIGGER&&current!=null) {
+            event.sourceKind=current.sourceKind;event.tags.addAll(current.tags);
+        }
+        event.criticalAllowed=request.canCritical();
+        event.damageKind=request.fixedDamage()?"FIXED":request.components().isEmpty()?"REFERENCE":"COMPOSITE";
         event.skill=request.source().startsWith("skill:") || request.source().startsWith("trigger:") && current!=null && current.skill;
         event.ultimate=request.source().startsWith("ultimate:") || request.source().startsWith("trigger:") && current!=null && current.ultimate;
         event.reaction=request.source().startsWith("reaction:"); event.sourceModifiers.add("flat",StatKey.DEF_IGNORE,nextDefIgnore);
+        var options=nextAction;nextAction=Map.of();
         double priorIgnore=nextDefIgnore; nextDefIgnore=0;
         EventContext prior=current; current=event;
-        try { return operation.get(); }
-        finally { current=prior; nextDefIgnore=priorIgnore; }
+        try { prepareContext(event,options);return operation.get(); }
+        finally { current=prior; nextDefIgnore=priorIgnore;nextAction=options; }
     }
-    public void beforeHit() { if (current!=null) emit(current); }
+    public void beforeHit() { if (current!=null) {emit(current);applyActionModifiers(current);} }
     @EventHandler public void onDamage(AfterDamageEvent event) {
         if (!event.getResult().applied() || event.getResult().finalDamage()<=0) return;
         var request=event.getRequest();
@@ -2540,6 +3099,8 @@ public final class TriggerService implements Listener {
     public void cast(Player owner,LivingEntity target,String weapon,int stage,boolean ultimate) {
         EventContext event=new EventContext(ultimate ? TriggerEvent.ULTIMATE : TriggerEvent.SKILL,current==null ? null : current.chain,owner,target);
         event.weapon=weapon; event.skill=!ultimate; event.ultimate=ultimate;
+        event.sourceKind=ultimate?SourceKind.ULTIMATE:SourceKind.SKILL;
+        event.sourceId=(ultimate?"ultimate:":"skill:")+weapon;event.abilityType=event.sourceKind.name();
         emit(event);
         for (var source : sources(owner)) if (source.definition().equals("weapon:"+weapon) && source.placement().equals(ultimate ? "ultimate" : "skill")) {
             EventContext prior=current; current=event;
@@ -2561,11 +3122,15 @@ public final class TriggerService implements Listener {
         for (String legacy : List.of("min-hp-percent","max-distance","requires-combat","requires-target")) additional.remove(legacy);
         EventContext event=new EventContext(ultimate ? TriggerEvent.ULTIMATE : TriggerEvent.SKILL,null,owner,target);
         event.skill=!ultimate; event.ultimate=ultimate;
+        event.sourceKind=ultimate?SourceKind.ULTIMATE:SourceKind.SKILL;
+        event.sourceId=(ultimate?"ultimate:":"skill:")+weapon;
+        event.abilityType=event.sourceKind.name();event.weapon=weapon;
         return conditions(additional,owner,"weapon:"+weapon,event);
     }
     public void healed(LivingEntity source,LivingEntity target,double requested,double effective,double overheal) {
         EventContext event=current==null ? new EventContext(TriggerEvent.HEAL,null,source,target) : current.child(TriggerEvent.HEAL,source,target);
         event.healer=source; event.healed=target; event.healAmount=requested; event.requestedHeal=requested; event.effectiveHeal=effective; event.overheal=overheal;
+        event.finalHeal=requested;
         emit(event); emit(event.child(TriggerEvent.RECEIVE_HEAL,target,source));
         if (overheal>0) emit(event.child(TriggerEvent.OVERHEAL,source,target));
     }
@@ -2623,16 +3188,24 @@ public final class TriggerService implements Listener {
         }
     }
     private void forget(UUID owner,boolean death) {
+        movement.cancel(owner,death?"DEATH":"LOGOUT");
         stacks.forget(owner); fields.forget(owner); dynamic.forget(owner);
         String prefix=owner+":"; hpStates.keySet().removeIf(k -> k.startsWith(prefix)); cooldowns.keySet().removeIf(k -> k.startsWith(prefix));
         activations.keySet().removeIf(k -> k.startsWith(prefix) && (!death || k.endsWith(":LIFE") || k.contains(":COMBAT:")));
     }
     @EventHandler public void onQuit(PlayerQuitEvent event) { forget(event.getPlayer().getUniqueId(),false); combats.remove(event.getPlayer().getUniqueId()); }
     @EventHandler public void onDeath(PlayerDeathEvent event) { forget(event.getEntity().getUniqueId(),true); }
+    @EventHandler public void onWorldChange(org.bukkit.event.player.PlayerChangedWorldEvent event) {movement.cancel(event.getPlayer().getUniqueId(),"WORLD_CHANGE");}
+    @EventHandler public void onDisable(org.bukkit.event.server.PluginDisableEvent event) {
+        if(event.getPlugin()!=plugin)return;
+        resetting=true;try{movement.reset();}finally{resetting=false;}
+    }
 }
 ```
 
 ## StackService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/StackService.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.service;
@@ -2659,6 +3232,12 @@ public final class StackService {
     public void onChange(Consumer<Change> listener) { this.listener = Objects.requireNonNull(listener); }
     public State state(Key key) { expire(key); return states.get(key); }
     public int count(Key key) { State state = state(key); return state == null ? 0 : state.count(); }
+    /** HUD reads never fire expiration callbacks or mutate an active trigger chain. */
+    public Map<Key,Integer> selfStacks(UUID owner) {
+        Map<Key,Integer> result=new LinkedHashMap<>(); long now=clock.getAsLong();
+        states.forEach((key,state)->{if(key.owner().equals(owner)&&key.target()==null&&state.expiresAt()>now)result.put(key,state.count());});
+        return Collections.unmodifiableMap(result);
+    }
     public long total(UUID owner, String source, String id) {
         expire();
         return states.entrySet().stream().filter(e -> e.getKey().target()!=null && matches(e.getKey(), owner, source, id))
@@ -2728,6 +3307,8 @@ public final class StackService {
 ```
 
 ## TargetSelectorService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/TargetSelectorService.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.service;
@@ -2828,6 +3409,8 @@ public final class TargetSelectorService {
 
 ## FieldService.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/FieldService.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.service;
 
@@ -2864,7 +3447,7 @@ public final class FieldService {
     public boolean inside(LivingEntity entity,String id) {
         return fields.values().stream().anyMatch(f -> f.key.id().equals(id) && f.expires>System.currentTimeMillis() && selectors.contains(f.origin,f.area,entity.getLocation()));
     }
-    private String lease(Field field,String effect) { return "field:"+field.key+":"+effect; }
+    private String lease(Field field,String effect) { return "field:"+field.key.id()+"|owner:"+field.key.owner()+"|source:"+field.key.source()+"|effect:"+effect; }
     private void leave(Field field,UUID target,List<String> effects,LivingEntity owner) {
         effects.forEach(id -> buffs.release(target,lease(field,id)));
         if (Bukkit.getEntity(target) instanceof LivingEntity entity) {
@@ -2910,6 +3493,8 @@ public final class FieldService {
 
 ## DynamicEffectService.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/DynamicEffectService.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.service;
 
@@ -2941,7 +3526,265 @@ public final class DynamicEffectService {
 }
 ```
 
+## CombatModifierService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/CombatModifierService.java`
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.config.DefinitionRegistry;
+import com.github.saku0817.combatcoresystems.model.trigger.*;
+import org.bukkit.entity.LivingEntity;
+import java.util.*;
+import static com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.*;
+
+/** Snapshot-cached rules; active buff ownership and reapplication order come from BuffService. */
+public final class CombatModifierService {
+    private final DefinitionRegistry definitions;
+    private final BuffService buffs;
+    private DefinitionRegistry.Snapshot snapshot;
+    private final Map<String,List<CombatModifiers.Rule>> compiled=new HashMap<>();
+    private record Applied(CombatModifiers.Rule rule,int stacks) {}
+    public CombatModifierService(DefinitionRegistry definitions,BuffService buffs) {this.definitions=definitions;this.buffs=buffs;}
+    public static List<CombatModifiers.Rule> compile(Map<String,Object> config) {
+        List<CombatModifiers.Rule> rules=new ArrayList<>(CombatModifiers.parse(child(config,"combat-modifiers")));
+        rules.addAll(CombatModifiers.parse(child(config,"context-modifiers")));return List.copyOf(rules);
+    }
+    private List<CombatModifiers.Rule> rules(String id) {
+        if(snapshot!=definitions.snapshot()){snapshot=definitions.snapshot();compiled.clear();}
+        return compiled.computeIfAbsent(id,key->{
+            var raw=snapshot.config("buffs.yml").getConfigurationSection("buffs."+id);
+            return raw==null?List.of():compile(map(raw));
+        });
+    }
+    private void apply(LivingEntity entity,CombatModifiers output,EventContext context) {
+        if(entity==null)return;
+        List<Applied> all=new ArrayList<>();
+        for(var effect:buffs.effects(entity)) {
+            if(!effect.isPermanent()&&effect.getRemainingMillis()<=0)continue;
+            for(var rule:rules(effect.getId()))all.add(new Applied(rule,effect.getStacks()));
+        }
+        all.sort(Comparator.comparingInt(a->a.rule().priority()));
+        for(Applied entry:all)output.apply(List.of(entry.rule()),context,entry.stacks());
+    }
+    public void prepare(EventContext context) {
+        apply(context.source,context.sourceCombat,context);
+        context.attribute=context.sourceCombat.element(context.attribute);
+        apply(context.target,context.targetCombat,context);
+    }
+}
+```
+
+## MovementService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/MovementService.java`
+
+```java
+package com.github.saku0817.combatcoresystems.service;
+
+import com.github.saku0817.combatcoresystems.model.trigger.*;
+import org.bukkit.*;
+import org.bukkit.entity.*;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.BoundingBox;
+import org.bukkit.util.Vector;
+import java.util.*;
+import java.util.function.*;
+import static com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.*;
+
+/** Server-side movement, bounded local queries, no chunk loads and no cross-world corrections. */
+public final class MovementService {
+    public static final Set<String> TYPES=Set.of("MOVE","DASH","LEAP","KNOCKBACK","PULL","TELEPORT");
+    private final JavaPlugin plugin;
+    private final TargetSelectorService selectors;
+    private final Consumer<EventContext> events;
+    private final Map<UUID,State> active=new HashMap<>();
+    private final Set<UUID> cancelling=new HashSet<>();
+    private boolean resetting;
+    private static final class State {
+        final LivingEntity owner,target;final UUID world;final Location start;Location previous;
+        final Vector direction;final double distance;final int ticks;int elapsed;double traveled;
+        final Map<String,Object> action;final EventContext context;final Consumer<LivingEntity> hit;final Runnable end;
+        final Map<UUID,Integer> hits=new HashMap<>();
+        State(LivingEntity owner,LivingEntity target,Vector direction,Map<String,Object> action,EventContext context,Consumer<LivingEntity> hit,Runnable end) {
+            this.owner=owner;this.target=target;this.direction=direction;this.action=action;this.context=context;this.hit=hit;this.end=end;
+            start=target.getLocation().clone();previous=start.clone();world=start.getWorld().getUID();
+            distance=number(action,"distance",0);ticks=Math.max(1,(int)Math.ceil(number(action,"duration",0)*20));
+        }
+    }
+    public MovementService(JavaPlugin plugin,TargetSelectorService selectors,Consumer<EventContext> events) {this.plugin=plugin;this.selectors=selectors;this.events=events;}
+    public void start() {Bukkit.getScheduler().runTaskTimer(plugin,this::tick,1,1);}
+    public static void validate(Map<String,Object> action) {
+        String type=choice(action,"type","",TYPES);
+        range(action,"distance",0,0,64);range(action,"duration",0,0,10);range(action,"strength",1,0,8);
+        range(action,"horizontal",0,0,8);range(action,"vertical",0,-8,8);range(action,"hit-interval",.25,.05,10);
+        if(Set.of("DASH","MOVE").contains(type)&&number(action,"distance",0)/Math.max(1,Math.ceil(number(action,"duration",0)*20))>8)
+            throw new IllegalArgumentException("Movement speed must not exceed 8 blocks/tick");
+        choice(action,"collision","STOP",Set.of("STOP"));
+        choice(action,"hit-policy","ONCE_PER_TARGET",Set.of("ONCE_PER_TARGET","ONCE_PER_TICK","REPEAT"));
+        choice(action,"path-target-filter","ENEMY",Set.of("ENEMY","ALLY","ALL"));
+        choice(action,"direction",type.equals("KNOCKBACK")?"AWAY_FROM_SOURCE":"FORWARD",
+                type.equals("KNOCKBACK")?Set.of("AWAY_FROM_SOURCE","TOWARD_SOURCE","SOURCE_LOOK","CUSTOM"):
+                Set.of("FORWARD","BACKWARD","LEFT","RIGHT","TOWARD_TARGET","AWAY_FROM_TARGET","LOOK_DIRECTION","VECTOR"));
+        choice(action,"destination","EVENT_TARGET",Set.of("SELF","EVENT_TARGET","LOCATION"));
+        choice(action,"toward","SELF",Set.of("SELF","EVENT_TARGET"));
+        for(String field:List.of("vector","offset","path-area","hit-area")) {
+            var value=child(action,field);
+            for(String key:value.keySet()) {
+                Set<String> allowed=field.equals("vector")?Set.of("x","y","z"):field.equals("offset")?Set.of("forward","right","up"):
+                        Set.of("shape","width","height");
+                if(!allowed.contains(key))throw new IllegalArgumentException("Unknown movement "+field+" key: "+key);
+                if(key.equals("shape")){choice(value,key,"BOX",Set.of("BOX"));continue;}
+                range(value,key,0,field.endsWith("area")?0:-64,64);
+            }
+        }
+    }
+    private Vector direction(LivingEntity owner,LivingEntity target,EventContext context,Map<String,Object> action) {
+        Vector look=target.getLocation().getDirection(),forward=look.clone().setY(0);
+        if(forward.lengthSquared()<1e-10)forward=new Vector(0,0,1);else forward.normalize();
+        Vector right=new Vector(-forward.getZ(),0,forward.getX());
+        String type=text(action,"type","").toUpperCase(Locale.ROOT);
+        String direction=text(action,"direction",type.equals("KNOCKBACK")?"AWAY_FROM_SOURCE":"FORWARD").toUpperCase(Locale.ROOT);
+        if(type.equals("PULL")) {
+            LivingEntity anchor=text(action,"toward","SELF").equalsIgnoreCase("SELF")?owner:context.target;
+            return difference(target,anchor);
+        }
+        return switch(direction) {
+            case "BACKWARD" -> forward.multiply(-1);case "LEFT" -> right.multiply(-1);case "RIGHT" -> right;
+            case "LOOK_DIRECTION" -> look;case "SOURCE_LOOK" -> owner.getLocation().getDirection();
+            case "TOWARD_TARGET" -> difference(target,context.target);case "AWAY_FROM_TARGET" -> negate(difference(target,context.target));
+            case "TOWARD_SOURCE" -> difference(target,owner);case "AWAY_FROM_SOURCE" -> negate(difference(target,owner));
+            case "VECTOR","CUSTOM" -> {var vector=child(action,"vector");yield new Vector(number(vector,"x",0),number(vector,"y",0),number(vector,"z",0));}
+            default -> forward;
+        };
+    }
+    private Vector negate(Vector vector) {return vector==null?null:vector.multiply(-1);}
+    private Vector difference(LivingEntity from,LivingEntity to) {
+        return to==null||!from.getWorld().equals(to.getWorld())?null:to.getLocation().toVector().subtract(from.getLocation().toVector());
+    }
+    public boolean execute(LivingEntity owner,LivingEntity target,Map<String,Object> action,EventContext context,Consumer<LivingEntity> hit,Runnable end) {
+        if(resetting||cancelling.contains(owner.getUniqueId())||cancelling.contains(target.getUniqueId()))return false;
+        if(owner.isDead()||target.isDead()||!owner.getWorld().equals(target.getWorld())||!selectors.ally(owner,target)&&!selectors.enemy(owner,target))return false;
+        String type=text(action,"type","").toUpperCase(Locale.ROOT);
+        if(type.equals("TELEPORT")) {
+            Location destination=switch(text(action,"destination","EVENT_TARGET").toUpperCase(Locale.ROOT)) {
+                case "SELF"->owner.getLocation();case "LOCATION"->context.location;default->context.target==null?null:context.target.getLocation();
+            };
+            if(destination==null||!destination.getWorld().equals(target.getWorld()))return false;
+            destination=destination.clone();var offset=child(action,"offset");Vector forward=destination.getDirection().setY(0);
+            if(forward.lengthSquared()>1e-10)forward.normalize();
+            destination.add(forward.clone().multiply(number(offset,"forward",0)))
+                    .add(new Vector(-forward.getZ(),0,forward.getX()).multiply(number(offset,"right",0))).add(0,number(offset,"up",0),0);
+            if(!safe(target,destination))return false;
+            cancel(target.getUniqueId(),"REPLACED");emit(context,TriggerEvent.MOVE_START,owner,target,type,"");
+            boolean moved=target.teleport(destination,org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN);
+            emit(context,TriggerEvent.MOVE_END,owner,target,type,moved?"COMPLETE":"CANCELLED");if(moved)end.run();return moved;
+        }
+        Vector vector=direction(owner,target,context,action);if(vector==null||vector.lengthSquared()<1e-10)return false;vector.normalize();
+        cancel(target.getUniqueId(),"REPLACED");
+        if(type.equals("DASH")||type.equals("MOVE")) {
+            State state=new State(owner,target,vector,action,context,hit,end);active.put(target.getUniqueId(),state);
+            emit(context,TriggerEvent.MOVE_START,owner,target,type,"");return true;
+        }
+        double strength=number(action,type.equals("LEAP")?"horizontal":"strength",type.equals("LEAP")?0:1);
+        Vector velocity=vector.multiply(strength);velocity.setY(number(action,"vertical",type.equals("LEAP")?1:type.equals("PULL")?velocity.getY():.2));
+        if(!safePath(target,target.getLocation(),target.getLocation().add(velocity)))return false;
+        emit(context,TriggerEvent.MOVE_START,owner,target,type,"");target.setVelocity(velocity);
+        emit(context,TriggerEvent.MOVE_END,owner,target,type,"COMPLETE");end.run();return true;
+    }
+    private void emit(EventContext parent,TriggerEvent event,LivingEntity owner,LivingEntity target,String type,String reason) {
+        EventContext context=parent.child(event,owner,target);context.movementType=type;context.location=target.getLocation();
+        context.values.put("movementEndReason",reason);events.accept(context);
+    }
+    private void tick() {
+        for(State state:List.copyOf(active.values())) {
+            UUID id=state.target.getUniqueId();if(active.get(id)!=state)continue;
+            try {
+            if(!state.owner.isValid()||!state.target.isValid()||state.owner.isDead()||state.target.isDead()) {finish(state,"UNAVAILABLE",false);continue;}
+            if(!state.target.getWorld().getUID().equals(state.world)||!state.owner.getWorld().getUID().equals(state.world)){finish(state,"WORLD_CHANGE",false);continue;}
+            Location now=state.target.getLocation();double moved=now.distance(state.previous);
+            if(moved>8){finish(state,"EXTERNAL_MOVE",false);continue;}
+            state.traveled+=moved;path(state,state.previous,now);state.previous=now;
+            if(active.get(id)!=state)continue;
+            if(state.elapsed>=state.ticks||state.traveled>=state.distance){finish(state,"COMPLETE",true);continue;}
+            double step=Math.min(8,Math.max(0,state.distance-state.traveled)/Math.max(1,state.ticks-state.elapsed));
+            Vector velocity=state.direction.clone().multiply(step);Location next=now.clone().add(velocity);
+            if(!safePath(state.target,now,next)){finish(state,"COLLISION",true);continue;}
+            state.target.setVelocity(velocity);state.elapsed++;
+            emit(state.context,TriggerEvent.MOVE_TICK,state.owner,state.target,text(state.action,"type","DASH"),"");
+            } catch(RuntimeException failure) {
+                // One invalid callback must not stop the shared task for every moving entity.
+                active.remove(id,state);
+                try {if(state.target.isValid())state.target.setVelocity(new Vector());}
+                catch(RuntimeException cleanupFailure) {failure.addSuppressed(cleanupFailure);}
+                plugin.getLogger().log(java.util.logging.Level.WARNING,"Movement cancelled for "+id,failure);
+            }
+        }
+    }
+    private void path(State state,Location from,Location to) {
+        if(!state.action.containsKey("path-actions")&&!state.action.containsKey("on-hit"))return;
+        Map<String,Object> area=child(state.action,state.action.containsKey("path-area")?"path-area":"hit-area");
+        double width=number(area,"width",1.5),height=number(area,"height",2.5);
+        BoundingBox box=BoundingBox.of(from.toVector(),to.toVector()).expand(width/2,height,width/2);
+        String filter=text(state.action,"path-target-filter","ENEMY").toUpperCase(Locale.ROOT);
+        for(var raw:to.getWorld().getNearbyEntities(box))if(raw instanceof LivingEntity target&&!target.isDead()&&!target.equals(state.target)) {
+            if(filter.equals("ENEMY")&&!selectors.enemy(state.owner,target)||filter.equals("ALLY")&&!selectors.ally(state.owner,target))continue;
+            if(!MovementPath.intersects(from.toVector(),to.toVector(),target.getBoundingBox(),width,height))continue;
+            String policy=text(state.action,"hit-policy","ONCE_PER_TARGET").toUpperCase(Locale.ROOT);
+            Integer last=state.hits.get(target.getUniqueId());
+            if(last!=null&&(policy.equals("ONCE_PER_TARGET")||policy.equals("REPEAT")&&state.elapsed-last<Math.ceil(number(state.action,"hit-interval",.25)*20)))continue;
+            state.hits.put(target.getUniqueId(),state.elapsed);state.hit.accept(target);
+            emit(state.context,TriggerEvent.MOVE_HIT,state.owner,target,text(state.action,"type","DASH"),"");
+            if(active.get(state.target.getUniqueId())!=state)break;
+        }
+    }
+    private boolean safePath(LivingEntity entity,Location start,Location end) {
+        Vector delta=end.toVector().subtract(start.toVector());int steps=Math.max(1,(int)Math.ceil(delta.length()/.2));
+        for(int i=1;i<=steps;i++)if(!safe(entity,start.clone().add(delta.clone().multiply((double)i/steps))))return false;
+        return true;
+    }
+    private boolean safe(LivingEntity entity,Location point) {
+        World world=point.getWorld();if(world==null||!world.equals(entity.getWorld())||!world.getWorldBorder().isInside(point))return false;
+        BoundingBox box=entity.getBoundingBox().clone().shift(point.toVector().subtract(entity.getLocation().toVector()));
+        if(box.getMinY()<world.getMinHeight()||box.getMaxY()>world.getMaxHeight())return false;
+        for(int x=(int)Math.floor(box.getMinX());x<=Math.floor(box.getMaxX()-1e-7);x++)
+            for(int z=(int)Math.floor(box.getMinZ());z<=Math.floor(box.getMaxZ()-1e-7);z++) {
+                if(!world.isChunkLoaded(x>>4,z>>4))return false;
+                for(int y=(int)Math.floor(box.getMinY());y<=Math.floor(box.getMaxY()-1e-7);y++) {
+                    var block=world.getBlockAt(x,y,z);
+                    if(!block.isPassable()&&block.getBoundingBox().overlaps(box))return false;
+                }
+            }
+        return true;
+    }
+    private void finish(State state,String reason,boolean completed) {
+        if(!active.remove(state.target.getUniqueId(),state))return;
+        if(state.target.isValid())state.target.setVelocity(new Vector());
+        if(state.owner.isValid()&&state.target.isValid())emit(state.context,TriggerEvent.MOVE_END,state.owner,state.target,text(state.action,"type","DASH"),reason);
+        if(completed&&state.owner.isValid()&&!state.owner.isDead())state.end.run();
+    }
+    public void cancel(UUID entity,String reason) {
+        if(!cancelling.add(entity))return;
+        try {for(State state:List.copyOf(active.values()))if(state.owner.getUniqueId().equals(entity)||state.target.getUniqueId().equals(entity))cancelState(state,reason);}
+        finally {cancelling.remove(entity);}
+    }
+    private void cancelState(State state,String reason) {
+        try {finish(state,reason,false);}
+        catch(RuntimeException failure) {plugin.getLogger().log(java.util.logging.Level.WARNING,"Movement cancellation callback failed",failure);}
+    }
+    public void reset() {
+        if(resetting)return;
+        resetting=true;
+        try {for(State state:List.copyOf(active.values()))cancelState(state,"RELOAD");}
+        finally {active.clear();resetting=false;}
+    }
+}
+```
+
 ## HealService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/HealService.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.service;
@@ -2978,9 +3821,19 @@ public final class HealService {
 
     public long healAmount(LivingEntity source,LivingEntity target,double baseAmount,boolean small) {
         if (target==null || target.isDead() || !Double.isFinite(baseAmount) || baseAmount<=0) return 0;
+        LivingEntity healer=source==null?target:source;
+        return triggers==null?healInternal(healer,target,baseAmount,small):triggers.heal(healer,target,baseAmount,()->healInternal(healer,target,baseAmount,small));
+    }
+    private long healInternal(LivingEntity source,LivingEntity target,double baseAmount,boolean small) {
+        if (target==null || target.isDead() || !Double.isFinite(baseAmount) || baseAmount<=0) return 0;
         if (source==null) source=target;
         double healingPower = source instanceof Player p ? stats.get(p, players.require(p)).value(StatKey.HEALING_POWER) : 0;
-        long amount = Math.round(Math.max(0,baseAmount*(1+healingPower)));
+        double adjusted=baseAmount*Math.max(0,1+healingPower);
+        if(triggers!=null&&triggers.current()!=null) {
+            var context=triggers.current();
+            adjusted*=context.sourceCombat.factor("healing-dealt",context)*context.targetCombat.factor("healing-received",context);
+        }
+        long amount = Math.round(Math.max(0,adjusted));
         if (amount<=0) return 0;
         double current=target instanceof Player p ? players.require(p).getHealth() : mobs.health(target);
         double maximum=value(target,ReferenceStat.HP);
@@ -3010,6 +3863,8 @@ public final class HealService {
 
 ## BuffService.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/BuffService.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.service;
 
@@ -3035,6 +3890,8 @@ public final class BuffService {
     private final StatService stats;
     private final DamageService damage;
     private final HealService healing;
+    private TriggerService triggers;
+    public void bindTriggers(TriggerService triggers) {this.triggers=triggers;}
     private final Map<String, Long> nextTicks = new ConcurrentHashMap<>();
     private final Map<UUID, List<TimedEffect>> entityEffects = new HashMap<>();
     private final Map<UUID, Map<String, TimedEffect>> ownedEffects = new HashMap<>();
@@ -3065,6 +3922,7 @@ public final class BuffService {
     public void release(UUID target,String lease) {
         var values=ownedEffects.get(target); if (values==null) return;
         TimedEffect old=values.remove(lease);
+        nextTicks.remove(target+":lease:"+lease);
         if (values.isEmpty()) ownedEffects.remove(target);
         if (old!=null) { stats.invalidate(target); if (Bukkit.getEntity(target) instanceof LivingEntity entity) removed.accept(entity,old.getId()); }
     }
@@ -3168,9 +4026,10 @@ public final class BuffService {
         }
         for (var entry : List.copyOf(ownedEffects.entrySet())) {
             if (!(Bukkit.getEntity(entry.getKey()) instanceof LivingEntity target) || target.isDead()) continue;
-            for (TimedEffect effect : List.copyOf(entry.getValue().values())) {
+            for (var leased : List.copyOf(entry.getValue().entrySet())) {
+                TimedEffect effect=leased.getValue();
                 BuffDefinition definition=definitions.snapshot().buffs().get(effect.getId());
-                if (definition!=null && definition.tickEffect()!=null) runTickEffect(target,effect,definition);
+                if (definition!=null && definition.tickEffect()!=null) runTickEffect(target,effect,definition,leased.getKey());
             }
         }
     }
@@ -3191,7 +4050,10 @@ public final class BuffService {
     }
 
     private void runTickEffect(LivingEntity target, TimedEffect effect, BuffDefinition definition) {
-        String key = target.getUniqueId() + ":" + effect.getId();
+        runTickEffect(target,effect,definition,null);
+    }
+    private void runTickEffect(LivingEntity target, TimedEffect effect, BuffDefinition definition,String lease) {
+        String key = target.getUniqueId() + ":" + (lease==null?effect.getId():"lease:"+lease);
         long now = System.currentTimeMillis();
         if (nextTicks.getOrDefault(key, 0L) > now) return;
         BuffDefinition.TickEffect tick = definition.tickEffect();
@@ -3201,15 +4063,28 @@ public final class BuffService {
             Entity resolved = effect.getSource().isBlank() ? null : Bukkit.getEntity(UUID.fromString(effect.getSource()));
             if (resolved instanceof LivingEntity living) source = living;
         } catch (IllegalArgumentException ignored) {}
-        if (tick.healing()) healing.heal(source, target, tick.referenceStat(), tick.multiplier() * effect.getStacks(), true);
-        else damage.apply(new DamageRequest(source.getUniqueId(), target.getUniqueId(), tick.referenceStat(),
+        LivingEntity effectSource=source;
+        java.util.function.Supplier<Long> operation=()->tick.healing()
+                ? healing.heal(effectSource, target, tick.referenceStat(), tick.multiplier() * effect.getStacks(), true)
+                : damage.apply(new DamageRequest(effectSource.getUniqueId(), target.getUniqueId(), tick.referenceStat(),
                 tick.multiplier() * effect.getStacks(), tick.element(), tick.critical(), tick.fixed(),
-                tick.fixed() ? tick.multiplier() * effect.getStacks() : 0, "effect:" + effect.getId()));
+                tick.fixed() ? tick.multiplier() * effect.getStacks() : 0, "effect:" + effect.getId())).finalDamage();
+        if(triggers==null)operation.get();
+        else {
+            var section=definitions.snapshot().config("buffs.yml").getConfigurationSection("buffs."+effect.getId()+".tick-effect");
+            Map<String,Object> options=new LinkedHashMap<>(com.github.saku0817.combatcoresystems.model.trigger.TriggerDefinition.map(section));
+            if(options.get("critical") instanceof Boolean)options.remove("critical");
+            options.put("source-kind",lease==null?"DOT":"FIELD");
+            options.put("source-id",lease==null?"buff:"+effect.getId():lease.split("\\|",2)[0]);
+            triggers.withActionContext(options,operation);
+        }
     }
 }
 ```
 
 ## DamageService.java
+
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/DamageService.java`
 
 ```java
 package com.github.saku0817.combatcoresystems.service;
@@ -3436,6 +4311,9 @@ public final class DamageService implements DamageApi, Listener {
         if (attacker!=null && !allowed(attacker,target)) return DamageResult.failed(request.source(),"not_allowed");
         if (triggers!=null) triggers.beforeHit();
         if (target.isDead()) return DamageResult.failed(request.source(),"target_not_available");
+        if(triggers!=null&&triggers.current()!=null&&triggers.current().attribute!=request.element())
+            request=new DamageRequest(request.attacker(),request.target(),request.referenceStat(),request.multiplier(),triggers.current().attribute,
+                    request.canCritical(),request.fixedDamage(),request.fixedAmount(),request.source(),request.components());
 
         DamageResult result = calculate(request, attacker, target);
         if (!result.applied()) return result;
@@ -3457,15 +4335,17 @@ public final class DamageService implements DamageApi, Listener {
                     ? config.getDouble("attribute-attachment-seconds", 5)
                     : config.getDouble("element-attachment-seconds", 5);
             LivingEntity reactionAttacker = attacker;
-            elements.attach(target, request.element(), duration).ifPresent(trigger -> applyReaction(reactionAttacker, target, request.referenceStat(), trigger));
+            ReferenceStat reactionReference=request.referenceStat();
+            elements.attach(target, request.element(), duration).ifPresent(trigger -> applyReaction(reactionAttacker, target, reactionReference, trigger));
         }
         return result;
     }
 
     private DamageResult calculate(DamageRequest request, LivingEntity attacker, LivingEntity target) {
         if (request.fixedDamage()) {
-            return new DamageResult(true, CoreMath.roundedDamage(request.fixedAmount()), false, request.element(),
-                    request.fixedAmount(), 1, 0, request.source(), "");
+            CombatantStats source = attacker == null ? null : combatant(attacker);
+            return finishCalculation(request, Math.max(0, request.fixedAmount()), Math.max(0, request.fixedAmount()),
+                    1, 0, source == null ? 0 : source.critRate, source == null ? 0 : source.critDamage);
         }
         if (attacker == null) return DamageResult.failed(request.source(), "attacker_required");
         CombatantStats source = combatant(attacker);
@@ -3497,8 +4377,29 @@ public final class DamageService implements DamageApi, Listener {
                 damage *= (request.components().isEmpty() ? 1 + source.elementDamage(request.element()) : 1) * (1 - resistance);
             }
         }
-        boolean critical = request.canCritical() && ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
-        if (critical) damage *= 1 + source.critDamage;
+        return finishCalculation(request, damage, base, defenseCoefficient, resistance, source.critRate, source.critDamage);
+    }
+
+    /** Shared final stage, including fixed damage: defense/resistance are resolved by the caller. */
+    private DamageResult finishCalculation(DamageRequest request, double damage, double base,
+                                           double defenseCoefficient, double resistance, double critRate, double critDamage) {
+        var context=triggers==null?null:triggers.current();
+        boolean canCritical=request.canCritical(),forced=false;
+        if(context!=null) {
+            context.baseDamage=base;
+            critRate=context.sourceCombat.critical("crit-rate",critRate,context);
+            critDamage=context.sourceCombat.critical("crit-damage",critDamage,context);
+            switch(context.sourceCombat.criticalMode()) {
+                case DISABLED -> canCritical=false;
+                case ENABLED -> canCritical=true;
+                case FORCED -> {canCritical=true;forced=true;}
+                default -> { }
+            }
+            context.criticalAllowed=canCritical;context.criticalForced=forced;
+        }
+        boolean critical = canCritical && (forced || ThreadLocalRandom.current().nextDouble() < Math.clamp(critRate,0,1));
+        if (critical) damage *= Math.max(0,1 + critDamage);
+        if(context!=null)damage*=context.sourceCombat.factor("damage-dealt",context)*context.targetCombat.factor("damage-taken",context);
         return new DamageResult(true, CoreMath.roundedDamage(damage), critical, request.element(), base,
                 defenseCoefficient, resistance, request.source(), "");
     }
@@ -3538,11 +4439,31 @@ public final class DamageService implements DamageApi, Listener {
             central.getWorld().getNearbyLivingEntities(central.getLocation(), trigger.definition().radius(),
                     entity -> !entity.equals(attacker) && !entity.equals(central)).forEach(targets::add);
         }
-        CombatantStats source = combatant(attacker);
-        double reference = switch (referenceStat) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
         for (LivingEntity target : targets) {
             if (target.isDead() || !allowed(attacker, target)) continue;
+            var reactionTrigger=trigger;
+            var reactionReference=referenceStat;
+            DamageRequest request=new DamageRequest(attacker.getUniqueId(),target.getUniqueId(),referenceStat,1,
+                    trigger.incoming(),true,false,0,"reaction:"+trigger.definition().id());
+            if(triggers==null)applyReactionTarget(attacker,target,reactionReference,reactionTrigger,request);
+            else triggers.damage(request,()->applyReactionTarget(attacker,target,reactionReference,reactionTrigger,request));
+        }
+    }
+
+    private DamageResult applyReactionTarget(LivingEntity attacker,LivingEntity target,ReferenceStat referenceStat,
+                                              ElementService.ReactionTrigger trigger,DamageRequest request) {
+            BeforeDamageEvent before=new BeforeDamageEvent(request);
+            Bukkit.getPluginManager().callEvent(before);
+            if(before.isCancelled())return DamageResult.failed(request.source(),"cancelled");
+            if(triggers!=null)triggers.beforeHit();
+            if(target.isDead()||!allowed(attacker,target))return DamageResult.failed(request.source(),"target_not_available");
+            CombatantStats source = combatant(attacker);
             CombatantStats defender = combatant(target);
+            if(triggers!=null&&triggers.current()!=null) {
+                source=modified(source,triggers.current().sourceModifiers);
+                defender=modified(defender,triggers.current().targetModifiers);
+            }
+            double reference = switch (referenceStat) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
             double total = 0;
             for (Map.Entry<Element, Double> component : trigger.definition().components().entrySet()) {
                 if (mobs.immune(target, component.getKey())) continue;
@@ -3551,11 +4472,11 @@ public final class DamageService implements DamageApi, Listener {
                 int hits = component.getKey() == trigger.definition().multiHitElement() ? trigger.definition().hits() : 1;
                 total += reference * component.getValue() * (1 + source.elementDamage(component.getKey())) * (1 - resistance) * hits;
             }
-            boolean critical = ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
-            if (critical) total *= 1 + source.critDamage;
             total *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
-            long rounded = CoreMath.roundedDamage(total);
-            if (!allowed(attacker, target)) continue;
+            DamageResult result=finishCalculation(request,total,total,1,0,source.critRate,source.critDamage);
+            long rounded = result.finalDamage();
+            boolean critical=result.critical();
+            if (!allowed(attacker, target)) return DamageResult.failed(request.source(),"not_allowed");
             if (rounded > 0 && attacker instanceof Player player) target.setKiller(player);
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
@@ -3563,15 +4484,13 @@ public final class DamageService implements DamageApi, Listener {
             if (entersCombat(rounded, attacker.getUniqueId(), target.getUniqueId())) {
                 combat.touch(attacker, weaponId(attacker, attacker)); combat.touch(target, "");
             }
-            Bukkit.getPluginManager().callEvent(new AfterDamageEvent(
-                    new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), referenceStat, 1, trigger.incoming(), false, true, rounded, "reaction:" + trigger.definition().id()),
-                    new DamageResult(true, rounded, critical, trigger.incoming(), total, 1, 0, "reaction:" + trigger.definition().id(), "")));
+            Bukkit.getPluginManager().callEvent(new AfterDamageEvent(request,result));
             if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
             if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
                     trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());
             Bukkit.getPluginManager().callEvent(new ElementReactionEvent(target.getUniqueId(), trigger.definition().id(),
                     trigger.existing(), trigger.incoming(), rounded));
-        }
+            return result;
     }
 
     private ReferenceStat divineReactionReference(LivingEntity attacker, ElementService.ReactionTrigger trigger, ReferenceStat fallback) {
@@ -3698,6 +4617,8 @@ public final class DamageService implements DamageApi, Listener {
 
 ## SkillService.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/SkillService.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.service;
 
@@ -3768,23 +4689,8 @@ public final class SkillService implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onInventoryDrop(org.bukkit.event.inventory.InventoryClickEvent event) {
         if (event.getAction().name().startsWith("DROP_")) {
-            if (event.getWhoClicked() instanceof Player player && isBedrock(player)
-                    && definitions.snapshot().config("config.yml").getBoolean("controls.drop-skill", true)
-                    && definitions.snapshot().config("config.yml").getBoolean("controls.bedrock-selected-slot-drop-skill", true)
-                    && !event.isCancelled()
-                    && event.getClickedInventory() == player.getInventory() && event.getSlot() == player.getInventory().getHeldItemSlot()) {
-                WeaponDefinition weapon = definitions.snapshot().weapon(items.instance(event.getCurrentItem()).orElse(null));
-                if (weapon != null && weapon.skill() != null && player.hasPermission("combatcoresystems.command.skill")) {
-                    event.setCancelled(true);
-                    int selected = player.getInventory().getHeldItemSlot();
-                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
-                        if (player.isOnline() && player.getInventory().getHeldItemSlot() == selected
-                                && items.id(player.getInventory().getItemInMainHand()).orElse("").equals(weapon.id())) activate(player, false);
-                    });
-                    trace("bedrock selected-slot fallback", player, "action=" + event.getAction() + " slot=" + event.getSlot());
-                    return;
-                }
-            }
+            // Inventory-origin drops must remain drops on both Java and Bedrock.
+            // The old selected-slot fallback also intercepted intentional inventory disposal.
             markInventoryDrop(event.getWhoClicked().getUniqueId());
             if (event.getWhoClicked() instanceof Player player) trace("inventory drop", player, "action=" + event.getAction() + " slot=" + event.getSlot());
         }
@@ -3820,15 +4726,6 @@ public final class SkillService implements Listener {
 
     private boolean inputDebugEnabled(Player player) {
         return definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false) || debug != null && debug.enabled(player.getUniqueId());
-    }
-
-    private boolean isBedrock(Player player) {
-        if (org.bukkit.Bukkit.getPluginManager().getPlugin("floodgate") == null) return false;
-        try {
-            Class<?> type = Class.forName("org.geysermc.floodgate.api.FloodgateApi");
-            Object api = type.getMethod("getInstance").invoke(null);
-            return Boolean.TRUE.equals(type.getMethod("isFloodgatePlayer", UUID.class).invoke(api, player.getUniqueId()));
-        } catch (ReflectiveOperationException ex) { return false; }
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -4078,6 +4975,8 @@ public final class SkillService implements Listener {
 
 ## StatService.java
 
+ソース: `src/main/java/com/github/saku0817/combatcoresystems/service/StatService.java`
+
 ```java
 package com.github.saku0817.combatcoresystems.service;
 
@@ -4222,6 +5121,7 @@ public final class StatService implements Listener {
             ItemInstance item = equipped.getValue();
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
             if (equipment != null) {
+                items.migrateEquipment(item);
                 add(modifiers, item.mainStat(equipment), item.mainValue(equipment));
                 item.getSubstats().entrySet().stream().limit(item.getUnlockedSubstats()).forEach(entry -> {
                     String key = entry.getKey(); double value = entry.getValue();
@@ -4246,7 +5146,7 @@ public final class StatService implements Listener {
             recordDelta(sources, "セット効果：" + config.getString("sets." + set.getKey() + ".name", set.getKey()), before, modifiers);
         }
         EnumMap<StatKey, Double> beforeHeart = detailed ? new EnumMap<>(modifiers) : null;
-        applyDivineHeart(data, modifiers); recordDelta(sources, "神心から", beforeHeart, modifiers);
+        applyDivineHeart(data, modifiers); recordDelta(sources, "追憶から", beforeHeart, modifiers);
 
         double vanillaArmor = 0;
         if (dynamic!=null) {

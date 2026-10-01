@@ -14,6 +14,14 @@ public final class EventContext {
     public String weapon = "", ability = "", combatId = "";
     public double damage, finalDamage, healAmount, requestedHeal, effectiveHeal, overheal;
     public Element attribute = Element.PHYSICAL;
+    public Element originalElement = Element.PHYSICAL;
+    public SourceKind sourceKind = SourceKind.ENVIRONMENT;
+    public String sourceId = "", attackType = "", abilityType = "", damageKind = "", movementType = "";
+    public double baseDamage, baseHeal, finalHeal;
+    public boolean criticalAllowed, criticalForced;
+    public final Set<String> tags = new LinkedHashSet<>();
+    public final CombatModifiers sourceCombat = new CombatModifiers(), targetCombat = new CombatModifiers();
+    public Map<String,Object> actionOptions = Map.of();
     public boolean critical, reaction, normalAttack, skill, ultimate;
     public Location location;
     public final Map<String, Object> values = new LinkedHashMap<>();
@@ -31,6 +39,10 @@ public final class EventContext {
         result.damage = damage; result.finalDamage = finalDamage;
         result.healAmount = healAmount; result.requestedHeal=requestedHeal; result.effectiveHeal = effectiveHeal; result.overheal = overheal;
         result.attribute = attribute; result.critical = critical; result.reaction = reaction;
+        result.originalElement=originalElement;result.sourceKind=sourceKind;result.sourceId=sourceId;
+        result.attackType=attackType;result.abilityType=abilityType;result.damageKind=damageKind;result.movementType=movementType;
+        result.baseDamage=baseDamage;result.baseHeal=baseHeal;result.finalHeal=finalHeal;
+        result.criticalAllowed=criticalAllowed;result.criticalForced=criticalForced;result.tags.addAll(tags);
         result.normalAttack = normalAttack; result.skill = skill; result.ultimate = ultimate;
         result.healer = healer; result.healed = healed; result.values.putAll(values);
         return result;

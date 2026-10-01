@@ -86,12 +86,7 @@ public final class ItemService {
             if (equipment != null) {
                 value.setLevel(Math.clamp(definitions.snapshot().config("equipment.yml").getInt("equipment." + id + ".initial-level", 1), 1, equipment.maxLevel()));
                 ConfigurationSection settings = definitions.snapshot().config("equipment.yml").getConfigurationSection("equipment." + id);
-                var pool = EquipmentRolls.candidates(settings.getConfigurationSection("main-stat-candidates"), true);
-                if (!pool.isEmpty()) {
-                    var selected = EquipmentRolls.draw(pool, 1, ThreadLocalRandom.current()).getFirst();
-                    value.setMainStat(selected.key(), selected.first(), selected.last());
-                } else value.setMainStat(equipment.mainStat(), equipment.mainAtLevel1(), equipment.mainAtMaxLevel());
-                generateSubstats(value, equipment);
+                EquipmentGrowth.initialize(value,equipment,mainPool(equipment,settings),subPool(equipment,settings),ThreadLocalRandom.current(),false);
             }
             pdc.set(instanceKey, PersistentDataType.STRING, gson.toJson(value));
         }
@@ -108,7 +103,26 @@ public final class ItemService {
     public Optional<ItemInstance> instance(ItemStack item) {
         if (item == null || !item.hasItemMeta()) return Optional.empty();
         String raw = item.getPersistentDataContainer().get(instanceKey, PersistentDataType.STRING);
-        return raw == null ? Optional.empty() : Optional.of(gson.fromJson(raw, ItemInstance.class));
+        if (raw == null) return Optional.empty();
+        ItemInstance value=gson.fromJson(raw, ItemInstance.class);
+        if (migrateEquipment(value)) writeInstance(item,value);
+        return Optional.of(value);
+    }
+
+    public boolean migrateEquipment(ItemInstance value) {
+        EquipmentDefinition equipment=definitions.snapshot().equipment().get(value.getDefinitionId());
+        if(equipment==null || value.getEquipmentGrowthVersion()>=EquipmentGrowth.VERSION) return false;
+        ConfigurationSection settings=definitions.snapshot().config("equipment.yml").getConfigurationSection("equipment."+equipment.id());
+        return EquipmentGrowth.migrate(value,equipment,mainPool(equipment,settings),subPool(equipment,settings));
+    }
+    private List<EquipmentRolls.Candidate> mainPool(EquipmentDefinition equipment,ConfigurationSection settings) {
+        var configured=EquipmentRolls.candidates(settings==null?null:settings.getConfigurationSection("main-stat-candidates"),true);
+        if(!configured.isEmpty()) return configured;
+        return List.of(new EquipmentRolls.Candidate(equipment.mainStat(),0,0,1));
+    }
+    private List<EquipmentRolls.Candidate> subPool(EquipmentDefinition equipment,ConfigurationSection settings) {
+        var configured=EquipmentRolls.candidates(settings==null?null:settings.getConfigurationSection("substat-candidates"),false);
+        return configured.isEmpty()?equipment.substatCandidates().stream().map(key->new EquipmentRolls.Candidate(key,0,0,1)).toList():configured;
     }
 
     public NamespacedKey idKey() { return idKey; }
@@ -145,6 +159,7 @@ public final class ItemService {
 
     public void writeInstance(ItemStack item, ItemInstance instance, int activeSetPieces) {
         if (item == null || !item.hasItemMeta()) return;
+        migrateEquipment(instance);
         ItemMeta meta = item.getItemMeta();
         if (renderedSnapshot != definitions.snapshot()) {
             renderedSnapshot = definitions.snapshot();
@@ -232,7 +247,7 @@ public final class ItemService {
     private void appendDivineHeart(List<Component> lore, ConfigurationSection heart) {
         lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(rarityLine(heart.getInt("rarity", 5))));
         var messages = definitions.snapshot().config("messages.yml");
-        lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(messages.getString("divine-heart-tooltip.slot", "<white>装備部位：<u>神心</u></white>")));
+        lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(messages.getString("divine-heart-tooltip.slot", "<white>装備部位：<u>追憶</u></white>")));
         ConfigurationSection talents = heart.getConfigurationSection("talents");
         if (talents != null) for (String id : talents.getKeys(false)) {
             ConfigurationSection talent = talents.getConfigurationSection(id); if (talent == null) continue;
@@ -283,9 +298,14 @@ public final class ItemService {
                 .replace("<bonus>", String.format(java.util.Locale.ROOT, "%+.0f", weapon.elementBonus() * 100))
                 .replace("<min_level>", Integer.toString(weapon.minimumEquipLevel())).replace("<max_level>", Integer.toString(weapon.maximumEquipLevel()))));
         var talent = weapon.options().talent();
-        if (talent != null) appendDescription(lore, "talent", "天賦", talent.name(), talent.description());
-        if (weapon.skill() != null) appendDescription(lore, "skill", "スキル", weapon.skill().name(), abilityDescription(weapon.skill()));
-        if (weapon.ultimate() != null) appendDescription(lore, "ultimate", "必殺技", weapon.ultimate().name(), abilityDescription(weapon.ultimate()));
+        WeaponDefinition base=definitions.snapshot().weapons().get(weapon.id());
+        boolean highlight=instance.getLimitBreak()>0 && base!=null;
+        if (talent != null) appendDescription(lore, "talent", "天賦", talent.name(), talent.description(),
+                highlight ? base.options().talent()==null?List.of():base.options().talent().description() : null);
+        if (weapon.skill() != null) appendDescription(lore, "skill", "スキル", weapon.skill().name(), abilityDescription(weapon.skill()),
+                highlight ? base.skill()==null?List.of():abilityDescription(base.skill()) : null);
+        if (weapon.ultimate() != null) appendDescription(lore, "ultimate", "必殺技", weapon.ultimate().name(), abilityDescription(weapon.ultimate()),
+                highlight ? base.ultimate()==null?List.of():abilityDescription(base.ultimate()) : null);
         if (!weapon.lore().isEmpty()) { lore.add(Component.empty()); weapon.lore().forEach(line -> lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(line))); }
     }
 
@@ -298,9 +318,15 @@ public final class ItemService {
     }
 
     private void appendDescription(List<Component> lore, String key, String label, String name, List<String> description) {
+        appendDescription(lore,key,label,name,description,null);
+    }
+    private void appendDescription(List<Component> lore, String key, String label, String name, List<String> description,List<String> baseline) {
         var config = definitions.snapshot().config("messages.yml");
         lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse(config.getString("weapon-tooltip." + key + "-title", "<#adff2f>➽ " + label + " <u><b><name></b></u></#adff2f>").replace("<name>", name)));
-        description.forEach(line -> lore.add(com.github.saku0817.combatcoresystems.util.ItemText.parse("<white>" + line + "</white>")));
+        List<Component> lines=description.stream().map(line->com.github.saku0817.combatcoresystems.util.ItemText.parse("<white>"+line+"</white>")).toList();
+        if(baseline!=null)lines=com.github.saku0817.combatcoresystems.util.DescriptionDiff.highlight(
+                baseline.stream().map(com.github.saku0817.combatcoresystems.util.ItemText::parse).toList(),lines);
+        lore.addAll(lines);
     }
 
     private void appendEffects(List<Component> lore, ConfigurationSection section, String label) {

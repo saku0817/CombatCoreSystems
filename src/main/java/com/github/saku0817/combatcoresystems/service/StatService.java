@@ -141,6 +141,7 @@ public final class StatService implements Listener {
             ItemInstance item = equipped.getValue();
             EquipmentDefinition equipment = definitions.snapshot().equipment().get(item.getDefinitionId());
             if (equipment != null) {
+                items.migrateEquipment(item);
                 add(modifiers, item.mainStat(equipment), item.mainValue(equipment));
                 item.getSubstats().entrySet().stream().limit(item.getUnlockedSubstats()).forEach(entry -> {
                     String key = entry.getKey(); double value = entry.getValue();
@@ -165,7 +166,7 @@ public final class StatService implements Listener {
             recordDelta(sources, "セット効果：" + config.getString("sets." + set.getKey() + ".name", set.getKey()), before, modifiers);
         }
         EnumMap<StatKey, Double> beforeHeart = detailed ? new EnumMap<>(modifiers) : null;
-        applyDivineHeart(data, modifiers); recordDelta(sources, "神心から", beforeHeart, modifiers);
+        applyDivineHeart(data, modifiers); recordDelta(sources, "追憶から", beforeHeart, modifiers);
 
         double vanillaArmor = 0;
         if (dynamic!=null) {

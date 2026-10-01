@@ -30,8 +30,11 @@ public final class TriggerService implements Listener {
     private final BuffService buffs;
     private final TargetSelectorService selectors;
     private final StackService stacks=new StackService();
+    public Map<StackService.Key,Integer> selfStacks(UUID owner) { return stacks.selfStacks(owner); }
     private final DynamicEffectService dynamic=new DynamicEffectService();
     private final FieldService fields;
+    private final CombatModifierService combatModifiers;
+    private final MovementService movement;
     private DefinitionRegistry.Snapshot snapshot;
     private Map<String,List<TriggerCatalog.Source>> catalog=Map.of();
     private final Map<String,Long> cooldowns=new HashMap<>();
@@ -40,6 +43,11 @@ public final class TriggerService implements Listener {
     private final Map<UUID,String> combats=new HashMap<>();
     private EventContext current;
     private double nextDefIgnore;
+    private Map<String,Object> nextAction=Map.of();
+    public <T> T withActionContext(Map<String,Object> options,Supplier<T> operation) {
+        var prior=nextAction;nextAction=options;
+        try{return operation.get();}finally{nextAction=prior;}
+    }
     private boolean resetting;
     private boolean scanInventory,scanHotbar,monitors;
     public TriggerService(JavaPlugin plugin,DefinitionRegistry definitions,PlayerDataService players,ItemService items,
@@ -47,13 +55,15 @@ public final class TriggerService implements Listener {
                           PartyService parties,MobService mobs) {
         this.plugin=plugin; this.definitions=definitions; this.players=players; this.items=items; this.stats=stats;
         this.combat=combat; this.damage=damage; this.healing=healing; this.buffs=buffs;
+        combatModifiers=new CombatModifierService(definitions,buffs);
         selectors=new TargetSelectorService(parties,damage,players,stats,mobs);
+        movement=new MovementService(plugin,selectors,this::emit);
         fields=new FieldService(selectors,buffs,this::emit);
         stacks.onChange(this::stackChanged);
     }
     public DynamicEffectService dynamic() { return dynamic; }
     public EventContext current() { return current; }
-    public void start() { refresh(); Bukkit.getScheduler().runTaskTimer(plugin,this::tick,5,5); }
+    public void start() { refresh(); movement.start();Bukkit.getScheduler().runTaskTimer(plugin,this::tick,5,5); }
     private void refresh() {
         if (snapshot==definitions.snapshot()) return;
         snapshot=definitions.snapshot();
@@ -66,7 +76,7 @@ public final class TriggerService implements Listener {
         scanHotbar=all.stream().anyMatch(s -> s.placement().equals("talent") && text(s.options(),"hand","MAIN_HAND").equalsIgnoreCase("HOT_BAR"));
         monitors=all.stream().flatMap(s -> s.triggers().stream()).anyMatch(t -> Set.of(TriggerEvent.HP_BELOW,TriggerEvent.HP_ABOVE,TriggerEvent.TICK).contains(t.event()));
         resetting=true;
-        try { fields.reset(); stacks.reset(); dynamic.reset(); cooldowns.clear(); activations.clear(); hpStates.clear(); }
+        try { movement.reset();fields.reset(); stacks.reset(); dynamic.reset(); cooldowns.clear(); activations.clear(); hpStates.clear(); }
         finally { resetting=false; }
         errors.forEach(plugin.getLogger()::warning);
     }
@@ -111,7 +121,7 @@ public final class TriggerService implements Listener {
                         && source.definition().startsWith("weapon:") && !context.weapon.isBlank() && !source.definition().equals("weapon:"+context.weapon)) continue;
                 if (source.placement().equals("skill") && context.event==TriggerEvent.ULTIMATE
                         || source.placement().equals("ultimate") && context.event==TriggerEvent.SKILL) continue;
-                if (Set.of(TriggerEvent.BEFORE_HIT,TriggerEvent.HIT,TriggerEvent.NORMAL_ATTACK,TriggerEvent.HEAL,TriggerEvent.OVERHEAL).contains(context.event)) {
+                if (Set.of(TriggerEvent.BEFORE_HIT,TriggerEvent.BEFORE_HEAL,TriggerEvent.HIT,TriggerEvent.NORMAL_ATTACK,TriggerEvent.HEAL,TriggerEvent.OVERHEAL).contains(context.event)) {
                     if (source.placement().equals("skill") && !context.skill || source.placement().equals("ultimate") && !context.ultimate) continue;
                 }
                 if (context.values.containsKey("stackSource") && !source.definition().equals(context.values.get("stackSource"))) continue;
@@ -150,6 +160,15 @@ public final class TriggerService implements Listener {
         for (String key : c.keySet()) {
             boolean actual;
             switch(key) {
+                case "source-kind" -> {if(CombatModifiers.names(c.get(key)).stream().noneMatch(v->v.equalsIgnoreCase(context.sourceKind.name())))return false;continue;}
+                case "source-id" -> {if(!text(c,key,"").equals(context.sourceId))return false;continue;}
+                case "tags" -> {
+                    var tags=child(c,key);
+                    if(tags.containsKey("all")&&!context.tags.containsAll(strings(tags,"all")))return false;
+                    if(tags.containsKey("any")&&strings(tags,"any").stream().noneMatch(context.tags::contains))return false;
+                    if(tags.containsKey("none")&&strings(tags,"none").stream().anyMatch(context.tags::contains))return false;
+                    continue;
+                }
                 case "min-hp-percent" -> { if (hp<number(c,key,0)) return false; continue; }
                 case "max-hp-percent" -> { if (hp>number(c,key,1)) return false; continue; }
                 case "min-distance", "max-distance" -> {
@@ -223,12 +242,33 @@ public final class TriggerService implements Listener {
                 }
             } else if (type.equals("CREATE_FIELD")) fields.create(owner,source.definition(),action,context);
             else if (type.equals("REMOVE_FIELD")) fields.remove(owner.getUniqueId(),source.definition(),id);
+            else if(type.equals("MODIFY_EVENT")) {
+                if(context.event!=TriggerEvent.BEFORE_HIT&&context.event!=TriggerEvent.BEFORE_HEAL)continue;
+                var modifier=Set.of("EVENT_TARGET","VICTIM","OTHER").contains(text(action,"target","SOURCE"))?context.targetCombat:context.sourceCombat;
+                modifier.apply(CombatModifiers.event(action),context,1);
+                context.attribute=context.sourceCombat.element(context.attribute);
+            }
             else if (type.equals("MODIFY_EVENT_STATS")) {
                 if (context.event!=TriggerEvent.BEFORE_HIT) continue;
                 EventModifier modifier=Set.of("EVENT_TARGET","VICTIM","OTHER").contains(text(action,"target","SOURCE")) ? context.targetModifiers : context.sourceModifiers;
                 child(action,"modifiers").forEach((mode,values) -> map(values).forEach((stat,value) -> modifier.add(mode,StatKey.valueOf(stat),((Number)value).doubleValue())));
             } else for (LivingEntity target : selectors.select(text(action,"target",fallbackTarget).toUpperCase(Locale.ROOT),owner,context,action)) {
                 switch(type) {
+                    case "MOVE","DASH","LEAP","KNOCKBACK","PULL","TELEPORT" -> {
+                        if(!context.chain.enter(owner.getUniqueId(),source.definition(),"movement:"+actionKey+":"+target.getUniqueId()))continue;
+                        try {
+                            List<Map<String,Object>> path=action.containsKey("path-actions")?TriggerDefinition.actions(Map.of("actions",action.get("path-actions")),snapshot.buffs().keySet()):
+                                    TriggerDefinition.actions(child(action,"on-hit"),snapshot.buffs().keySet());
+                            List<Map<String,Object>> end=action.containsKey("end-actions")?TriggerDefinition.actions(Map.of("actions",action.get("end-actions")),snapshot.buffs().keySet()):List.of();
+                            if(movement.execute(owner,target,action,context,hit->{
+                                EventContext child=context.child(TriggerEvent.MOVE_HIT,owner,hit);child.location=hit.getLocation();child.movementType=type;child.tags.addAll(strings(action,"tags"));
+                                runMovementActions(owner,source,path,child,"EVENT_TARGET",actionKey+":path");
+                            },()->{
+                                EventContext child=context.child(TriggerEvent.MOVE_END,owner,context.target);child.location=target.getLocation();child.movementType=type;child.tags.addAll(strings(action,"tags"));
+                                runMovementActions(owner,source,end,child,"SELF",actionKey+":end");
+                            }))result++;
+                        }finally{context.chain.leave();}
+                    }
                     case "APPLY_EFFECT" -> { if (buffs.apply(target,text(action,"effect",""),owner.getUniqueId())) result++; }
                     case "REMOVE_EFFECT" -> { if (buffs.remove(target,text(action,"effect",""))) result++; }
                     case "DAMAGE" -> {
@@ -237,11 +277,16 @@ public final class TriggerService implements Listener {
                             var c=map(raw); components.add(new WeaponOptions.Component(ReferenceStat.valueOf(text(c,"reference","ATK").toUpperCase(Locale.ROOT)),number(c,"multiplier",1),Element.parse(text(c,"bonus-attribute","PHYSICAL")).orElseThrow()));
                         }
                         double prior=nextDefIgnore; nextDefIgnore=number(action,"def-ignore",0);
+                        var oldAction=nextAction;nextAction=actionMetadata(action,source,actionKey);
                         try { result+=damage.apply(new DamageRequest(owner.getUniqueId(),target.getUniqueId(),ReferenceStat.valueOf(text(action,"reference","ATK")),
                                 number(action,"multiplier",1),Element.parse(text(action,"attribute","PHYSICAL")).orElseThrow(),true,false,0,"trigger:"+actionKey,components)).finalDamage(); }
-                        finally { nextDefIgnore=prior; }
+                        finally { nextDefIgnore=prior;nextAction=oldAction; }
                     }
-                    case "HEAL" -> result+=healing.healAmount(owner,target,reference(text(action,"reference","HP"),owner,target,context)*number(action,"multiplier",1),false);
+                    case "HEAL" -> {
+                        var oldAction=nextAction;nextAction=actionMetadata(action,source,actionKey);
+                        try {result+=healing.healAmount(owner,target,reference(text(action,"reference","HP"),owner,target,context)*number(action,"multiplier",1),false);}
+                        finally {nextAction=oldAction;}
+                    }
                     case "APPLY_DYNAMIC_MODIFIER" -> {
                         double value=reference(text(action,"source",""),owner,target,context)*number(action,"multiplier",1);
                         dynamic.apply(target.getUniqueId(),owner.getUniqueId()+":"+actionKey,StatKey.valueOf(text(action,"stat","")),value,
@@ -251,6 +296,41 @@ public final class TriggerService implements Listener {
             }
             if (action.containsKey("store-result")) context.values.put(text(action,"store-result",""),result);
         }
+    }
+    private void runMovementActions(Player owner,TriggerCatalog.Source source,List<Map<String,Object>> actions,EventContext context,String target,String key) {
+        if(!owner.isOnline()||owner.isDead()||resetting)return;
+        EventContext prior=current;current=context;
+        try{actions(owner,source,actions,context,target,key);}finally{current=prior;}
+    }
+    private Map<String,Object> actionMetadata(Map<String,Object> action,TriggerCatalog.Source source,String actionKey) {
+        Map<String,Object> metadata=new LinkedHashMap<>(action);
+        metadata.putIfAbsent("source-kind",switch(source.placement()){case "skill"->"SKILL";case "ultimate"->"ULTIMATE";case "talent"->"TALENT";default->"TRIGGER";});
+        String defaultId=Set.of("skill","ultimate","talent").contains(source.placement())
+                ?source.placement()+":"+text(source.options(),"id",source.definition()):"trigger:"+actionKey;
+        metadata.putIfAbsent("source-id",defaultId);return Map.copyOf(metadata);
+    }
+    private void prepareContext(EventContext event,Map<String,Object> options) {
+        event.actionOptions=options;
+        if(options.containsKey("source-kind"))event.sourceKind=SourceKind.valueOf(text(options,"source-kind","").toUpperCase(Locale.ROOT));
+        event.sourceId=text(options,"source-id",event.sourceId);event.tags.addAll(strings(options,"tags"));
+        event.skill=event.sourceKind==SourceKind.SKILL;event.ultimate=event.sourceKind==SourceKind.ULTIMATE;
+        event.normalAttack=event.sourceKind==SourceKind.NORMAL_ATTACK;event.reaction=event.sourceKind==SourceKind.REACTION;
+        event.attackType=event.sourceKind.name();event.abilityType=event.skill?"SKILL":event.ultimate?"ULTIMATE":"";
+        combatModifiers.prepare(event);
+        if(options.containsKey("attribute"))event.attribute=Element.parse(text(options,"attribute","")).orElseThrow();
+    }
+    private void applyActionModifiers(EventContext event) {
+        event.sourceCombat.apply(CombatModifiers.action(event.actionOptions),event,1);
+        event.attribute=event.sourceCombat.element(event.attribute);
+        if(event.actionOptions.containsKey("attribute"))event.attribute=Element.parse(text(event.actionOptions,"attribute","")).orElseThrow();
+    }
+    public long heal(LivingEntity source,LivingEntity target,double base,Supplier<Long> operation) {
+        EventContext event=current==null?new EventContext(TriggerEvent.BEFORE_HEAL,null,source,target):current.child(TriggerEvent.BEFORE_HEAL,source,target);
+        event.healer=source;event.healed=target;event.baseHeal=base;
+        var options=nextAction;nextAction=Map.of();
+        EventContext prior=current;current=event;
+        try {prepareContext(event,options);emit(event);applyActionModifiers(event);return operation.get();}
+        finally {current=prior;nextAction=options;}
     }
     private double reference(String key,LivingEntity owner,LivingEntity target,EventContext context) {
         return switch(key) {
@@ -274,15 +354,23 @@ public final class TriggerService implements Listener {
         if (attacker instanceof Player p) event.weapon=items.id(p.getInventory().getItemInMainHand()).orElse("");
         if (request.source().startsWith("skill:") || request.source().startsWith("ultimate:")) event.ability=request.source().substring(request.source().indexOf(':')+1);
         event.attribute=request.element(); event.normalAttack=request.source().equals("normal_attack");
+        event.originalElement=request.element();event.sourceId=request.source();event.sourceKind=SourceKind.from(request.source());
+        if(event.sourceKind==SourceKind.NORMAL_ATTACK && !(attacker instanceof Player))event.sourceKind=SourceKind.MOB_ATTACK;
+        if(event.sourceKind==SourceKind.TRIGGER&&current!=null) {
+            event.sourceKind=current.sourceKind;event.tags.addAll(current.tags);
+        }
+        event.criticalAllowed=request.canCritical();
+        event.damageKind=request.fixedDamage()?"FIXED":request.components().isEmpty()?"REFERENCE":"COMPOSITE";
         event.skill=request.source().startsWith("skill:") || request.source().startsWith("trigger:") && current!=null && current.skill;
         event.ultimate=request.source().startsWith("ultimate:") || request.source().startsWith("trigger:") && current!=null && current.ultimate;
         event.reaction=request.source().startsWith("reaction:"); event.sourceModifiers.add("flat",StatKey.DEF_IGNORE,nextDefIgnore);
+        var options=nextAction;nextAction=Map.of();
         double priorIgnore=nextDefIgnore; nextDefIgnore=0;
         EventContext prior=current; current=event;
-        try { return operation.get(); }
-        finally { current=prior; nextDefIgnore=priorIgnore; }
+        try { prepareContext(event,options);return operation.get(); }
+        finally { current=prior; nextDefIgnore=priorIgnore;nextAction=options; }
     }
-    public void beforeHit() { if (current!=null) emit(current); }
+    public void beforeHit() { if (current!=null) {emit(current);applyActionModifiers(current);} }
     @EventHandler public void onDamage(AfterDamageEvent event) {
         if (!event.getResult().applied() || event.getResult().finalDamage()<=0) return;
         var request=event.getRequest();
@@ -299,6 +387,8 @@ public final class TriggerService implements Listener {
     public void cast(Player owner,LivingEntity target,String weapon,int stage,boolean ultimate) {
         EventContext event=new EventContext(ultimate ? TriggerEvent.ULTIMATE : TriggerEvent.SKILL,current==null ? null : current.chain,owner,target);
         event.weapon=weapon; event.skill=!ultimate; event.ultimate=ultimate;
+        event.sourceKind=ultimate?SourceKind.ULTIMATE:SourceKind.SKILL;
+        event.sourceId=(ultimate?"ultimate:":"skill:")+weapon;event.abilityType=event.sourceKind.name();
         emit(event);
         for (var source : sources(owner)) if (source.definition().equals("weapon:"+weapon) && source.placement().equals(ultimate ? "ultimate" : "skill")) {
             EventContext prior=current; current=event;
@@ -320,11 +410,15 @@ public final class TriggerService implements Listener {
         for (String legacy : List.of("min-hp-percent","max-distance","requires-combat","requires-target")) additional.remove(legacy);
         EventContext event=new EventContext(ultimate ? TriggerEvent.ULTIMATE : TriggerEvent.SKILL,null,owner,target);
         event.skill=!ultimate; event.ultimate=ultimate;
+        event.sourceKind=ultimate?SourceKind.ULTIMATE:SourceKind.SKILL;
+        event.sourceId=(ultimate?"ultimate:":"skill:")+weapon;
+        event.abilityType=event.sourceKind.name();event.weapon=weapon;
         return conditions(additional,owner,"weapon:"+weapon,event);
     }
     public void healed(LivingEntity source,LivingEntity target,double requested,double effective,double overheal) {
         EventContext event=current==null ? new EventContext(TriggerEvent.HEAL,null,source,target) : current.child(TriggerEvent.HEAL,source,target);
         event.healer=source; event.healed=target; event.healAmount=requested; event.requestedHeal=requested; event.effectiveHeal=effective; event.overheal=overheal;
+        event.finalHeal=requested;
         emit(event); emit(event.child(TriggerEvent.RECEIVE_HEAL,target,source));
         if (overheal>0) emit(event.child(TriggerEvent.OVERHEAL,source,target));
     }
@@ -382,10 +476,16 @@ public final class TriggerService implements Listener {
         }
     }
     private void forget(UUID owner,boolean death) {
+        movement.cancel(owner,death?"DEATH":"LOGOUT");
         stacks.forget(owner); fields.forget(owner); dynamic.forget(owner);
         String prefix=owner+":"; hpStates.keySet().removeIf(k -> k.startsWith(prefix)); cooldowns.keySet().removeIf(k -> k.startsWith(prefix));
         activations.keySet().removeIf(k -> k.startsWith(prefix) && (!death || k.endsWith(":LIFE") || k.contains(":COMBAT:")));
     }
     @EventHandler public void onQuit(PlayerQuitEvent event) { forget(event.getPlayer().getUniqueId(),false); combats.remove(event.getPlayer().getUniqueId()); }
     @EventHandler public void onDeath(PlayerDeathEvent event) { forget(event.getEntity().getUniqueId(),true); }
+    @EventHandler public void onWorldChange(org.bukkit.event.player.PlayerChangedWorldEvent event) {movement.cancel(event.getPlayer().getUniqueId(),"WORLD_CHANGE");}
+    @EventHandler public void onDisable(org.bukkit.event.server.PluginDisableEvent event) {
+        if(event.getPlugin()!=plugin)return;
+        resetting=true;try{movement.reset();}finally{resetting=false;}
+    }
 }

@@ -35,6 +35,13 @@ async function main() {
                 assert(parsed.weapons.new_weapon.name.includes('" と :'));
             }
             if(type==='heart') assert.equal(parsed['divine-hearts'].new_heart.rules['reaction-override'].damage.multiplier,2);
+            if(type==='equipment') {
+                const item=parsed.equipment.new_equipment;
+                assert.equal(item['max-level'],15);
+                assert.deepEqual(item['main-stat-candidates'],{ATK_FLAT:{weight:1}});
+                assert.equal(Object.keys(item['substat-candidates']).length,8);
+                assert.equal(item['main-stat'],undefined);
+            }
             const download=page.waitForEvent('download'); await page.locator('#gen-download').click({force:true});
             const result=await download;
             assert(result.suggestedFilename().endsWith('.yml'));
@@ -42,6 +49,17 @@ async function main() {
             console.log('PASS: offline YAML generation and download: '+type);
         }
         await page.screenshot({path:'server/v142-web-evidence/generator.png',fullPage:true});
+        await page.locator('#gen-type').selectOption('equipment');
+        for(const [slot,expected] of Object.entries({HEAD:['HP_FLAT','HP_PERCENT','DEF_FLAT','DEF_PERCENT'],CHEST:['ATK_FLAT','ATK_PERCENT'],LEGS:['CRIT_RATE','CRIT_DAMAGE'],FEET:['HP_PERCENT','DEF_PERCENT','ATK_PERCENT','HEALING_POWER']})) {
+            await page.locator('#g-slot').selectOption(slot);
+            assert.deepEqual(await page.locator('#g-main option').evaluateAll(nodes=>nodes.map(n=>n.value)),expected);
+        }
+        await page.locator('#g-slot').selectOption('RESONANCE');
+        assert.equal(await page.locator('#g-main option').count(),10);
+        await page.locator('#g-rarity').fill('3');
+        assert.equal(await page.locator('#g-max-level').inputValue(),'9');
+        await page.locator('#generate').click({force:true});
+        assert.equal((await page.evaluate(()=>generatedDocument)).equipment.new_equipment['max-level'],9);
         const nested=await page.evaluate(()=>yamlText({'data-version':1,components:[{reference:'ATK',multiplier:2},{reference:'HP',multiplier:1}]}));
         fs.writeFileSync('server/v142-web-evidence/generated/nested.yml',nested);
         await page.getByRole('button',{name:'ダメージシミュレータ',exact:true}).click({force:true});

@@ -66,9 +66,11 @@ public final class CombatCoreSystems extends JavaPlugin {
         skills.bindDebug(debug);
         TriggerService triggers = new TriggerService(this,definitions,players,items,stats,combat,damage,healing,buffs,parties,mobs);
         skills.bindTriggers(triggers); damage.bindTriggers(triggers); healing.bindTriggers(triggers);
+        buffs.bindTriggers(triggers);
         stats.bindEffects(buffs,triggers.dynamic());
         buffs.bindEvents((target,id) -> triggers.buffEvent(target,id,true),(target,id) -> triggers.buffEvent(target,id,false));
         HudService hud = new HudService(this, definitions, players, stats, levels, combat, elements, skills, mobs);
+        hud.bindTriggers(triggers);
         GuiService gui = new GuiService(this, definitions, players, stats, levels, combat, equipment, skillTrees, parties, enhancement, items);
         BackupService backups = new BackupService(this, definitions, storage, players, parties, stats, levels, elements);
         web = new AdminWebService(this, definitions);

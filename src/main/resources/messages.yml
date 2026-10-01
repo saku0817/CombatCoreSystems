@@ -1,4 +1,5 @@
 data-version: 1
+enhancement-overflow-refund: '<green>超過経験値を素材所持数へ返却しました：<materials>（変換メニューで実物化できます）</green>'
 # 空文字にすると発動通知を省略できます（天賦は所持条件を満たした時だけ通知）。
 ability-announcement:
   skill: "<aqua>スキル発動：<name></aqua>"
@@ -26,7 +27,7 @@ equipment-tooltip:
     FEET: ブーツ
     RESONANCE: 残響
 divine-heart-tooltip:
-  slot: '<white>装備部位：<u>神心</u></white>'
+  slot: '<white>装備部位：<u>追憶</u></white>'
   talent-title: '<yellow>➽ <talent_color><u><b>「<name>」</b></u></talent_color></yellow>'
 # v1.4.0 武器ツールチップ。headerは行の追加・削除・並べ替えが可能です。
 weapon-tooltip:
@@ -65,7 +66,7 @@ skill-failure:
   conditions: "<red>技の発動条件を満たしていません。体力・対象・距離・戦闘状態を確認してください。</red>"
   target: "<red>対象が見つかりません。対象に照準を合わせてください。</red>"
 item-lore:
-  # 神心ルール・セット効果。利用可能: <label>, <key>, <value>
+  # 追憶ルール・セット効果。利用可能: <label>, <key>, <value>
   effect: "<gray><label>: <key> = <value></gray>"
 # MiniMessage形式で全表示文を編集できます。例: <red>赤文字</red>
 prefix: "<dark_gray>[<gold>CCS</gold>]</dark_gray> "

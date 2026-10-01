@@ -5,6 +5,16 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WebEditorSupportTest {
+    @Test void equipmentTemplateMatchesFixedGrowthAndSlot() throws Exception {
+        YamlConfiguration yaml = new YamlConfiguration();
+        WebEditorSupport.addEntry(yaml,"equipment.yml","chest","equipment");
+        assertEquals("CHEST",yaml.getString("equipment.chest.slot"));
+        assertEquals(9,yaml.getInt("equipment.chest.max-level"));
+        assertTrue(yaml.contains("equipment.chest.main-stat-candidates.ATK_FLAT"));
+        assertTrue(yaml.contains("equipment.chest.main-stat-candidates.ATK_PERCENT"));
+        assertFalse(yaml.contains("equipment.chest.main-stat"));
+        assertEquals(4,yaml.getConfigurationSection("equipment.chest.substat-candidates").getKeys(false).size());
+    }
     @Test void insertsIntoEmptyMappingWithoutCorruptingOtherRoots() throws Exception {
         YamlConfiguration yaml = new YamlConfiguration();
         yaml.loadFromString("data-version: 1\nmobs: {}\nvanilla-mobs: {}\nvanilla-defaults: {custom-exp: 42}\n");

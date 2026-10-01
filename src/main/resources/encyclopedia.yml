@@ -10,7 +10,7 @@ categories:
     icon: DIAMOND_CHESTPLATE
     discovery: PUBLIC
   divine_hearts:
-    name: "<light_purple>神心</light_purple>"
+    name: "<light_purple>追憶</light_purple>"
     icon: NETHER_STAR
     discovery: PUBLIC
   materials:

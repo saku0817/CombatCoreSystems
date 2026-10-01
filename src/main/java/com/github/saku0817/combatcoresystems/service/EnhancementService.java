@@ -52,8 +52,13 @@ public final class EnhancementService {
         if (players.require(player).getLevel() >= maximum) return new Result(false, 0, maximum, "already_maximum");
         long gained = selectedExp(selection);
         if (gained <= 0) return new Result(false, 0, players.require(player).getLevel(), "no_player_materials");
+        PlayerData before=players.require(player);
+        long excess=overflow(before.getLevel(),maximum,before.getExp(),gained,levels::requiredExp);
+        Map<String,Long> refund=refundPlan(excess,materials("PLAYER"));
+        if(refund==null || !canRefund(before,refund)) return new Result(false,0,before.getLevel(),"refund_unavailable");
         if (!consume(player, selection, "PLAYER")) return new Result(false, 0, players.require(player).getLevel(), "materials_changed");
         levels.addExp(player, players.require(player), gained);
+        refund(player,refund);
         return new Result(true, gained, players.require(player).getLevel(), "");
     }
 
@@ -69,14 +74,17 @@ public final class EnhancementService {
         String type = weapon ? "WEAPON" : "EQUIPMENT";
         long gained = selectedExp(selection);
         if (gained <= 0) return new Result(false, 0, instance.getLevel(), "no_materials");
+        long excess=overflow(instance.getLevel(),maximum,instance.getExp(),gained,level->required(level,weapon));
+        Map<String,Long> refund=refundPlan(excess,materials(type));
+        if(refund==null || !canRefund(players.require(player),refund)) return new Result(false,0,instance.getLevel(),"refund_unavailable");
         if (!consume(player, selection, type)) return new Result(false, 0, instance.getLevel(), "materials_changed");
         instance.setExp(saturatedExp(instance.getExp(), gained));
         while (instance.getLevel() < maximum) {
             long needed = required(instance.getLevel(), weapon);
             if (instance.getExp() < needed) break;
             instance.setExp(instance.getExp() - needed);
-            instance.setLevel(instance.getLevel() + 1);
-            if (!weapon && instance.getLevel() % 3 == 0) progressSubstats(instance, equipment);
+            if (weapon) instance.setLevel(instance.getLevel() + 1);
+            else com.github.saku0817.combatcoresystems.model.EquipmentGrowth.advance(instance,equipment);
         }
         if (instance.getLevel() >= maximum) instance.setExp(0);
         items.writeInstance(located.stack, instance);
@@ -84,6 +92,7 @@ public final class EnhancementService {
         else players.require(player).setResonanceItem(Base64.getEncoder().encodeToString(located.stack.serializeAsBytes()));
         players.require(player).getEquipment().replaceAll((slot, old) -> old.getInstanceId().equals(instance.getInstanceId()) ? instance : old);
         stats.invalidate(player.getUniqueId());
+        refund(player,refund);
         return new Result(true, gained, instance.getLevel(), "");
     }
 
@@ -168,6 +177,37 @@ public final class EnhancementService {
 
     static long saturatedExp(long current, long gain) { return current > Long.MAX_VALUE - gain ? Long.MAX_VALUE : current + gain; }
 
+    static long overflow(int level,int maximum,long current,long gain,java.util.function.IntToLongFunction required) {
+        long exp=saturatedExp(current,gain);
+        while(level<maximum) { long needed=Math.max(1,required.applyAsLong(level)); if(exp<needed)return 0; exp-=needed;level++; }
+        return exp;
+    }
+    static Map<String,Long> refundPlan(long excess,List<MaterialInfo> materials) {
+        long remaining=excess/100*100;
+        Map<String,Long> result=new LinkedHashMap<>();
+        List<MaterialInfo> usable=materials.stream().filter(m->m.exp()>=100 && m.exp()%100==0)
+                .sorted(Comparator.comparingLong(MaterialInfo::exp).reversed().thenComparing(MaterialInfo::id)).toList();
+        for(MaterialInfo material:usable) {
+            long count=remaining/material.exp();
+            if(count>0) {result.put(material.id(),count);remaining%=material.exp();}
+        }
+        return remaining==0?result:null;
+    }
+    private boolean canRefund(PlayerData data,Map<String,Long> refund) {
+        for(var entry:refund.entrySet()) if(data.getEnhancementMaterials().getOrDefault(entry.getKey(),0L)>Long.MAX_VALUE-entry.getValue()) return false;
+        return true;
+    }
+    private void refund(Player player,Map<String,Long> refund) {
+        if(refund.isEmpty())return;
+        PlayerData data=players.require(player);
+        refund.forEach((id,count)->data.getEnhancementMaterials().merge(id,count,Long::sum));
+        String detail=refund.entrySet().stream().map(e->definitions.snapshot().config("levels.yml").getString("materials."+e.getKey()+".name",e.getKey())+" ×"+e.getValue())
+                .collect(java.util.stream.Collectors.joining("、"));
+        player.sendMessage(com.github.saku0817.combatcoresystems.util.ItemText.parse(definitions.snapshot().config("messages.yml")
+                .getString("enhancement-overflow-refund","<green>超過経験値を素材所持数へ返却しました：<materials>（変換メニューで実物化できます）</green>")
+                .replace("<materials>",detail)));
+    }
+
     private boolean consume(Player player, Map<String, Long> selection, String type) {
         for (var entry : selection.entrySet()) {
             ConfigurationSection material = definitions.snapshot().config("levels.yml").getConfigurationSection("materials." + entry.getKey());
@@ -190,6 +230,7 @@ public final class EnhancementService {
         PlayerData data = players.require(player);
         ItemInstance stored = data.getEquipment().get(com.github.saku0817.combatcoresystems.model.EquipmentSlot.RESONANCE);
         if (stored != null && stored.getInstanceId().equals(instanceId) && !data.getResonanceItem().isBlank()) {
+            items.migrateEquipment(stored);
             ItemStack stack = ItemStack.deserializeBytes(Base64.getDecoder().decode(data.getResonanceItem()));
             return new LocatedItem(-1, stack, stored);
         }

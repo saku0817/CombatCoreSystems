@@ -1,6 +1,6 @@
-# CombatCoreSystems v1.4.5 — ChatGPT用YAML作成引き継ぎ書
+# CombatCoreSystems v1.4.6 — ChatGPT用YAML作成引き継ぎ書
 
-共通Trigger・Action・Stack・Fieldは `ChatGPT-YAML-v1.4.5.md` を併読してください。装備の抽選・図鑑アイコン等は `ChatGPT-YAML-v1.4.4.md` にも記載しています。新仕様はv1.4.5差分を優先します。
+装備成長表・治癒力・追憶・Movementは `ChatGPT-YAML-v1.4.6.md`、共通Trigger・Action・Stack・Fieldは `ChatGPT-YAML-v1.4.5.md` を併読してください。装備の抽選・図鑑アイコン等は `ChatGPT-YAML-v1.4.4.md` にも記載しています。新仕様はv1.4.6差分を優先します。
 
 ## 利用方法
 
@@ -8,7 +8,7 @@
 
 ### そのまま使える依頼文
 
-> CombatCoreSystems v1.4.5用の設定を作成してください。添付の引き継ぎ書・v1.4.5差分・YAMLリファレンスを仕様として使い、未実装のキーを推測で追加しないでください。表示文と実際の効果を別々に定義してください。変更対象以外のID・設定を保持し、ファイルごとの変更点、追加する定義、参照する他ファイル、実現できない部分を明示してください。不明なゲーム仕様は質問してください。YAMLはスペース2個でインデントし、ルートキーを重複させないでください。私が作りたい内容は次のとおりです：……
+> CombatCoreSystems v1.4.6用の設定を作成してください。添付の引き継ぎ書・v1.4.6差分・YAMLリファレンスを仕様として使い、未実装のキーを推測で追加しないでください。表示文と実際の効果を別々に定義してください。変更対象以外のID・設定を保持し、ファイルごとの変更点、追加する定義、参照する他ファイル、実現できない部分を明示してください。不明なゲーム仕様は質問してください。YAMLはスペース2個でインデントし、ルートキーを重複させないでください。私が作りたい内容は次のとおりです：……
 
 ## ファイルとルート
 
@@ -17,7 +17,7 @@
 | weapons.yml | weapons | 武器・天賦・スキル・必殺技・限界突破 |
 | equipment.yml | equipment | 装備、メイン・サブステータス、初期Lv |
 | sets.yml | sets | 装備2/4セット効果 |
-| divine_hearts.yml | divine-hearts | 神心の表示、補正、通常属性と反応置換 |
+| divine_hearts.yml | divine-hearts | 追憶の表示、補正、通常属性と反応置換（ファイル名・内部IDは互換維持） |
 | buffs.yml | buffs | バフ・デバフ。スキルからIDで参照 |
 | mobs.yml | mobs / vanilla-mobs | 独自Mob／バニラMobの上書き・独自EXP |
 | bosses.yml | bosses | Boss本体、技、フェーズ、ドロップ |
@@ -126,11 +126,11 @@ limit-breaks:
 
 実ATK、天賦、技、通常属性、武器Loreは同じ段階定義を使用。技の発動に加えて説明も明示的に更新してください。`atk-percent`という限界突破専用キーは未実装で警告のみです。代わりに`base-atk`で直接指定します。バフの強化は別IDをbuffs.ymlへ作り、段階の`self-effects/target-effects`を変更します。
 
-## 装備・神心・バフ
+## 装備・追憶・バフ
 
-装備は`slot`、`main-stat.type/level-1/max-level`、`max-level`、`set`、`initial-level`、`initial-substats`、`initial-upgrades`、`initial-unlocked-substats`を使用します。部位と使用可能メインステータスの組合せに制約があるため、リファレンスの例を基礎にします。初期値は新規作成品のみで、既存品を上書きしません。
+装備は`slot`、`rarity`、`main-stat-candidates`、`substat-candidates`、`set`、`lore`を使用します。v1.4.6ではメイン/サブ値と最大Lvを部位・レアリティの共通成長表から算出し、従来の任意数値では上書きできません。候補の`weight`で抽選比率を指定します。部位ごとの許可候補はv1.4.6差分を参照してください。
 
-神心はレベル強化対象ではありません。`talents`は名前と説明の表示用、`modifiers`と`rules`が実効果です。武器に通常属性があれば神心の通常属性変換より武器が優先。`rules.reaction-override`で反応を置換できます。詳しいキーは神心のコメント例を参照。
+追憶はレベル強化対象ではありません。互換性のためファイル名と定義ルートは`divine_hearts.yml`／`divine-hearts`のままです。`talents`は名前と説明の表示用、`modifiers`と`rules`が実効果です。武器に通常属性があれば追憶の通常属性変換より武器が優先。`rules.reaction-override`で反応を置換できます。詳しいキーは同ファイルのコメント例を参照。
 
 バフ／デバフは `kind: BUFF/DEBUFF`, `duration`（秒）, `max-stacks`, `modifiers.flat/percent`などを使用。`ATK_PERCENT: -0.30`はATK-30%。`DEF_IGNORED_WHEN_HIT: 0.40`は被攻撃時に防御力40%無視、攻撃者側の`DEF_IGNORE`とは別です。新しい効果名を命名するだけでは新しい処理は実装されません。
 

@@ -15,7 +15,8 @@ class V142RegressionTest {
     @Test void newControlsAndWebEditorDefaultsExist() throws Exception {
         YamlConfiguration config = YamlConfiguration.loadConfiguration(Path.of("src/main/resources/config.yml").toFile());
         assertTrue(config.getBoolean("controls.allow-empty-cast"));
-        assertTrue(config.getBoolean("controls.bedrock-selected-slot-drop-skill"));
+        // v1.4.6: inventory-origin drops are no longer converted into skill input.
+        assertFalse(config.getBoolean("controls.bedrock-selected-slot-drop-skill"));
         assertFalse(config.getBoolean("web-editor.enabled"));
         String page = Files.readString(Path.of("src/main/resources/web-editor.html"));
         assertTrue(page.contains("ダメージシミュレータ"));

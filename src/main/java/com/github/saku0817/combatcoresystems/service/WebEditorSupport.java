@@ -26,12 +26,12 @@ final class WebEditorSupport {
         if (yaml.contains(root + "." + id)) throw new IllegalArgumentException("同じIDが既に存在します。");
         String content = switch (file) {
             case "weapons.yml" -> "name: '<white>新しい武器</white>'\nmaterial: IRON_SWORD\ncategory: UNCATEGORIZED\nrarity: 3\nbase-atk: {level-1: 10, level-100: 100}\nnormal-attack: {attribute: PHYSICAL}\nlore: []\n";
-            case "equipment.yml" -> "name: '<white>新しい装備</white>'\nmaterial: IRON_CHESTPLATE\nslot: CHEST\nrarity: 3\nmax-level: 9\nmain-stat: {type: CRIT_RATE, level-1: 0.05, max-level: 0.15}\nsubstats: [ATK_PERCENT, HP_FLAT]\nlore: []\n";
+            case "equipment.yml" -> "name: '<white>新しい装備</white>'\nmaterial: IRON_CHESTPLATE\nslot: CHEST\nrarity: 3\nmax-level: 9\nmain-stat-candidates: {ATK_FLAT: {weight: 1}, ATK_PERCENT: {weight: 1}}\nsubstat-candidates: {ATK_PERCENT: {weight: 1}, HP_FLAT: {weight: 1}, CRIT_RATE: {weight: 1}, CRIT_DAMAGE: {weight: 1}}\nlore: []\n";
             case "sets.yml" -> "name: 新しいシリーズ\ntwo-piece:\n  description: 攻撃力+10%\n  modifiers: {ATK_PERCENT: 0.10}\nfour-piece:\n  description: 会心ダメージ+20%\n  modifiers: {CRIT_DAMAGE: 0.20}\n";
             case "mobs.yml", "bosses.yml" -> "name: '<white>新しいMob</white>'\nentity-type: ZOMBIE\nlevel: {min: 1, max: 1}\nstats:\n  hp: {min: 50000, max: 50000}\n  atk: {min: 10, max: 10}\n  def: {min: 0, max: 0}\ncustom-exp: 10\ndrop-custom-exp: true\nnative-attribute: PHYSICAL\n";
             case "buffs.yml" -> "name: 新しいバフ\nkind: BUFF\ntarget: SELF\nduration: 10\nmax-stacks: 1\nreapply: REFRESH\nmodifiers:\n  flat: {ATK_PERCENT: 0.10}\n";
             case "reactions.yml" -> "name: 新しい反応\nattributes: [FIRE, WATER]\ncooldown: 2.0\nradius: 0\ndamage-components: {FIRE: 0.5, WATER: 0.5}\n";
-            case "divine_hearts.yml" -> "name: '<red>新しい神心</red>'\nmaterial: NETHER_STAR\nrarity: 5\nmodifiers: {FIRE_DAMAGE: 0.50}\ntalents:\n  blessing:\n    name: '<red>太陽の祝福</red>'\n    description: ['<white>炎属性ダメージ+50%</white>']\nlore: []\n";
+            case "divine_hearts.yml" -> "name: '<red>新しい追憶</red>'\nmaterial: NETHER_STAR\nrarity: 5\nmodifiers: {FIRE_DAMAGE: 0.50}\ntalents:\n  blessing:\n    name: '<red>太陽の祝福</red>'\n    description: ['<white>炎属性ダメージ+50%</white>']\nlore: []\n";
             default -> throw new IllegalArgumentException("未対応のファイルです。");
         };
         YamlConfiguration entry = new YamlConfiguration(); entry.loadFromString(content);

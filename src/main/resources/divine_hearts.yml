@@ -2,11 +2,11 @@ data-version: 1
 # v1.4.5: divine-hearts.ID.triggers に武器/セットと共通のTriggerを追加可能。
 # 例: on_skill: {event: SKILL, actions: [{type: APPLY_EFFECT, effect: fire_power}]}
 # 参照するfire_power等はbuffs.ymlへ別途定義してください。
-# 各神の心内に enchantment-glint: true / false を指定できます（省略時false）。
-# 以下は divine-hearts: {} を置き換える例です。神の心はレベル・限界突破を持ちません。
+# 各追憶内に enchantment-glint: true / false を指定できます（省略時false）。
+# 以下は divine-hearts: {} を置き換える例です。追憶はレベル・限界突破を持ちません。
 # divine-hearts:
 #   divine-heart-flame:
-#     name: "<red>炎の神心</red>"
+#     name: "<red>炎の追憶</red>"
 #     material: NETHER_STAR
 #     rarity: 4
 #     lore:
@@ -24,13 +24,13 @@ data-version: 1
 #         multiplier: 1.25
 #         radius-add: 2.0
 # modifiers だけでも装備可能。rules は任意です。
-# 装備GUIの「神の心」枠→所持品の神心を選択。実物は所持品に残り、1個体を登録します。
+# 装備GUIの「追憶」枠→所持品の追憶を選択。実物は所持品に残り、1個体を登録します。
 # 実物を手放すと装備登録が解除されます。戦闘中は着脱できません。
 divine-hearts: {}
 # 完全な天賦・属性反応置換例:
 # divine-hearts:
 #   sun_god_heart:
-#     name: '<red><bold>火神の神心</bold></red>'
+#     name: '<red><bold>火神の追憶</bold></red>'
 #     material: NETHER_STAR
 #     rarity: 5
 #     enchantment-glint: true

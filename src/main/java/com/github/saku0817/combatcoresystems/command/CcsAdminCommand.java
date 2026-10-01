@@ -101,7 +101,9 @@ public final class CcsAdminCommand implements CommandExecutor, TabCompleter {
         if (maximum == 0) throw new IllegalArgumentException("このアイテムには強化レベルがありません。");
         int level = Integer.parseInt(args[1]);
         if (level < 1 || level > maximum) throw new IllegalArgumentException("レベルは1～" + maximum + "で指定してください。");
-        instance.setLevel(level); instance.setExp(0);
+        if (equipment != null) com.github.saku0817.combatcoresystems.model.EquipmentGrowth.setLevel(instance,equipment,level);
+        else instance.setLevel(level);
+        instance.setExp(0);
         items.writeInstance(stack, instance); target.getInventory().setItemInMainHand(stack);
         data.getEquipment().replaceAll((slot, old) -> old.getInstanceId().equals(instance.getInstanceId()) ? instance : old);
         stats.invalidate(target.getUniqueId()); levels.apply(target, data, false);

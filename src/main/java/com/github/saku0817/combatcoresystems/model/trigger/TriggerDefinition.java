@@ -14,11 +14,12 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
             "ALL_PARTY_MEMBERS", "ALL_PARTY_MEMBERS_AND_SELF", "ENTITIES_IN_AREA", "ALLIES_IN_AREA", "ENEMIES_IN_AREA");
     public static final Set<String> SCOPES = Set.of("SELF", "TARGET", "EVENT_TARGET", "ATTACKER", "VICTIM", "ALL_TARGETS");
     private static final Set<String> ACTIONS = Set.of("APPLY_EFFECT", "REMOVE_EFFECT", "ADD_STACK", "SET_STACK", "CLEAR_STACK",
-            "CONSUME_STACK", "DAMAGE", "HEAL", "MODIFY_EVENT_STATS", "CREATE_FIELD", "REMOVE_FIELD", "APPLY_DYNAMIC_MODIFIER");
+            "CONSUME_STACK", "DAMAGE", "HEAL", "MODIFY_EVENT_STATS", "MODIFY_EVENT", "CREATE_FIELD", "REMOVE_FIELD", "APPLY_DYNAMIC_MODIFIER",
+            "MOVE", "DASH", "LEAP", "KNOCKBACK", "PULL", "TELEPORT");
     private static final Set<String> CONDITIONS = Set.of("min-hp-percent", "max-hp-percent", "requires-combat", "requires-target",
             "min-distance", "max-distance", "damage-positive", "heal-positive", "overheal-positive", "normal-attack-only",
             "skill-only", "ultimate-only", "element", "critical", "buff-present", "buff-absent", "party-required",
-            "target-is-self", "target-is-ally", "target-is-enemy", "inside-field", "outside-field", "stack", "context-value");
+            "target-is-self", "target-is-ally", "target-is-enemy", "inside-field", "outside-field", "stack", "context-value", "source-kind", "source-id", "tags");
     public static Map<String,Object> map(Object value) {
         Map<?,?> raw;
         if (value instanceof ConfigurationSection section) raw = section.getValues(false);
@@ -69,7 +70,7 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
         List<TriggerDefinition> out = new ArrayList<>();
         for (String id : section.getKeys(false)) {
             Map<String,Object> m = map(section.get(id));
-            TriggerEvent event = TriggerEvent.valueOf(text(m,"event", "").toUpperCase(Locale.ROOT));
+            TriggerEvent event = TriggerEvent.parse(text(m,"event", ""));
             String target = choice(m,"target","SELF",SELECTORS);
             Map<String,Object> conditions = new LinkedHashMap<>(child(m,"conditions")); validateConditions(conditions,buffs);
             if (m.containsKey("effects") && target.equals("OTHER")) conditions.put("requires-target",true);
@@ -89,6 +90,15 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
         for (String key : m.keySet()) {
             if (!CONDITIONS.contains(key)) throw new IllegalArgumentException("Unknown condition: " + key);
             switch (key) {
+                case "source-kind" -> CombatModifiers.names(m.get(key)).forEach(v->SourceKind.valueOf(v.toUpperCase(Locale.ROOT)));
+                case "source-id" -> required(m,key);
+                case "tags" -> {
+                    var groups=child(m,key);if(groups.isEmpty())throw new IllegalArgumentException("Empty tags condition");
+                    for(String group:groups.keySet()) {
+                        if(!Set.of("all","any","none").contains(group))throw new IllegalArgumentException("Unknown tags condition "+group);
+                        strings(groups,group);
+                    }
+                }
                 case "min-hp-percent", "max-hp-percent" -> range(m,key,0,0,1);
                 case "min-distance", "max-distance" -> range(m,key,0,0,1024);
                 case "element" -> attribute(text(m,key,""));
@@ -123,6 +133,10 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
         }
     }
     public static List<Map<String,Object>> actions(Map<String,Object> m, Set<String> buffs) {
+        return actions(m,buffs,0);
+    }
+    private static List<Map<String,Object>> actions(Map<String,Object> m,Set<String> buffs,int depth) {
+        if(depth>16)throw new IllegalArgumentException("Nested action depth exceeds 16");
         if (!m.containsKey("actions")) return List.of();
         if (!(m.get("actions") instanceof List<?> list) || list.isEmpty()) throw new IllegalArgumentException("Empty/invalid actions");
         List<Map<String,Object>> out = new ArrayList<>();
@@ -133,7 +147,16 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
             if (a.containsKey("area")) area(child(a,"area"));
             choice(a,"target-filter","ALL",Set.of("ALL","ALLY","ENEMY"));
             range(a,"duration",0,0,86400); range(a,"multiplier",1,0,1e9);
+            if(a.containsKey("source-kind"))SourceKind.valueOf(text(a,"source-kind","").toUpperCase(Locale.ROOT));
+            if(a.containsKey("source-id"))required(a,"source-id");
+            if(a.containsKey("tags"))strings(a,"tags");
             switch (type) {
+                case "MOVE", "DASH", "LEAP", "KNOCKBACK", "PULL", "TELEPORT" -> {
+                    com.github.saku0817.combatcoresystems.service.MovementService.validate(a);
+                    for(String key:List.of("path-actions","end-actions"))if(a.containsKey(key))actions(Map.of("actions",a.get(key)),buffs,depth+1);
+                    if(a.containsKey("on-hit"))actions(child(a,"on-hit"),buffs,depth+1);
+                }
+                case "MODIFY_EVENT" -> {if(CombatModifiers.event(a).isEmpty())throw new IllegalArgumentException("Empty event modifier");}
                 case "APPLY_EFFECT", "REMOVE_EFFECT" -> effect(text(a,"effect",""),buffs);
                 case "ADD_STACK", "SET_STACK", "CLEAR_STACK", "CONSUME_STACK" -> {
                     required(a,"id"); choice(a,"scope","SELF",SCOPES);
@@ -143,6 +166,7 @@ public record TriggerDefinition(String id, TriggerEvent event, String target, Ma
                 }
                 case "MODIFY_EVENT_STATS" -> modifiers(child(a,"modifiers"));
                 case "DAMAGE", "HEAL" -> {
+                    CombatModifiers.action(a);
                     choice(a,"reference","ATK", type.equals("DAMAGE") ? Set.of("ATK","HP","DEF") :
                             Set.of("ATK","HP","DEF","FIXED","EVENT_DAMAGE","EVENT_HEAL","EVENT_EFFECTIVE_HEAL","EVENT_OVERHEAL"));
                     attribute(text(a,"attribute","PHYSICAL")); range(a,"def-ignore",0,0,1);

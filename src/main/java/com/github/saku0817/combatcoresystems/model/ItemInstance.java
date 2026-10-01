@@ -16,9 +16,13 @@ public final class ItemInstance {
     private StatKey mainStat;
     private double mainAtLevel1;
     private double mainAtMaxLevel;
+    private int equipmentGrowthVersion;
+    private java.util.List<String> equipmentUpgradeRolls = new java.util.ArrayList<>();
 
     public StatKey mainStat(EquipmentDefinition definition) { return mainStat == null ? definition.mainStat() : mainStat; }
     public double mainValue(EquipmentDefinition definition) {
+        if (equipmentGrowthVersion >= 146)
+            return EquipmentGrowthTable.mainValue(definition.slot(), mainStat(definition), level);
         return com.github.saku0817.combatcoresystems.util.CoreMath.linear(mainStat == null ? definition.mainAtLevel1() : mainAtLevel1,
                 mainStat == null ? definition.mainAtMaxLevel() : mainAtMaxLevel, level, definition.maxLevel());
     }
@@ -35,6 +39,9 @@ public final class ItemInstance {
     public Map<String, Double> getSubstats() { return substats; }
     public Map<String, Integer> getSubstatUpgrades() { return substatUpgrades; }
     public int getUnlockedSubstats() { return unlockedSubstats; }
+    public int getEquipmentGrowthVersion() { return equipmentGrowthVersion; }
+    public void setEquipmentGrowthVersion(int version) { equipmentGrowthVersion = version; }
+    public java.util.List<String> getEquipmentUpgradeRolls() { return equipmentUpgradeRolls; }
     public void setDefinitionId(String definitionId) { this.definitionId = definitionId; }
     public void setLevel(int level) { this.level = Math.max(1, Math.min(100, level)); }
     public void setExp(long exp) { this.exp = Math.max(0L, exp); }

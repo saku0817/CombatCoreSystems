@@ -23,7 +23,7 @@ public final class DisplayNames {
             case "DEF_PERCENT" -> "防御力補正";
             case "CRIT_RATE" -> "会心率";
             case "CRIT_DAMAGE" -> "会心ダメージ";
-            case "HEALING_POWER" -> "回復力";
+            case "HEALING_POWER" -> "治癒力";
             case "COOLDOWN" -> "クールタイム短縮";
             case "ATTACK_SPEED" -> "攻撃速度";
             case "DEF_DOWN" -> "防御力低下";
@@ -35,7 +35,7 @@ public final class DisplayNames {
             case "LEGS" -> "脚";
             case "FEET" -> "足";
             case "RESONANCE" -> "残響";
-            case "DIVINE_HEART" -> "神の心";
+            case "DIVINE_HEART" -> "追憶";
             case "MELEE", "MELEE_WEAPON" -> "近距離武器";
             case "RANGED", "RANGED_WEAPON" -> "遠距離武器";
             case "NORMAL_ATTACK_ATTRIBUTE", "NORMAL_ATTACK_ELEMENT" -> "通常攻撃の属性";

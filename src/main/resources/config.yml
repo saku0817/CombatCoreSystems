@@ -14,9 +14,8 @@ controls:
   debug-inputs: false
   # HUDの常時表示で発動失敗理由が消えないよう、自分のチャットにも表示。
   failure-chat: true
-  # Geyserが選択中ホットバースロットの破棄をInventoryClickへ変換した場合のBE専用補完。
-  # BEで選択中スロットをインベントリ画面から破棄した場合もスキル扱い。他スロットの破棄は通常通り。
-  bedrock-selected-slot-drop-skill: true
+  # 廃止キー（v1.4.6以降は無視）。BEのインベントリ内破棄をスキルへ変換しません。
+  bedrock-selected-slot-drop-skill: false
   # 手持ちCCS武器をドロップしようとすると、落とさずにスキルを発動。インベントリからの破棄は除外。
   drop-skill: true
   # しゃがみ＋攻撃で必殺技。通常攻撃はキャンセル。コマンドは引き続き併用可能。

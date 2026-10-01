@@ -57,6 +57,7 @@ enhancement:
   duplicate-confirm: "<green>右の武器を1本消費して、左の武器を限界突破</green>"
   no-duplicate: "<red>消費可能な同名武器がありません</red>"
   failure-reasons:
+    refund_unavailable: '超過経験値を返却できません。同用途の100EXP素材の設定と素材所持数上限を確認してください。'
     target_not_weapon: "対象の武器が見つかりません。選び直してください。"
     limit_break_maximum: "限界突破段階が最大です。"
     invalid_material: "対象武器自身は素材にできません。"
@@ -126,6 +127,10 @@ party:
   confirm: "<green>実行する</green>"
   invited: "<yellow>招待が届きました。/ccs open party で確認できます。</yellow>"
 hud:
+  self-stacks-enabled: true
+  self-stack: '<aqua><name>: <count></aqua>'
+  # 自己スタックのIDと表示名。例: electric_corrosion: '電蝕' / fire_seed: '火種'
+  self-stack-names: {}
   # 複数スタックの技は戦闘外でも残数を表示します。
   ability-actionbar: '<yellow>スキル: <skill_status></yellow> <gray>|</gray> <gold>必殺技: <ultimate_status></gold>'
   ability-ready: 発動可能
@@ -154,6 +159,16 @@ navigation:
   search: '<aqua>検索</aqua>'
   search-hint: '<gray>チャットへ名前を入力</gray>'
 admin:
+  categories:
+    weapons: '<white>武器</white>'
+    equipment: '<white>装備（セット別）</white>'
+    memories: '<white>追憶</white>'
+    materials: '<white>強化素材</white>'
+    no-set: '<white>セットなし</white>'
+  sub-editor-title: '<gold>サブステの編集</gold>'
+  sub-select-hint: '<white>種類と強化回数を一覧から変更します。</white>'
+  sub-upgrade-choice: '<yellow>強化 +<count>：<value></yellow>'
+  sub-replace: '<green>ステータス種類を選択</green>'
   title: '<dark_red>CCS 管理メニュー</dark_red>'
   target: '<yellow>対象：<target></yellow>'
   target-hint: '<white>名前またはセレクターを入力（初期値 @s）</white>'

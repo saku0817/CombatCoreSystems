@@ -32,9 +32,19 @@ public final class HealService {
 
     public long healAmount(LivingEntity source,LivingEntity target,double baseAmount,boolean small) {
         if (target==null || target.isDead() || !Double.isFinite(baseAmount) || baseAmount<=0) return 0;
+        LivingEntity healer=source==null?target:source;
+        return triggers==null?healInternal(healer,target,baseAmount,small):triggers.heal(healer,target,baseAmount,()->healInternal(healer,target,baseAmount,small));
+    }
+    private long healInternal(LivingEntity source,LivingEntity target,double baseAmount,boolean small) {
+        if (target==null || target.isDead() || !Double.isFinite(baseAmount) || baseAmount<=0) return 0;
         if (source==null) source=target;
         double healingPower = source instanceof Player p ? stats.get(p, players.require(p)).value(StatKey.HEALING_POWER) : 0;
-        long amount = Math.round(Math.max(0,baseAmount*(1+healingPower)));
+        double adjusted=baseAmount*Math.max(0,1+healingPower);
+        if(triggers!=null&&triggers.current()!=null) {
+            var context=triggers.current();
+            adjusted*=context.sourceCombat.factor("healing-dealt",context)*context.targetCombat.factor("healing-received",context);
+        }
+        long amount = Math.round(Math.max(0,adjusted));
         if (amount<=0) return 0;
         double current=target instanceof Player p ? players.require(p).getHealth() : mobs.health(target);
         double maximum=value(target,ReferenceStat.HP);

@@ -1,4 +1,8 @@
 data-version: 1
+# v1.4.6: メイン・サブの数値は共通固定表。旧level-1/max-level/value指定は使用しません。
+# ★3=最大Lv9/サブ2種類、★4=Lv12/3種類、★5=Lv15/4種類。
+# Lv1は開放0。Lv3/6/9/12で1種類ずつ開放（レア度の枠上限まで）。
+# Lv3/6/9/12/15では独立してサブ1種類を強化。未開放も対象、重複強化可能。
 # v1.4.5: equipment.ID.triggers に共通Triggerを追加可能。
 # 例: heal_power: {event: OVERHEAL, actions: [{type: APPLY_DYNAMIC_MODIFIER,
 #       stat: ATK_FLAT, source: EVENT_OVERHEAL, multiplier: 0.1, duration: 10}]}
@@ -12,10 +16,8 @@ data-version: 1
 #     slot: HEAD
 #     rarity: 3
 #     max-level: 9
-#     main-stat:
-#       type: DEF_FLAT
-#       level-1: 5
-#       max-level: 20
+#     main-stat-candidates:
+#       DEF_FLAT: {weight: 1}
 #     substats:
 #       - HP_PERCENT
 #       - CRIT_RATE
@@ -27,45 +29,42 @@ data-version: 1
 #     slot: RESONANCE
 #     rarity: 4
 #     max-level: 12
-#     main-stat:
-#       type: FIRE_DAMAGE
-#       level-1: 0.05
-#       max-level: 0.20
+#     main-stat-candidates:
+#       FIRE_DAMAGE: {weight: 1}
 #     substats: [ATK_PERCENT, CRIT_RATE]
 # 割合は 0.20 = 20%。表示は日本語、設定キーは英語のままです。
-# HEAD: HP/DEF、CHEST: 会心、LEGS: ATK、FEET: HP/ATK/DEF/会心、RESONANCE: 属性ダメージ/耐性。
+# HEAD: HP/HP%/DEF/DEF%、CHEST: ATK/ATK%、LEGS: 会心率/会心ダメージ。
+# FEET: HP%/ATK%/DEF%/治癒力、RESONANCE: 属性ダメージ/属性耐性。
 # 装備GUIの空の部位をタップして候補を選びます。戦闘中は変更できません。
 equipment: {}
-# v1.4.4 抽選例（equipment.ID 配下。割合は0.05=5%。獲得時に選び個体へ保存）:
+# v1.4.6 抽選例（LEGSのequipment.ID配下。獲得時に選び個体へ保存）:
 #     main-stat-candidates:
-#       CRIT_RATE: {level-1: 0.05, max-level: 0.30, weight: 1}
-#       CRIT_DAMAGE: {level-1: 0.10, max-level: 0.60, weight: 1}
+#       CRIT_RATE: {weight: 1}
+#       CRIT_DAMAGE: {weight: 1}
 #     substat-candidates:
-#       ATK_PERCENT: {value: 0.05, weight: 1}
-#       HP_FLAT: {value: 25, weight: 2}
-#       CRIT_RATE: {value: 0.05, weight: 1}
-#       CRIT_DAMAGE: {value: 0.10, weight: 1}
-#       DEF_PERCENT: {value: 0.05, weight: 1}
-#     initial-unlocked-substats: 0
+#       ATK_PERCENT: {weight: 1}
+#       HP_FLAT: {weight: 2}
+#       CRIT_RATE: {weight: 1}
+#       CRIT_DAMAGE: {weight: 1}
+#       DEF_PERCENT: {weight: 1}
 # main-stat-candidates はメイン1個、substat-candidates は最大 rarity-1 個（上限4）を重複なしで抽選。
-# メインとサブの重複は許可。weight は正の相対抽選重み。部位別メイン制限は従来どおり。
+# メインとサブの重複は許可。weightは正の相対抽選重み。部位制限は上記の新表です。
 # サブ抽選指定時は initial-substats より優先。省略時は従来の固定例／substatsを互換読込。
-# 既存個体は再抽選しません。新形式の main-stat は個体にレベル1と最大レベルの値を保存。
-# 強化時のサブステ増加量は従来どおり固定値25／割合0.05です。
-# 完全なツールチップ・固定サブステータス例:
+# 旧個体は初回読込時に新表へ移行し、有効な種類は維持、無効・重複を再抽選。
+# 強化履歴は新レベルに応じて一度だけ再計算。新方式へ移行後は再抽選しません。
+# サブ候補はHP/HP%/DEF/DEF%/ATK/ATK%/会心率/会心ダメージの8種類のみ。
+# 属性ダメージ・属性耐性・治癒力はサブに指定できません。
+# 初期レベル付き装備の例（数値・開放・強化数は新表から自動計算）:
 # equipment:
 #   fictional_traveler_chest:
 #     name: '<blue><bold>虚構の旅人のチェストプレート</bold></blue>'
 #     material: DIAMOND_CHESTPLATE
 #     slot: CHEST
 #     rarity: 5
-#     max-level: 25
+#     max-level: 15
 #     initial-level: 9 # 作成時のレベル。省略時1。既存アイテムには適用しません。
-#     main-stat: {type: CRIT_DAMAGE, level-1: 0.60, max-level: 0.60}
+#     main-stat-candidates: {ATK_FLAT: {weight: 1}, ATK_PERCENT: {weight: 1}}
 #     substats: [ATK_PERCENT, HP_FLAT, CRIT_RATE, CRIT_DAMAGE]
-#     initial-substats: {ATK_PERCENT: 0.10, HP_FLAT: 50, CRIT_RATE: 0.05, CRIT_DAMAGE: 0.05}
-#     initial-upgrades: {ATK_PERCENT: 1, HP_FLAT: 1, CRIT_RATE: 0, CRIT_DAMAGE: 0}
-#     initial-unlocked-substats: 3
 #     set: fictional_traveler
 #     lore:
 #       - '<gray>「真実だけを辿れば、いつか世界の果てへ着けると思っていた。」</gray>'

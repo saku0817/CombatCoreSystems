@@ -222,6 +222,9 @@ public final class DamageService implements DamageApi, Listener {
         if (attacker!=null && !allowed(attacker,target)) return DamageResult.failed(request.source(),"not_allowed");
         if (triggers!=null) triggers.beforeHit();
         if (target.isDead()) return DamageResult.failed(request.source(),"target_not_available");
+        if(triggers!=null&&triggers.current()!=null&&triggers.current().attribute!=request.element())
+            request=new DamageRequest(request.attacker(),request.target(),request.referenceStat(),request.multiplier(),triggers.current().attribute,
+                    request.canCritical(),request.fixedDamage(),request.fixedAmount(),request.source(),request.components());
 
         DamageResult result = calculate(request, attacker, target);
         if (!result.applied()) return result;
@@ -243,15 +246,17 @@ public final class DamageService implements DamageApi, Listener {
                     ? config.getDouble("attribute-attachment-seconds", 5)
                     : config.getDouble("element-attachment-seconds", 5);
             LivingEntity reactionAttacker = attacker;
-            elements.attach(target, request.element(), duration).ifPresent(trigger -> applyReaction(reactionAttacker, target, request.referenceStat(), trigger));
+            ReferenceStat reactionReference=request.referenceStat();
+            elements.attach(target, request.element(), duration).ifPresent(trigger -> applyReaction(reactionAttacker, target, reactionReference, trigger));
         }
         return result;
     }
 
     private DamageResult calculate(DamageRequest request, LivingEntity attacker, LivingEntity target) {
         if (request.fixedDamage()) {
-            return new DamageResult(true, CoreMath.roundedDamage(request.fixedAmount()), false, request.element(),
-                    request.fixedAmount(), 1, 0, request.source(), "");
+            CombatantStats source = attacker == null ? null : combatant(attacker);
+            return finishCalculation(request, Math.max(0, request.fixedAmount()), Math.max(0, request.fixedAmount()),
+                    1, 0, source == null ? 0 : source.critRate, source == null ? 0 : source.critDamage);
         }
         if (attacker == null) return DamageResult.failed(request.source(), "attacker_required");
         CombatantStats source = combatant(attacker);
@@ -283,8 +288,29 @@ public final class DamageService implements DamageApi, Listener {
                 damage *= (request.components().isEmpty() ? 1 + source.elementDamage(request.element()) : 1) * (1 - resistance);
             }
         }
-        boolean critical = request.canCritical() && ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
-        if (critical) damage *= 1 + source.critDamage;
+        return finishCalculation(request, damage, base, defenseCoefficient, resistance, source.critRate, source.critDamage);
+    }
+
+    /** Shared final stage, including fixed damage: defense/resistance are resolved by the caller. */
+    private DamageResult finishCalculation(DamageRequest request, double damage, double base,
+                                           double defenseCoefficient, double resistance, double critRate, double critDamage) {
+        var context=triggers==null?null:triggers.current();
+        boolean canCritical=request.canCritical(),forced=false;
+        if(context!=null) {
+            context.baseDamage=base;
+            critRate=context.sourceCombat.critical("crit-rate",critRate,context);
+            critDamage=context.sourceCombat.critical("crit-damage",critDamage,context);
+            switch(context.sourceCombat.criticalMode()) {
+                case DISABLED -> canCritical=false;
+                case ENABLED -> canCritical=true;
+                case FORCED -> {canCritical=true;forced=true;}
+                default -> { }
+            }
+            context.criticalAllowed=canCritical;context.criticalForced=forced;
+        }
+        boolean critical = canCritical && (forced || ThreadLocalRandom.current().nextDouble() < Math.clamp(critRate,0,1));
+        if (critical) damage *= Math.max(0,1 + critDamage);
+        if(context!=null)damage*=context.sourceCombat.factor("damage-dealt",context)*context.targetCombat.factor("damage-taken",context);
         return new DamageResult(true, CoreMath.roundedDamage(damage), critical, request.element(), base,
                 defenseCoefficient, resistance, request.source(), "");
     }
@@ -324,11 +350,31 @@ public final class DamageService implements DamageApi, Listener {
             central.getWorld().getNearbyLivingEntities(central.getLocation(), trigger.definition().radius(),
                     entity -> !entity.equals(attacker) && !entity.equals(central)).forEach(targets::add);
         }
-        CombatantStats source = combatant(attacker);
-        double reference = switch (referenceStat) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
         for (LivingEntity target : targets) {
             if (target.isDead() || !allowed(attacker, target)) continue;
+            var reactionTrigger=trigger;
+            var reactionReference=referenceStat;
+            DamageRequest request=new DamageRequest(attacker.getUniqueId(),target.getUniqueId(),referenceStat,1,
+                    trigger.incoming(),true,false,0,"reaction:"+trigger.definition().id());
+            if(triggers==null)applyReactionTarget(attacker,target,reactionReference,reactionTrigger,request);
+            else triggers.damage(request,()->applyReactionTarget(attacker,target,reactionReference,reactionTrigger,request));
+        }
+    }
+
+    private DamageResult applyReactionTarget(LivingEntity attacker,LivingEntity target,ReferenceStat referenceStat,
+                                              ElementService.ReactionTrigger trigger,DamageRequest request) {
+            BeforeDamageEvent before=new BeforeDamageEvent(request);
+            Bukkit.getPluginManager().callEvent(before);
+            if(before.isCancelled())return DamageResult.failed(request.source(),"cancelled");
+            if(triggers!=null)triggers.beforeHit();
+            if(target.isDead()||!allowed(attacker,target))return DamageResult.failed(request.source(),"target_not_available");
+            CombatantStats source = combatant(attacker);
             CombatantStats defender = combatant(target);
+            if(triggers!=null&&triggers.current()!=null) {
+                source=modified(source,triggers.current().sourceModifiers);
+                defender=modified(defender,triggers.current().targetModifiers);
+            }
+            double reference = switch (referenceStat) { case HP -> source.hp; case ATK -> source.atk; case DEF -> source.def; };
             double total = 0;
             for (Map.Entry<Element, Double> component : trigger.definition().components().entrySet()) {
                 if (mobs.immune(target, component.getKey())) continue;
@@ -337,11 +383,11 @@ public final class DamageService implements DamageApi, Listener {
                 int hits = component.getKey() == trigger.definition().multiHitElement() ? trigger.definition().hits() : 1;
                 total += reference * component.getValue() * (1 + source.elementDamage(component.getKey())) * (1 - resistance) * hits;
             }
-            boolean critical = ThreadLocalRandom.current().nextDouble() < Math.min(1, source.critRate);
-            if (critical) total *= 1 + source.critDamage;
             total *= Math.max(0, definitions.snapshot().config("config.yml").getDouble("damage.global-multiplier", 2.0));
-            long rounded = CoreMath.roundedDamage(total);
-            if (!allowed(attacker, target)) continue;
+            DamageResult result=finishCalculation(request,total,total,1,0,source.critRate,source.critDamage);
+            long rounded = result.finalDamage();
+            boolean critical=result.critical();
+            if (!allowed(attacker, target)) return DamageResult.failed(request.source(),"not_allowed");
             if (rounded > 0 && attacker instanceof Player player) target.setKiller(player);
             long overdamage = overdamage(target, rounded);
             subtractHealth(target, rounded);
@@ -349,15 +395,13 @@ public final class DamageService implements DamageApi, Listener {
             if (entersCombat(rounded, attacker.getUniqueId(), target.getUniqueId())) {
                 combat.touch(attacker, weaponId(attacker, attacker)); combat.touch(target, "");
             }
-            Bukkit.getPluginManager().callEvent(new AfterDamageEvent(
-                    new DamageRequest(attacker.getUniqueId(), target.getUniqueId(), referenceStat, 1, trigger.incoming(), false, true, rounded, "reaction:" + trigger.definition().id()),
-                    new DamageResult(true, rounded, critical, trigger.incoming(), total, 1, 0, "reaction:" + trigger.definition().id(), "")));
+            Bukkit.getPluginManager().callEvent(new AfterDamageEvent(request,result));
             if (trigger.definition().levitation() > 0) target.setVelocity(target.getVelocity().setY(trigger.definition().levitation()));
             if (trigger.definition().resistanceDownElement() != null) elements.applyResistanceDown(target.getUniqueId(),
                     trigger.definition().resistanceDownElement(), trigger.definition().resistanceDown(), trigger.definition().resistanceDownSeconds());
             Bukkit.getPluginManager().callEvent(new ElementReactionEvent(target.getUniqueId(), trigger.definition().id(),
                     trigger.existing(), trigger.incoming(), rounded));
-        }
+            return result;
     }
 
     private ReferenceStat divineReactionReference(LivingEntity attacker, ElementService.ReactionTrigger trigger, ReferenceStat fallback) {

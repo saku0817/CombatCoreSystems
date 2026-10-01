@@ -46,27 +46,63 @@ public final class AdminGuiService implements Listener {
                     if (input.isBlank() || input.contains(" ")) throw new IllegalArgumentException("対象は空白なしで指定してください。");
                     targets.put(player.getUniqueId(), input); open(player);
                 }));
-        button(menu, 10, "CHEST", text("items", "<green>独自アイテムを取り出す</green>"), List.of(), () -> catalog(player, 0));
+        button(menu, 10, "CHEST", text("items", "<green>独自アイテムを取り出す</green>"), List.of(), () -> catalogCategories(player));
         button(menu, 12, "ANVIL", text("item-stats", "<gold>利き手の装備ステータスを編集</gold>"), List.of(text("item-stats-hint", "<white>メイン・サブステを個体単位で編集。YAML定義は変更しません。</white>")), () -> editHeld(player));
         button(menu, 14, "COMMAND_BLOCK", text("commands", "<aqua>管理コマンド操作</aqua>"), List.of(), () -> commands(player));
         button(menu, 16, "BARRIER", text("close", "<yellow>閉じる</yellow>"), List.of(), player::closeInventory);
         player.openInventory(menu.inventory);
     }
     private String target(Player player) { return targets.getOrDefault(player.getUniqueId(), "@s"); }
-    private void catalog(Player player, int page) {
+    private void catalogCategories(Player player) {
         if (!allowed(player, "give")) return;
-        Set<String> ids = new TreeSet<>(); ids.addAll(definitions.snapshot().weapons().keySet()); ids.addAll(definitions.snapshot().equipment().keySet());
-        for (String[] root : new String[][]{{"divine_hearts.yml", "divine-hearts"}, {"levels.yml", "materials"}}) {
-            var section = definitions.snapshot().config(root[0]).getConfigurationSection(root[1]); if (section != null) ids.addAll(section.getKeys(false));
+        Menu menu=menu(player,text("items","<green>独自アイテムを取り出す</green>"));
+        button(menu,10,"IRON_SWORD",text("categories.weapons","<white>武器</white>"),List.of(),()->catalog(player,"weapons","",0));
+        button(menu,12,"IRON_CHESTPLATE",text("categories.equipment","<white>装備（セット別）</white>"),List.of(),()->equipmentSets(player,0));
+        button(menu,14,"NETHER_STAR",text("categories.memories","<white>追憶</white>"),List.of(),()->catalog(player,"memories","",0));
+        button(menu,16,"EXPERIENCE_BOTTLE",text("categories.materials","<white>強化素材</white>"),List.of(),()->catalog(player,"materials","",0));
+        back(menu,player); player.openInventory(menu.inventory);
+    }
+    private void equipmentSets(Player player,int page) {
+        if (!allowed(player,"give")) return;
+        List<String> sets=definitions.snapshot().equipment().values().stream().map(d->Objects.requireNonNullElse(d.setId(),"")).distinct().sorted().toList();
+        Menu menu=menu(player,text("categories.equipment","<white>装備（セット別）</white>"));
+        for(int index=page*45;index<Math.min(sets.size(),(page+1)*45);index++) {
+            String id=sets.get(index);
+            String label=id.isBlank()?text("categories.no-set","<white>セットなし</white>"):
+                    definitions.snapshot().config("sets.yml").getString("sets."+id+".name",id);
+            button(menu,index%45,"IRON_CHESTPLATE",label,List.of(),()->catalog(player,"equipment",id,0));
+        }
+        if(page>0) button(menu,45,"ARROW",text("previous","<yellow>前のページ</yellow>"),List.of(),()->equipmentSets(player,page-1));
+        if((page+1)*45<sets.size()) button(menu,52,"ARROW",text("next","<yellow>次のページ</yellow>"),List.of(),()->equipmentSets(player,page+1));
+        button(menu,49,"ARROW",text("back","<yellow>戻る</yellow>"),List.of(),()->catalogCategories(player));
+        player.openInventory(menu.inventory);
+    }
+    private void catalog(Player player, String category, String setId, int page) {
+        if (!allowed(player, "give")) return;
+        Set<String> ids = new TreeSet<>();
+        switch(category) {
+            case "weapons" -> ids.addAll(definitions.snapshot().weapons().keySet());
+            case "equipment" -> definitions.snapshot().equipment().values().stream()
+                    .filter(d->Objects.requireNonNullElse(d.setId(),"").equals(setId)).forEach(d->ids.add(d.id()));
+            case "memories", "materials" -> {
+                String file=category.equals("memories")?"divine_hearts.yml":"levels.yml";
+                String root=category.equals("memories")?"divine-hearts":"materials";
+                var section=definitions.snapshot().config(file).getConfigurationSection(root);
+                if(section!=null) ids.addAll(section.getKeys(false));
+            }
+            default -> throw new IllegalArgumentException("Unknown item category");
         }
         List<String> list = new ArrayList<>(ids); Menu menu = menu(player, text("items", "<green>独自アイテムを取り出す</green>"));
         for (int index = page * 45; index < Math.min(list.size(), (page + 1) * 45); index++) {
             String id = list.get(index); ItemStack icon = items.create(id, 1).orElse(null); if (icon == null) continue;
             menu.inventory.setItem(index % 45, icon); menu.actions.put(index % 45, () -> command(player, "give item " + target(player) + " " + id + " 1"));
         }
-        if (page > 0) button(menu, 45, "ARROW", text("previous", "<yellow>前のページ</yellow>"), List.of(), () -> catalog(player, page - 1));
-        if ((page + 1) * 45 < list.size()) button(menu, 52, "ARROW", text("next", "<yellow>次のページ</yellow>"), List.of(), () -> catalog(player, page + 1));
-        back(menu, player); player.openInventory(menu.inventory);
+        if (page > 0) button(menu, 45, "ARROW", text("previous", "<yellow>前のページ</yellow>"), List.of(), () -> catalog(player, category, setId, page - 1));
+        if ((page + 1) * 45 < list.size()) button(menu, 52, "ARROW", text("next", "<yellow>次のページ</yellow>"), List.of(), () -> catalog(player, category, setId, page + 1));
+        button(menu,49,"ARROW",text("back","<yellow>戻る</yellow>"),List.of(),()->{
+            if(category.equals("equipment")) equipmentSets(player,0); else catalogCategories(player);
+        });
+        player.openInventory(menu.inventory);
     }
     private void commands(Player player) {
         Menu menu = menu(player, text("commands", "<aqua>管理コマンド操作</aqua>"));
@@ -115,55 +151,50 @@ public final class AdminGuiService implements Listener {
         EquipmentDefinition definition = definitions.snapshot().equipment().get(instance.getDefinitionId());
         if (definition == null) throw new IllegalArgumentException("武器ではなく防具または残響を指定してください。");
         Menu menu = menu(player, text("edit-title", "<gold>装備個体の編集</gold>")); menu.inventory.setItem(4, stack.clone());
-        button(menu, 10, "NETHER_STAR", text("main-stat", "<yellow>メインステを変更</yellow>"), List.of(), () -> chooseStat(player, definition, true, key -> {
-            prompt(player, text("main-values", "Lv.1の値 最大Lvの値 を空白区切りで入力（例 0.05 0.60）"), input -> {
-                String[] values = input.split("\\s+"); if (values.length != 2) throw new IllegalArgumentException("値を2つ指定してください。");
-                double first = finite(values[0]), last = finite(values[1]);
-                confirm(player, items.displayName(key.name()) + " " + first + " → " + last,
-                        () -> updateHeld(player, target, instance.getInstanceId(), value -> value.setMainStat(key, first, last)));
-            });
-        }));
-        button(menu, 12, "EMERALD", text("add-substat", "<green>サブステを追加</green>"), List.of(), () -> chooseStat(player, definition, false, key -> {
-            prompt(player, text("sub-value", "値を入力（5%なら0.05）。既存のサブステとの重複はできません。"), input -> {
-                double value = finite(input);
-                confirm(player, items.displayName(key.name()) + " " + value, () -> updateHeld(player, target, instance.getInstanceId(), current -> {
-                    if (current.getSubstats().containsKey(key.name()) || current.getSubstats().size() >= 4) throw new IllegalArgumentException("重複または4枠上限です。");
-                    current.getSubstats().put(key.name(), value); current.getSubstatUpgrades().put(key.name(), 0);
-                }));
-            });
-        }));
-        button(menu, 14, "EXPERIENCE_BOTTLE", text("unlocked", "<aqua>開放済みサブステ数</aqua>"), List.of(), () -> prompt(player, "0～4を入力してください。", input -> {
-            int count = Integer.parseInt(input); if (count < 0 || count > 4) throw new IllegalArgumentException("0～4で指定してください。");
-            confirm(player, "開放数 " + count, () -> updateHeld(player, target, instance.getInstanceId(), value -> {
-                if (count > value.getSubstats().size()) throw new IllegalArgumentException("サブステ数を超えています。"); value.setUnlockedSubstats(count);
-            }));
-        }));
-        int slot = 28;
-        for (var entry : instance.getSubstats().entrySet()) {
-            String key = entry.getKey();
-            button(menu, slot++, "PAPER", items.displayName(key) + " " + items.statValue(key, entry.getValue()), List.of(text("sub-edit-hint", "<white>値 強化回数 を入力。deleteでこのサブステを削除。</white>")), () -> prompt(player, "値 強化回数（例 0.10 2）、またはdelete", input -> {
-                if (input.equalsIgnoreCase("delete")) confirm(player, "削除：" + items.displayName(key), () -> updateHeld(player, target, instance.getInstanceId(), value -> {
-                    int position = new ArrayList<>(value.getSubstats().keySet()).indexOf(key);
-                    value.getSubstats().remove(key); value.getSubstatUpgrades().remove(key);
-                    if (position >= 0 && position < value.getUnlockedSubstats()) value.setUnlockedSubstats(value.getUnlockedSubstats() - 1);
-                }));
-                else {
-                    String[] values = input.split("\\s+"); if (values.length != 2) throw new IllegalArgumentException("値と強化回数を指定してください。");
-                    double amount = finite(values[0]); int upgrades = Integer.parseInt(values[1]);
-                    if (upgrades < 0 || upgrades > 100) throw new IllegalArgumentException("強化回数は0～100です。");
-                    confirm(player, items.displayName(key) + " " + amount + " [+" + upgrades + "]", () -> updateHeld(player, target, instance.getInstanceId(), value -> {
-                        if (!value.getSubstats().containsKey(key)) throw new IllegalArgumentException("サブステが変更されています。");
-                        value.getSubstats().put(key, amount); value.getSubstatUpgrades().put(key, upgrades);
-                    }));
-                }
-            }));
+        button(menu,10,"NETHER_STAR",text("main-stat","<yellow>メインステを変更</yellow>"),List.of(),()->chooseStat(player,definition,true,key->
+            confirm(player,items.displayName(key.name()),()->updateHeld(player,target,instance.getInstanceId(),current->
+                current.setMainStat(key,EquipmentGrowthTable.mainValue(definition.slot(),key,1),
+                    EquipmentGrowthTable.mainValue(definition.slot(),key,definition.maxLevel()))))));
+        int slot=19;
+        for(String key:instance.getSubstats().keySet()) {
+            button(menu,slot++,"PAPER","<white>"+items.displayName(key)+" "+items.statValue(key,instance.getSubstats().get(key)),
+                List.of(text("sub-select-hint","<white>種類と強化回数を一覧から変更します。</white>")),
+                ()->editSubstat(player,target,instance.getInstanceId(),definition,key));
         }
         back(menu, player); player.openInventory(menu.inventory);
+    }
+    private void editSubstat(Player player,Player target,String identity,EquipmentDefinition definition,String key) {
+        Menu menu=menu(player,text("sub-editor-title","<gold>サブステの編集</gold>"));
+        button(menu,4,"PAPER","<white>"+items.displayName(key),List.of(),()->{});
+        for(int count=0;count<=5;count++) {
+            int upgrades=count;
+            String label=text("sub-upgrade-choice","<yellow>強化 +<count>：<value></yellow>")
+                .replace("<count>",Integer.toString(count)).replace("<value>",items.statValue(key,EquipmentGrowthTable.subValue(StatKey.valueOf(key),count)));
+            button(menu,10+count,"EXPERIENCE_BOTTLE",label,List.of(),()->confirm(player,label,()->updateHeld(player,target,identity,current->{
+                if(!current.getSubstats().containsKey(key)) throw new IllegalArgumentException("サブステが変更されています。");
+                current.getSubstatUpgrades().put(key,upgrades); EquipmentGrowth.recalculate(current);
+            })));
+        }
+        button(menu,22,"EMERALD",text("sub-replace","<green>ステータス種類を選択</green>"),List.of(),()->chooseStat(player,definition,false,replacement->
+            confirm(player,items.displayName(replacement.name()),()->updateHeld(player,target,identity,current->{
+                if(!current.getSubstats().containsKey(key)) throw new IllegalArgumentException("サブステが変更されています。");
+                String name=replacement.name();
+                if(!name.equals(key)&&current.getSubstats().containsKey(name)) throw new IllegalArgumentException("同じサブステは重複できません。");
+                LinkedHashMap<String,Double> ordered=new LinkedHashMap<>();
+                current.getSubstats().forEach((oldKey,value)->ordered.put(oldKey.equals(key)?name:oldKey,value));
+                int upgrades=current.getSubstatUpgrades().getOrDefault(key,0);
+                current.getSubstats().clear();current.getSubstats().putAll(ordered);
+                current.getSubstatUpgrades().remove(key);current.getSubstatUpgrades().put(name,upgrades);
+                current.getEquipmentUpgradeRolls().replaceAll(oldKey->oldKey.equals(key)?name:oldKey);
+                EquipmentGrowth.recalculate(current);
+            }))));
+        button(menu,49,"ARROW",text("back","<yellow>戻る</yellow>"),List.of(),()->editHeld(player));
+        player.openInventory(menu.inventory);
     }
     private void chooseStat(Player player, EquipmentDefinition definition, boolean main, Consumer<StatKey> action) {
         Menu menu = menu(player, text("choose-stat", "<gold>ステータスを選択</gold>")); int slot = 0;
         for (StatKey key : StatKey.values()) {
-            if (main && !DefinitionRegistry.mainAllowed(definition.slot(), key)) continue;
+            if (main ? !DefinitionRegistry.mainAllowed(definition.slot(), key) : !EquipmentGrowthTable.subCandidates().contains(key)) continue;
             button(menu, slot++, "PAPER", "<white>" + items.displayName(key.name()), List.of(), () -> action.accept(key));
         }
         back(menu, player); player.openInventory(menu.inventory);

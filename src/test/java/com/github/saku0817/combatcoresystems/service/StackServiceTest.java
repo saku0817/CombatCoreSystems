@@ -6,6 +6,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.*;
 
 class StackServiceTest {
+    @org.junit.jupiter.api.Test void hudSnapshotContainsOnlyLiveSelfStacksWithoutMutatingState() {
+        var clock=new java.util.concurrent.atomic.AtomicLong(1000);
+        var service=new StackService(clock::get); var owner=java.util.UUID.randomUUID();
+        var own=new StackService.Key(owner,"weapon:a","fire_seed",null);
+        service.add(own,3,10,500,StackService.Reapply.REFRESH,null);
+        service.add(new StackService.Key(owner,"weapon:a","target_mark",java.util.UUID.randomUUID()),2,10,500,StackService.Reapply.REFRESH,null);
+        service.add(new StackService.Key(java.util.UUID.randomUUID(),"weapon:a","fire_seed",null),1,10,500,StackService.Reapply.REFRESH,null);
+        assertEquals(java.util.Map.of(own,3),service.selfStacks(owner));
+        var changes=new java.util.concurrent.atomic.AtomicInteger();service.onChange(change->changes.incrementAndGet());
+        clock.set(1500);assertTrue(service.selfStacks(owner).isEmpty());assertEquals(0,changes.get());
+    }
     final AtomicLong now = new AtomicLong(100);
     final StackService stacks = new StackService(now::get);
     final UUID owner = UUID.randomUUID();

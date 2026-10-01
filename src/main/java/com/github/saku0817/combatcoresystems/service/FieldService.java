@@ -33,7 +33,7 @@ public final class FieldService {
     public boolean inside(LivingEntity entity,String id) {
         return fields.values().stream().anyMatch(f -> f.key.id().equals(id) && f.expires>System.currentTimeMillis() && selectors.contains(f.origin,f.area,entity.getLocation()));
     }
-    private String lease(Field field,String effect) { return "field:"+field.key+":"+effect; }
+    private String lease(Field field,String effect) { return "field:"+field.key.id()+"|owner:"+field.key.owner()+"|source:"+field.key.source()+"|effect:"+effect; }
     private void leave(Field field,UUID target,List<String> effects,LivingEntity owner) {
         effects.forEach(id -> buffs.release(target,lease(field,id)));
         if (Bukkit.getEntity(target) instanceof LivingEntity entity) {

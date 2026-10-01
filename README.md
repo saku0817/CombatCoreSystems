@@ -2,7 +2,9 @@
 
 Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドRPG基盤プラグインです。
 
-現在のバージョン: **v1.4.5**
+現在のバージョン: **v1.4.6**
+
+装備成長表・治癒力・追憶・戦闘コンテキスト／Movement拡張は [v1.4.6更新ガイド](docs/v1.4.6.md) を参照してください。
 
 弓のチャージ補正と共通Trigger・Action・Stack・Field拡張は [v1.4.5更新ガイド](docs/v1.4.5.md) を参照してください。
 
@@ -10,11 +12,11 @@ Paper 26.2 / Java 25 向けの、PvE・PvP対応ARPG／オープンワールドR
 
 v1.4.3の負荷対策・ドロップ入力・Lore・限界突破・追加コマンドは [更新ガイド](docs/v1.4.3.md) を参照してください。
 
-ChatGPTで設定を作る場合は [引き継ぎ書](docs/ChatGPT-YAML-Handoff.md)、[v1.4.5差分](docs/ChatGPT-YAML-v1.4.5.md)、[YAML参照資料](docs/ChatGPT-YAML-Reference.md) を添付してください。Release Assetsの `CombatCoreSystems-ChatGPT-YAML-1.4.5.zip` に資料と設定例をまとめています。
+ChatGPTで設定を作る場合は [引き継ぎ書](docs/ChatGPT-YAML-Handoff.md)、[v1.4.6差分](docs/ChatGPT-YAML-v1.4.6.md)、[YAML参照資料](docs/ChatGPT-YAML-Reference.md) を添付してください。Release Assetsの `CombatCoreSystems-ChatGPT-YAML-1.4.6.zip` に資料と設定例をまとめています。
 
 v1.4.2の仮想Mob HP、BE入力補完、装備・神心ツールチップ、設定移行、Web管理画面は [更新ガイド](docs/v1.4.2.md) を参照してください。
 
-WebエディタはフォームからのYAML生成・ダウンロードにも対応します。Release Assetsの`CombatCoreSystems-YamlGenerator-1.4.5.html`はオフラインでも使えるため、追加ポートのないレンタル環境でも設定ファイルを作成できます。
+WebエディタはフォームからのYAML生成・ダウンロードにも対応します。Release Assetsの`CombatCoreSystems-YamlGenerator-1.4.6.html`はオフラインでも使えるため、追加ポートのないレンタル環境でも設定ファイルを作成できます。
 
 v1.4.1の表示・入力診断・移行設定は [更新ガイド](docs/v1.4.1.md) を参照してください。
 
@@ -22,7 +24,7 @@ v1.4.1の表示・入力診断・移行設定は [更新ガイド](docs/v1.4.1.m
 
 - Mob討伐で得る独自経験値と独自レベル、基礎・上級ステータス、転生、5プリセットのスキルツリー
 - 5属性と全10組の属性反応、会心、防御・耐性を含むダメージ計算
-- 手持ち自動認識式の近接／遠距離／未指定武器、天賦、スキル、必殺技、限界突破、装備、セット効果、神の心
+- 手持ち自動認識式の近接／遠距離／未指定武器、天賦、スキル、必殺技、限界突破、装備、セット効果、追憶
 - カスタムMob・Boss、設定可能なバニラMob、リージョン、スポーン、図鑑、HUD、GUI
 - 最大4人のパーティー、PvP設定、10秒間の戦闘状態
 - SQLite／YAML／JSON／MySQL／MariaDB、定期保存・バックアップ・復元

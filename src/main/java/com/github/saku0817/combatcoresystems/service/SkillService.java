@@ -67,23 +67,8 @@ public final class SkillService implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onInventoryDrop(org.bukkit.event.inventory.InventoryClickEvent event) {
         if (event.getAction().name().startsWith("DROP_")) {
-            if (event.getWhoClicked() instanceof Player player && isBedrock(player)
-                    && definitions.snapshot().config("config.yml").getBoolean("controls.drop-skill", true)
-                    && definitions.snapshot().config("config.yml").getBoolean("controls.bedrock-selected-slot-drop-skill", true)
-                    && !event.isCancelled()
-                    && event.getClickedInventory() == player.getInventory() && event.getSlot() == player.getInventory().getHeldItemSlot()) {
-                WeaponDefinition weapon = definitions.snapshot().weapon(items.instance(event.getCurrentItem()).orElse(null));
-                if (weapon != null && weapon.skill() != null && player.hasPermission("combatcoresystems.command.skill")) {
-                    event.setCancelled(true);
-                    int selected = player.getInventory().getHeldItemSlot();
-                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
-                        if (player.isOnline() && player.getInventory().getHeldItemSlot() == selected
-                                && items.id(player.getInventory().getItemInMainHand()).orElse("").equals(weapon.id())) activate(player, false);
-                    });
-                    trace("bedrock selected-slot fallback", player, "action=" + event.getAction() + " slot=" + event.getSlot());
-                    return;
-                }
-            }
+            // Inventory-origin drops must remain drops on both Java and Bedrock.
+            // The old selected-slot fallback also intercepted intentional inventory disposal.
             markInventoryDrop(event.getWhoClicked().getUniqueId());
             if (event.getWhoClicked() instanceof Player player) trace("inventory drop", player, "action=" + event.getAction() + " slot=" + event.getSlot());
         }
@@ -119,15 +104,6 @@ public final class SkillService implements Listener {
 
     private boolean inputDebugEnabled(Player player) {
         return definitions.snapshot().config("config.yml").getBoolean("controls.debug-inputs", false) || debug != null && debug.enabled(player.getUniqueId());
-    }
-
-    private boolean isBedrock(Player player) {
-        if (org.bukkit.Bukkit.getPluginManager().getPlugin("floodgate") == null) return false;
-        try {
-            Class<?> type = Class.forName("org.geysermc.floodgate.api.FloodgateApi");
-            Object api = type.getMethod("getInstance").invoke(null);
-            return Boolean.TRUE.equals(type.getMethod("isFloodgatePlayer", UUID.class).invoke(api, player.getUniqueId()));
-        } catch (ReflectiveOperationException ex) { return false; }
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
